@@ -1,79 +1,120 @@
-# ElringKlinger Quoting-Pipeline
+# ElringKlinger Quoting Pipeline
 
-End-to-End-Prototyp für AI-gestützte Angebots-Entwurfserstellung.
+AI-assisted draft quotation generator: RFQ (PDF / Mail / Excel) → structured extraction → master-data matching → draft PDF quotation.
 
-## Was die Pipeline tut
-
-```
-Mail/PDF/Excel  ─┐
-                 ├─► Ingestion ─► Extraktion ─► Matching ─► Pricing ─► Draft-PDF
-Stammdaten      ─┘       (LLM Vision)   (Rapidfuzz)   (SAP ZKALK mock)
-```
-
-1. **Ingestion** — Nimmt `.eml`, `.pdf`, `.xlsx` entgegen, trennt Mail-Body von Attachments
-2. **Extraktion** — PDF-Seiten werden direkt als Bilder an GPT-5 (Vision) geschickt, keine OCR/Markdown-Zwischenstufe. Das ist der zentrale Design-Entscheid, weil klassische Markdown-Konverter bei mehrspaltigen Positionstabellen die Spaltenzuordnung verlieren.
-3. **Matching** — Drei-Stufen-Matching der Artikelnummer gegen Stammdaten (exact → fuzzy → semantisch). Rein deterministisch, auditierbar.
-4. **Pricing** — Deterministische Preisberechnung mit Mengenstaffel + SAP-ZKALK-Offset (Mock).
-5. **Draft-PDF** — Angebots-Entwurf mit Positionstabelle, Warnhinweisen, Audit-Protokoll.
-
-## Projektstruktur
+## Pipeline flow
 
 ```
-quoting_pipeline/
-├── src/
-│   ├── pipeline.py       # CLI-Einstieg, orchestriert alle Schritte
-│   ├── ingestion.py      # Mail-Parsing, Dateityp-Erkennung
-│   ├── extractor.py      # Pydantic-Schema + LLM-Call (Vision)
-│   ├── matching.py       # Fuzzy-Matching gegen Stammdaten
-│   ├── pricing.py        # Preisberechnung
-│   ├── output.py         # PDF-Generierung + JSON-Export
-│   └── review_ui.py      # Streamlit Human-in-the-Loop UI
-├── data/
-│   ├── stammdaten.csv    # Artikel + Basispreise (Mock)
-│   └── preise.csv        # Optional: separate Preistabelle
-├── requirements.txt
-└── README.md
+  ingestion ──► extraction ──► matching ──► pricing ──► output
+  (eml/pdf)    (LLM)          (fuzzy)      (rules)    (PDF+JSON)
+```
+
+Each stage lives in its own sub-package under `src/quoting/`. The only place stage order is encoded is `pipeline.py`, which reads like a table of contents.
+
+## Layout
+
+```
+quoting-pipeline/
+├── README.md
+├── pyproject.toml
+├── .env.example
+├── run_ui.py                  # Streamlit launcher
+│
+├── data/                      # master data, price tables
+├── samples/                   # example RFQs for manual testing
+├── docs/                      # architecture notes, ADRs
+│   └── decisions/
+│
+├── src/quoting/
+│   ├── cli.py                 # run / batch entry point
+│   ├── pipeline.py            # orchestrator — reads top-to-bottom
+│   │
+│   ├── core/                  # cross-stage basics
+│   │   ├── config.py          # Settings (frozen dataclass)
+│   │   ├── logging_setup.py
+│   │   └── schema.py          # Anfrage, Position (Pydantic)
+│   │
+│   ├── ingestion/             # input → body + attachments
+│   │   ├── file_types.py
+│   │   └── mail.py
+│   │
+│   ├── extraction/            # attachments → Anfrage (LLM-powered)
+│   │   ├── extractor.py
+│   │   ├── document_loader.py
+│   │   ├── prompts.py
+│   │   ├── json_utils.py
+│   │   └── llm/               # provider abstraction (internal)
+│   │       ├── base.py
+│   │       ├── factory.py
+│   │       ├── gemini.py
+│   │       └── azure.py
+│   │
+│   ├── matching/              # Anfrage → MatchResults (deterministic)
+│   │   ├── matcher.py
+│   │   └── stammdaten.py
+│   │
+│   ├── pricing/               # Anfrage + matches → Quotation
+│   │   ├── quotation.py
+│   │   ├── discounts.py
+│   │   └── prices.py
+│   │
+│   ├── output/                # Quotation → PDF + JSON
+│   │   ├── pdf_builder.py
+│   │   └── json_writer.py
+│   │
+│   └── ui/                    # Streamlit review
+│       └── review_app.py
+│
+├── tests/
+│   ├── unit/                  # fast, no I/O
+│   ├── integration/           # filesystem + mocks, no real LLM
+│   └── fixtures/
+│
+└── scripts/                   # ad-hoc tools, not part of the pipeline
 ```
 
 ## Setup
 
 ```bash
-pip install -r requirements.txt
-
-# Azure OpenAI Key setzen (PowerShell)
-$env:NEXUS_API_KEY="your_key_here"
+pip install -e ".[dev]"
+cp .env.example .env
+# fill in GOOGLE_API_KEY or NEXUS_API_KEY
 ```
 
-## Nutzung
-
-### CLI — Einzelne Anfrage verarbeiten
+## Usage
 
 ```bash
-python -m src.pipeline Request_Preisanfrage_2026-50422.pdf
-python -m src.pipeline eingang.eml --output C:\Angebote
+# Single file
+python -m quoting.cli run path/to/rfq.pdf
+
+# Batch a folder
+python -m quoting.cli batch ./inbox --output ./results
+
+# Review UI
+streamlit run run_ui.py
 ```
 
-### UI — Interaktive Review
+## Tests
 
 ```bash
-streamlit run src/review_ui.py
+pytest                      # all
+pytest tests/unit           # fast core only
 ```
 
-Sales lädt die Anfrage hoch, prüft die extrahierten Felder (farblich nach Confidence), bestätigt/korrigiert, erstellt den Draft. Klassischer Human-in-the-Loop-Workflow.
+## Design decisions
 
-## Warum keine OCR + Markdown-Pipeline?
+Details in `docs/decisions/`. Key ones:
 
-Die erste Iteration nutzte MarkItDown für alle PDFs. Bei der Göhmann-Anfrage zeigte sich: Positionstabellen werden zeilenweise linearisiert, dabei geht die Spaltenzuordnung verloren — Artikelnummern, Mengen und Beschreibungen landen in getrennten Textblöcken, das LLM muss die Zuordnung raten.
+- **No LLM in matching or pricing.** Only extraction is non-deterministic; everything downstream is reproducible and auditable.
+- **LLM clients are hidden inside `extraction/llm/`.** No other module is allowed to call them. Enforced by package structure.
+- **Certificates are flat surcharges.** `ist_zertifikat=True` → no volume discount, no qty multiplication.
 
-Vision-basierte Extraktion löst das, weil das Modell das Layout visuell wahrnimmt. Kosten pro Anfrage sind etwas höher, aber die Extraktions-Qualität ist deutlich besser und das Debugging (via `source_quote` pro Feld) wird einfacher.
+## What changed vs v0.2
 
-## Erweiterungspunkte
-
-- **Echte SAP-Anbindung** — `pricing.py::lade_preise()` gegen SAP-API tauschen
-- **Embeddings für Matching** — `matching.py` um `sentence-transformers` erweitern für semantische Artikel-Suche bei Freitext-Bezeichnungen
-- **Batch-Verarbeitung** — IMAP-Poller um `verarbeite_anfrage()` herumbauen
-- **Feedback-Loop** — Korrekturen der Sales-User zurück ins System loggen, für späteres Feintuning
-
-## Lizenz-Status aller Dependencies
-
-Alle verwendeten Bibliotheken permissive (MIT/Apache 2.0/BSD) — keine Copyleft-Probleme für kommerzielle Nutzung.
+- Renamed package `src` → `src/quoting` (proper src-layout).
+- Flat stage folders: `ingestion/`, `extraction/`, `matching/`, `pricing/`, `output/`, `ui/` — each with an `__init__.py` that defines the public API.
+- LLM clients moved to `extraction/llm/` (they're an implementation detail of that stage, not a cross-cutting concern).
+- `pricing` split into `discounts.py` + `prices.py` + `quotation.py`.
+- `matching` split into `matcher.py` + `stammdaten.py`.
+- `output` split into `pdf_builder.py` + `json_writer.py`.
+- Imports now use absolute paths (`from quoting.core import ...`) which work with both `python -m quoting.cli` and `streamlit run run_ui.py`.
