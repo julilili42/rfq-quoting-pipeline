@@ -83,3 +83,6 @@ Poppler/
 .env
 .env.*
 !.env.example
+
+
+data/reviews/

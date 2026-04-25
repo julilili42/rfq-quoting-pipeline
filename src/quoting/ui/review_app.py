@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 import base64
 import hashlib
+import re
 import tempfile
 from pathlib import Path
 
@@ -27,6 +28,14 @@ from quoting.ingestion import detect_file_type, parse_mail
 from quoting.matching import load_stammdaten, match_positions
 from quoting.output import build_draft_pdf
 from quoting.pricing import build_quotation
+from quoting.ui.review_agent import (
+    apply_manual_overrides,
+    build_agent_summary,
+    build_general_agent_reply,
+    detect_agent_language,
+    parse_edit_instruction,
+    upsert_override,
+)
 
 # ==========================================
 # PAGE CONFIG & STYLING
@@ -37,82 +46,57 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-def apply_custom_style():
+def apply_style():
     st.markdown("""
         <style>
-        /* Import Google Font */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
         
         html, body, [data-testid="stAppViewContainer"] {
             font-family: 'Inter', sans-serif;
             background-color: #fcfcfc;
         }
 
-        /* Support Header oben rechts */
+        /* HEADER LOGOS: DEUTLICH GRÖSSER */
         .header-container {
             display: flex;
             justify-content: flex-end;
             align-items: center;
-            gap: 25px;
-            padding: 10px 0;
-            margin-bottom: 20px;
+            gap: 50px;
+            padding: 30px 20px;
+            background: white;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 40px;
         }
         .support-label {
-            font-size: 11px;
-            font-weight: 600;
-            color: #94a3b8;
+            font-size: 13px;
+            font-weight: 700;
+            color: #adb5bd;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 2px;
         }
         .partner-logo {
-            height: 35px;
-            opacity: 0.8;
-            transition: opacity 0.3s ease;
-        }
-        .partner-logo:hover {
-            opacity: 1;
+            height: 80px; /* Hier: Von 35px auf 80px erhöht */
+            width: auto;
+            object-fit: contain;
         }
 
-        /* Sidebar Anpassungen */
-        [data-testid="stSidebar"] {
-            background-color: #ffffff !important;
-            border-right: 1px solid #edf2f7;
-        }
-        
-        /* Karten & Expander */
-        .stExpander {
-            background-color: white !important;
-            border: 1px solid #e2e8f0 !important;
-            border-radius: 12px !important;
-            margin-bottom: 10px !important;
-        }
-
-        /* Buttons */
-        .stButton > button {
-            border-radius: 8px !important;
-            transition: all 0.3s ease !important;
-        }
-        
-        /* Titel Styling */
-        .main-header {
-            font-weight: 800;
-            font-size: 2.2rem;
-            color: #0f172a;
-            margin-bottom: 0.5rem;
+        /* Sidebar & Buttons */
+        [data-testid="stSidebar"] { background-color: #ffffff !important; }
+        .stButton>button {
+            border-radius: 10px;
+            font-weight: bold;
+            padding: 0.75rem 2rem;
         }
         </style>
     """, unsafe_allow_html=True)
 
-apply_custom_style()
+apply_style()
 
 # --- Utility für Bilder ---
-def img_to_base64(img_path):
-    try:
-        with open(img_path, "rb") as f:
-            return base64.b64encode(f.read()).decode()
-    except FileNotFoundError:
-        return None
+def img_to_base64(path):
+    p = Path(path)
+    if not p.exists(): return None
+    return base64.b64encode(p.read_bytes()).decode()
 
 # ==========================================
 # CACHED HELPERS
@@ -136,8 +120,30 @@ def _extract_cached(content_hash: str, file_path: str, mail_body: str) -> dict:
         anfrage = extract_anfrage([p], mail_body, _settings())
     return anfrage.model_dump(mode="json")
 
+
+@st.cache_data
+def _mail_body_cached(file_path: str) -> str:
+    p = Path(file_path)
+    if detect_file_type(p) in ["eml", "msg"]:
+        return parse_mail(p).body or ""
+    return ""
+
 # --- Session State Helpers ---
 _EDITOR_KEY_PREFIXES = ("art_", "mng_", "eh_", "lt_", "ws_", "zn_", "bez_")
+
+
+def _reset_agent_state() -> None:
+    for key in (
+        "manual_discount_overrides",
+        "agent_messages",
+        "quotation",
+        "quotation_hash",
+        "pdf_bytes",
+        "pdf_file_name",
+        "generated_pdf_path",
+    ):
+        if key in st.session_state:
+            del st.session_state[key]
 
 def _reset_editor_state():
     for key in list(st.session_state.keys()):
@@ -155,10 +161,16 @@ def _save_upload_stable(uploaded, content_hash: str) -> Path:
 def _load_anfrage_once(content_hash: str, input_path: Path) -> Anfrage:
     if st.session_state.get("anfrage_hash") != content_hash:
         _reset_editor_state()
+        _reset_agent_state()
         anfrage_dict = _extract_cached(content_hash, str(input_path), "")
         st.session_state["anfrage"] = Anfrage.model_validate(anfrage_dict)
         st.session_state["anfrage_hash"] = content_hash
     return st.session_state["anfrage"]
+
+
+def _safe_file_stub(name: str) -> str:
+    stem = Path(name).stem
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._") or "angebot"
 
 # ==========================================
 # UI HEADER (PARTNER LOGOS)
@@ -214,6 +226,19 @@ try:
 except Exception as e:
     st.error(f"❌ Fehler bei der Extraktion: {e}")
     st.stop()
+
+mail_body_for_lang = _mail_body_cached(str(input_path))
+fallback_lang_text = " ".join(
+    [
+        anfrage.kunde_firma or "",
+        anfrage.kunde_ansprechpartner or "",
+        anfrage.belegnummer or "",
+        " ".join((p.source_quote or "") for p in anfrage.positionen[:3]),
+    ]
+)
+if st.session_state.get("agent_lang_hash") != content_hash:
+    st.session_state["agent_lang"] = detect_agent_language(mail_body_for_lang, fallback_lang_text)
+    st.session_state["agent_lang_hash"] = content_hash
 
 # --- Split View ---
 col_doc, col_extract = st.columns([1, 1], gap="large")
@@ -282,19 +307,142 @@ for i, (pos, m) in enumerate(zip(anfrage.positionen, matches)):
         color = "normal" if m.score > 0.8 else "inverse"
         st.metric(f"Pos {pos.pos_nr}", f"{m.score:.0%}", m.status.upper(), delta_color=color)
 
-if st.button("📝 Entwurf-Angebot generieren", type="primary", use_container_width=True):
-    with st.spinner("PDF wird erstellt..."):
-        quotation = build_quotation(anfrage, matches, _settings().preise_path)
-        pdf_out = input_path.parent / "draft_angebot.pdf"
-        build_draft_pdf(anfrage, quotation, pdf_out)
-        
-    st.success(f"✅ Fertig! Gesamtsumme: {quotation.gesamtsumme:,.2f} EUR")
-    
-    with open(pdf_out, "rb") as f:
+if st.button("📝 Entwurf-Angebot erstellen", type="primary", use_container_width=True):
+    with st.spinner("Erstelle PDF..."):
+        try:
+            agent_lang = st.session_state.get("agent_lang", "de")
+            base_quotation = build_quotation(anfrage, matches, _settings().preise_path)
+            overrides = st.session_state.get("manual_discount_overrides", [])
+            quotation, applied_items = apply_manual_overrides(base_quotation, anfrage, overrides, lang=agent_lang)
+
+            upload_dir = Path(tempfile.gettempdir()) / "quoting_uploads" / content_hash
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            pdf_out = upload_dir / "draft_angebot.pdf"
+
+            build_draft_pdf(anfrage, quotation, pdf_out)
+
+            if pdf_out.exists():
+                st.session_state["quotation"] = quotation
+                st.session_state["quotation_hash"] = content_hash
+                st.session_state["generated_pdf_path"] = str(pdf_out)
+                st.session_state["pdf_bytes"] = pdf_out.read_bytes()
+                st.session_state["pdf_file_name"] = (
+                    f"ElringKlinger_Angebot_{_safe_file_stub(uploaded.name)}_{content_hash}.pdf"
+                )
+                st.session_state["agent_messages"] = [
+                    {
+                        "role": "assistant",
+                        "content": build_agent_summary(
+                            quotation,
+                            matches,
+                            applied_items=applied_items,
+                            lang=agent_lang,
+                        ),
+                    }
+                ]
+        except Exception as e:
+            st.error(f"Fehler bei der Angebotserstellung: {e}")
+            st.stop()
+
+        if pdf_out.exists():
+            st.success("✅ Angebot erfolgreich erstellt!")
+            st.download_button(
+                label="📥 Jetzt PDF herunterladen",
+                data=st.session_state.get("pdf_bytes", b""),
+                file_name=st.session_state.get("pdf_file_name", f"ElringKlinger_Angebot_{content_hash}.pdf"),
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        else:
+            st.error("Fehler: PDF konnte nicht generiert werden. Prüfe, ob reportlab installiert ist.")
+
+if st.session_state.get("quotation_hash") == content_hash and st.session_state.get("quotation"):
+    st.markdown("---")
+    st.subheader("💬 Agent Chat")
+    agent_lang = st.session_state.get("agent_lang", "de")
+
+    messages = st.session_state.setdefault("agent_messages", [])
+    for msg in messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    chat_placeholder = (
+        "Write an edit: discount by position/article, comment, or total question"
+        if agent_lang == "en"
+        else "Schreibe eine Anpassung: Rabatt je Position/Artikel, Kommentar oder Summenfrage"
+    )
+    user_msg = st.chat_input(chat_placeholder)
+    if user_msg:
+        messages.append({"role": "user", "content": user_msg})
+
+        current_quotation = st.session_state["quotation"]
+        known_articles = [p.artikelnummer for p in anfrage.positionen if p.artikelnummer]
+        parsed_override, parse_feedback = parse_edit_instruction(
+            user_msg,
+            known_articles,
+            lang=agent_lang,
+        )
+
+        if parsed_override:
+            overrides = st.session_state.get("manual_discount_overrides", [])
+            st.session_state["manual_discount_overrides"] = upsert_override(overrides, parsed_override)
+
+            with st.spinner("Applying edit and recalculating PDF..." if agent_lang == "en" else "Anpassung wird angewendet und PDF neu berechnet..."):
+                try:
+                    base_quotation = build_quotation(anfrage, matches, _settings().preise_path)
+                    quotation, applied_items = apply_manual_overrides(
+                        base_quotation,
+                        anfrage,
+                        st.session_state.get("manual_discount_overrides", []),
+                        lang=agent_lang,
+                    )
+
+                    upload_dir = Path(tempfile.gettempdir()) / "quoting_uploads" / content_hash
+                    upload_dir.mkdir(parents=True, exist_ok=True)
+                    pdf_out = upload_dir / "draft_angebot.pdf"
+                    build_draft_pdf(anfrage, quotation, pdf_out)
+
+                    st.session_state["quotation"] = quotation
+                    st.session_state["quotation_hash"] = content_hash
+                    st.session_state["generated_pdf_path"] = str(pdf_out)
+                    st.session_state["pdf_bytes"] = pdf_out.read_bytes() if pdf_out.exists() else b""
+                except Exception as e:
+                    messages.append({
+                        "role": "assistant",
+                        "content": (f"Could not apply edit: {e}" if agent_lang == "en" else f"Anpassung konnte nicht angewendet werden: {e}"),
+                    })
+                    st.rerun()
+
+            messages.append({
+                "role": "assistant",
+                "content": (
+                    f"{parse_feedback}\n\n"
+                    + build_agent_summary(
+                        st.session_state["quotation"],
+                        matches,
+                        applied_items=applied_items,
+                        lang=agent_lang,
+                    )
+                ),
+            })
+            st.rerun()
+
+        if parse_feedback:
+            messages.append({"role": "assistant", "content": parse_feedback})
+            st.rerun()
+
+        messages.append({
+            "role": "assistant",
+            "content": build_general_agent_reply(user_msg, current_quotation, lang=agent_lang),
+        })
+        st.rerun()
+
+    if st.session_state.get("pdf_bytes"):
         st.download_button(
-            "📥 PDF Herunterladen",
-            data=f.read(),
-            file_name=f"EK_Angebot_{anfrage.belegnummer or 'Entwurf'}.pdf",
+            label="📥 PDF herunterladen nach dem Korrigieren",
+            data=st.session_state["pdf_bytes"],
+            file_name=st.session_state.get("pdf_file_name", f"ElringKlinger_Angebot_{content_hash}.pdf"),
             mime="application/pdf",
-            use_container_width=True
+            use_container_width=True,
+            key="download_after_chat",
         )

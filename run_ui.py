@@ -1,15 +1,15 @@
-"""Streamlit launcher. Run from project root:
+from __future__ import annotations
 
-    streamlit run run_ui.py
-"""
-import runpy
+import subprocess
 import sys
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent
-_SRC = _ROOT / "src"
-for p in (_ROOT, _SRC):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+PROJECT_ROOT = Path(__file__).resolve().parent
+APP_PATH = PROJECT_ROOT / "src" / "quoting" / "ui" / "review_app.py"
 
-runpy.run_module("quoting.ui.review_app", run_name="__main__", alter_sys=True)
+if __name__ == "__main__":
+    raise SystemExit(
+        subprocess.call(
+            [sys.executable, "-m", "streamlit", "run", str(APP_PATH), *sys.argv[1:]]
+        )
+    )
