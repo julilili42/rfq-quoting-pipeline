@@ -55,8 +55,6 @@ Thumbs.db
 # =========================
 # Output deiner Pipeline
 # =========================
-Output/
-output/
 results/
 *.txt
 bilder/
