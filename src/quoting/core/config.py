@@ -6,11 +6,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from dotenv import load_dotenv
+
 Provider = Literal["gemini", "azure"]
 
 # Project root = three levels up from this file:
-# src/quoting/core/config.py -> src/quoting/core -> src/quoting -> src -> <root>
+# src/quoting/core/config.py -> core -> quoting -> src -> <root>
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+load_dotenv(_PROJECT_ROOT / ".env")
 
 
 @dataclass(frozen=True)
@@ -24,7 +28,7 @@ class Settings:
     google_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash"
 
-    # Azure OpenAI (Nexus)
+    # Azure OpenAI / Nexus
     nexus_api_key: str | None = None
     azure_endpoint: str = "https://genai-nexus.api.corpinter.net/"
     azure_api_version: str = "2024-10-21"
@@ -53,6 +57,7 @@ class Settings:
 
 def load_settings() -> Settings:
     """Build Settings from environment. No side effects."""
+
     def _int(key: str, default: int) -> int:
         try:
             return int(os.getenv(key, default))
@@ -65,8 +70,8 @@ def load_settings() -> Settings:
 
     output = os.getenv("OUTPUT_DIR")
     data = os.getenv("DATA_DIR")
-
     base = Settings()
+
     return Settings(
         llm_provider=provider,  # type: ignore[arg-type]
         llm_max_retries=_int("LLM_MAX_RETRIES", 3),

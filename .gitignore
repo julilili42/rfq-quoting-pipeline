@@ -78,3 +78,8 @@ bilder/
 # =========================
 Tesseract-OCR/
 Poppler/
+
+
+.env
+.env.*
+!.env.example

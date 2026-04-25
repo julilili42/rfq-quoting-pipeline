@@ -4,117 +4,207 @@ AI-assisted draft quotation generator: RFQ (PDF / Mail / Excel) → structured e
 
 ## Pipeline flow
 
-```
-  ingestion ──► extraction ──► matching ──► pricing ──► output
-  (eml/pdf)    (LLM)          (fuzzy)      (rules)    (PDF+JSON)
+```text
+ingestion ──► extraction ──► matching ──► pricing ──► output
+(eml/pdf/xlsx) (LLM)        (fuzzy)      (rules)    (PDF+JSON)
 ```
 
-Each stage lives in its own sub-package under `src/quoting/`. The only place stage order is encoded is `pipeline.py`, which reads like a table of contents.
+Each stage lives in its own sub-package under `src/quoting/`. The only place where the stage order is encoded is `pipeline.py`.
+
+## Environment configuration
+
+The project uses `python-dotenv` and loads local environment variables from a `.env` file.
+
+A template is provided in `.env.example`. Copy it once and fill in the required values locally:
+
+```bash
+cp .env.example .env
+```
+
+The `.env` file must not be committed because it can contain API keys and secrets.
+
+Minimum configuration for local extraction:
+
+```bash
+LLM_PROVIDER=gemini
+GOOGLE_API_KEY=your-google-api-key
+```
+
+For Azure OpenAI / Nexus:
+
+```bash
+LLM_PROVIDER=azure
+NEXUS_API_KEY=your-nexus-api-key
+AZURE_OPENAI_ENDPOINT=https://genai-nexus.api.corpinter.net/
+AZURE_OPENAI_API_VERSION=2024-10-21
+AZURE_OPENAI_MODEL=gpt-5-mini
+```
+
+Optional runtime paths:
+
+```bash
+OUTPUT_DIR=./output
+DATA_DIR=./data
+```
 
 ## Layout
 
-```
+```text
 quoting-pipeline/
 ├── README.md
 ├── pyproject.toml
-├── .env.example
-├── run_ui.py                  # Streamlit launcher
+├── .env.example              # environment variable template
+├── .env                      # local secrets, ignored by git
+├── run_ui.py                 # manual upload / review UI launcher
+├── run_app.py                # combined launcher for UI + optional Outlook sync
+├── run_inbox.py              # inbox dashboard launcher, requires inbox_app.py
 │
-├── data/                      # master data, price tables
-├── samples/                   # example RFQs for manual testing
-├── docs/                      # architecture notes, ADRs
+├── data/
+│   └── stammdaten_test.csv
+│
+├── docs/
+│   ├── architecture.md
 │   └── decisions/
 │
+├── samples/
+│   └── README.md
+│
+├── scripts/
+│   ├── smoke_test.py
+│   └── sync_outlook.py
+│
 ├── src/quoting/
-│   ├── cli.py                 # run / batch entry point
-│   ├── pipeline.py            # orchestrator — reads top-to-bottom
+│   ├── cli.py                # run / batch entry point
+│   ├── pipeline.py           # orchestrator
 │   │
-│   ├── core/                  # cross-stage basics
-│   │   ├── config.py          # Settings (frozen dataclass)
-│   │   ├── logging_setup.py
-│   │   └── schema.py          # Anfrage, Position (Pydantic)
-│   │
-│   ├── ingestion/             # input → body + attachments
-│   │   ├── file_types.py
-│   │   └── mail.py
-│   │
-│   ├── extraction/            # attachments → Anfrage (LLM-powered)
-│   │   ├── extractor.py
-│   │   ├── document_loader.py
-│   │   ├── prompts.py
-│   │   ├── json_utils.py
-│   │   └── llm/               # provider abstraction (internal)
-│   │       ├── base.py
-│   │       ├── factory.py
-│   │       ├── gemini.py
-│   │       └── azure.py
-│   │
-│   ├── matching/              # Anfrage → MatchResults (deterministic)
-│   │   ├── matcher.py
-│   │   └── stammdaten.py
-│   │
-│   ├── pricing/               # Anfrage + matches → Quotation
-│   │   ├── quotation.py
-│   │   ├── discounts.py
-│   │   └── prices.py
-│   │
-│   ├── output/                # Quotation → PDF + JSON
-│   │   ├── pdf_builder.py
-│   │   └── json_writer.py
-│   │
-│   └── ui/                    # Streamlit review
+│   ├── core/                 # config, logging, schema
+│   ├── ingestion/            # file / mail parsing
+│   ├── extraction/           # LLM extraction
+│   ├── matching/             # deterministic master-data matching
+│   ├── pricing/              # deterministic pricing
+│   ├── output/               # PDF + JSON output
+│   ├── outlook/              # Microsoft Graph / Outlook integration
+│   └── ui/                   # Streamlit apps
 │       └── review_app.py
 │
-├── tests/
-│   ├── unit/                  # fast, no I/O
-│   ├── integration/           # filesystem + mocks, no real LLM
-│   └── fixtures/
-│
-└── scripts/                   # ad-hoc tools, not part of the pipeline
+└── tests/
+    ├── unit/
+    ├── integration/
+    └── fixtures/
 ```
 
 ## Setup
 
+Install the project in editable mode with development dependencies:
+
 ```bash
 pip install -e ".[dev]"
-cp .env.example .env
-# fill in GOOGLE_API_KEY or NEXUS_API_KEY
 ```
 
-## Usage
+Create the local environment file:
 
 ```bash
-# Single file
-python -m quoting.cli run path/to/rfq.pdf
+cp .env.example .env
+```
 
-# Batch a folder
-python -m quoting.cli batch ./inbox --output ./results
+Then edit `.env` and add the required API keys.
 
-# Review UI
+## How to start the app
+
+### Manual upload / review UI
+
+Use this for local testing with PDF, EML, XLSX or CSV files:
+
+```bash
 streamlit run run_ui.py
+```
+
+Alternative:
+
+```bash
+python run_app.py --app review --no-sync
+```
+
+### Combined launcher with Outlook sync
+
+Only use this if the Outlook integration is configured and the inbox UI exists:
+
+```bash
+python run_app.py
+```
+
+Required Outlook environment variables:
+
+```bash
+AZURE_TENANT_ID=
+AZURE_CLIENT_ID=
+AZURE_CLIENT_SECRET=
+OUTLOOK_MAILBOX=
+```
+
+Optional Outlook variables:
+
+```bash
+OUTLOOK_FOLDER=Inbox
+OUTLOOK_PROCESSED_FOLDER=AI-Processed
+OUTLOOK_POLL_SECONDS=60
+OUTLOOK_MAX_FETCH=25
+OUTLOOK_STORE_DIR=./data/outlook_cache
+```
+
+Note: `run_app.py` defaults to the inbox dashboard. This requires:
+
+```text
+src/quoting/ui/inbox_app.py
+```
+
+If that file is not present, start the review UI instead:
+
+```bash
+python run_app.py --app review --no-sync
+```
+
+## CLI usage
+
+Process one file:
+
+```bash
+python -m quoting.cli run path/to/rfq.pdf
+```
+
+Process a folder:
+
+```bash
+python -m quoting.cli batch ./inbox --output ./results
+```
+
+Supported input files:
+
+```text
+.pdf
+.eml
+.xlsx
+.xls
+.csv
 ```
 
 ## Tests
 
+Run all tests:
+
 ```bash
-pytest                      # all
-pytest tests/unit           # fast core only
+pytest
 ```
 
-## Design decisions
+Run only unit tests:
 
-Details in `docs/decisions/`. Key ones:
+```bash
+pytest tests/unit
+```
 
-- **No LLM in matching or pricing.** Only extraction is non-deterministic; everything downstream is reproducible and auditable.
-- **LLM clients are hidden inside `extraction/llm/`.** No other module is allowed to call them. Enforced by package structure.
-- **Certificates are flat surcharges.** `ist_zertifikat=True` → no volume discount, no qty multiplication.
+## Notes
 
-## What changed vs v0.2
-
-- Renamed package `src` → `src/quoting` (proper src-layout).
-- Flat stage folders: `ingestion/`, `extraction/`, `matching/`, `pricing/`, `output/`, `ui/` — each with an `__init__.py` that defines the public API.
-- LLM clients moved to `extraction/llm/` (they're an implementation detail of that stage, not a cross-cutting concern).
-- `pricing` split into `discounts.py` + `prices.py` + `quotation.py`.
-- `matching` split into `matcher.py` + `stammdaten.py`.
-- `output` split into `pdf_builder.py` + `json_writer.py`.
-- Imports now use absolute paths (`from quoting.core import ...`) which work with both `python -m quoting.cli` and `streamlit run run_ui.py`.
+- Extraction uses an LLM provider configured via `.env`.
+- Matching and pricing are deterministic and do not use an LLM.
+- Generated outputs are written to `OUTPUT_DIR`.
+- Local secrets belong in `.env`, not in version control.
