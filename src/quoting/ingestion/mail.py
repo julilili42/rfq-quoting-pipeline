@@ -1,4 +1,4 @@
-"""Parse .eml files into body + attachment paths."""
+"""Parse .eml and .msg files into body + attachment paths."""
 from __future__ import annotations
 
 import tempfile
@@ -17,7 +17,17 @@ class MailData:
     attachments: list[Path]
 
 
-def parse_mail(eml_path: Path, temp_dir: Path | None = None) -> MailData:
+def parse_mail(mail_path: Path, temp_dir: Path | None = None) -> MailData:
+    """Parse .eml or .msg -> body + attachments written to temp_dir."""
+    suffix = mail_path.suffix.lower()
+
+    if suffix == ".msg":
+        return _parse_msg(mail_path, temp_dir)
+    else:
+        return _parse_eml(mail_path, temp_dir)
+
+
+def _parse_eml(eml_path: Path, temp_dir: Path | None = None) -> MailData:
     """Parse .eml -> body + attachments written to temp_dir."""
     target_dir = temp_dir or Path(tempfile.mkdtemp(prefix="eml_att_"))
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -58,6 +68,45 @@ def parse_mail(eml_path: Path, temp_dir: Path | None = None) -> MailData:
         body=body,
         attachments=attachments,
     )
+
+
+def _parse_msg(msg_path: Path, temp_dir: Path | None = None) -> MailData:
+    """Parse Outlook .msg -> body + attachments written to temp_dir.
+
+    Requires: pip install extract-msg
+    """
+    try:
+        import extract_msg
+    except ImportError as e:
+        raise ImportError(
+            "Package 'extract-msg' is required for .msg support. "
+            "Install it with: pip install extract-msg"
+        ) from e
+
+    target_dir = temp_dir or Path(tempfile.mkdtemp(prefix="msg_att_"))
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    with extract_msg.openMsg(msg_path) as msg:
+        # Body: prefer plain text, fall back to stripped HTML
+        body = msg.body or _html_to_text(msg.htmlBody or "")
+
+        attachments: list[Path] = []
+        for att in msg.attachments:
+            if not att.data:
+                continue
+            # longFilename falls back to shortFilename if not set
+            filename = att.longFilename or att.shortFilename or "attachment"
+            safe_name = Path(filename).name
+            target = target_dir / safe_name
+            target.write_bytes(att.data)
+            attachments.append(target)
+
+        return MailData(
+            subject=msg.subject or "",
+            sender=msg.sender or "",
+            body=body,
+            attachments=attachments,
+        )
 
 
 class _TextStripper(HTMLParser):

@@ -13,7 +13,7 @@ class Position(BaseModel):
 
     pos_nr: int
     artikelnummer: str
-    bezeichnung: str
+    bezeichnung: str = ""
     menge: float
     einheit: str
     liefertermin: str | None = None
@@ -29,15 +29,20 @@ class Position(BaseModel):
     @field_validator("artikelnummer", mode="before")
     @classmethod
     def _normalize_artikelnummer(cls, v: str | None) -> str:
-        # Collapse internal whitespace; preserve hyphens/dots
         if v is None:
             return ""
         return " ".join(str(v).split())
 
+    @field_validator("bezeichnung", mode="before")
+    @classmethod
+    def _normalize_bezeichnung(cls, v: str | None) -> str:
+        if v is None:
+            return ""
+        return str(v).strip()
+
     @field_validator("menge", mode="before")
     @classmethod
     def _coerce_menge(cls, v) -> float:
-        # Accept "100" and German decimal "100,5"
         if isinstance(v, str):
             v = v.replace(",", ".").strip()
         return float(v)

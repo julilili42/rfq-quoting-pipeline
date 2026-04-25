@@ -35,6 +35,8 @@ from quoting.ingestion import detect_file_type, parse_mail
 from quoting.matching import load_stammdaten, match_positions
 from quoting.output import build_draft_pdf
 from quoting.pricing import build_quotation
+from quoting.ingestion import detect_file_type, parse_mail
+
 
 
 st.set_page_config(
@@ -66,6 +68,9 @@ def _extract_cached(content_hash: str, file_path: str, mail_body: str) -> dict:
 
     if typ == "eml":
         mail = parse_mail(p)
+        anfrage = extract_anfrage(mail.attachments, mail.body, _settings())
+    elif typ == "msg":                                         
+        mail = parse_mail(p)                                   
         anfrage = extract_anfrage(mail.attachments, mail.body, _settings())
     else:
         anfrage = extract_anfrage([p], mail_body, _settings())
@@ -135,8 +140,8 @@ st.sidebar.title("🔧 Eingabe")
 
 uploaded = st.sidebar.file_uploader(
     "Preisanfrage hochladen",
-    type=["pdf", "eml", "xlsx", "xls"],
-    help="PDF, Mail (.eml), or Excel",
+    type=["pdf", "msg","eml", "xlsx", "xls"],
+    help="PDF, Mail (.eml, .msg), or Excel",
 )
 
 fuzzy_threshold = st.sidebar.slider(
