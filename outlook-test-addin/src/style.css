@@ -111,19 +111,21 @@ button, input, textarea { font-family: inherit; }
   flex-shrink: 0;
 }
 
-/* ---------- Step indicator ---------- */
 
+/* ---------- Step indicator ---------- */
 .steps {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
 }
 
 .step {
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 10px;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 6px;
   background: var(--ek-surface);
   border: 1px solid var(--ek-border);
   border-radius: var(--ek-radius-md);
@@ -141,33 +143,65 @@ button, input, textarea { font-family: inherit; }
 }
 
 .step-num {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   background: var(--ek-surface-2);
   color: var(--ek-text-muted);
   flex-shrink: 0;
 }
 
-.step.active .step-num { background: var(--ek-accent); color: white; }
-.step.done   .step-num { background: var(--ek-success); color: white; }
+.step.active .step-num {
+  background: var(--ek-accent);
+  color: white;
+}
+
+.step.done .step-num {
+  background: var(--ek-success);
+  color: white;
+}
 
 .step-label {
-  font-size: 12px;
+  min-width: 0;
+  font-size: 11px;
   font-weight: 600;
   color: var(--ek-text-secondary);
-  letter-spacing: -0.005em;
+  letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.step.active .step-label { color: var(--ek-accent-hover); }
-.step.done   .step-label { color: var(--ek-success); }
+.step.active .step-label {
+  color: var(--ek-accent-hover);
+}
+
+.step.done .step-label {
+  color: var(--ek-success);
+}
+
+/* Sehr schmale Outlook-Panes */
+@media (max-width: 320px) {
+  .step {
+    padding: 6px 4px;
+    gap: 3px;
+  }
+
+  .step-label {
+    font-size: 10px;
+  }
+
+  .step-num {
+    width: 16px;
+    height: 16px;
+    font-size: 9px;
+  }
+}
+
 
 /* ---------- Card ---------- */
 

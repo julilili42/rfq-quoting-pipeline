@@ -11,7 +11,6 @@ import { createRoot } from "react-dom/client";
 
 import { createReview } from "./api/reviewApi";
 import { AdvancedDetails } from "./components/AdvancedDetails";
-import { Header } from "./components/Header";
 import { StatusCard } from "./components/StatusCard";
 import { Steps } from "./components/Steps";
 import { WorkflowCard } from "./components/WorkflowCard";
@@ -156,7 +155,6 @@ function App() {
 
   return (
     <div className="panel">
-      <Header />
       <Steps workflowState={workflow?.state ?? "new"} />
 
       <WorkflowCard
