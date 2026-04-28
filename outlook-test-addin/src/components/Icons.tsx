@@ -91,3 +91,19 @@ export const ChevronDown = (p: IconProps) => (
     <path d="M3.5 6.5L8 11l4.5-4.5" />
   </Icon>
 );
+
+
+export const PaperclipIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5.2 8.5 8.9 4.8a2.1 2.1 0 1 1 3 3L7.4 12.3a3.2 3.2 0 0 1-4.5-4.5l4.8-4.8" />
+    <path d="M6.4 9.7 10.5 5.6" />
+  </Icon>
+);
+
+export const InboxIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M2.5 5.5 4 2.5h8l1.5 3" />
+    <path d="M2.5 5.5v6.7a1.3 1.3 0 0 0 1.3 1.3h8.4a1.3 1.3 0 0 0 1.3-1.3V5.5" />
+    <path d="M5 8.5h1.6a1.4 1.4 0 0 0 2.8 0H11" />
+  </Icon>
+);

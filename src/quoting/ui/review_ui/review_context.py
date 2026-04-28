@@ -17,6 +17,7 @@ import streamlit as st
 # `src/quoting/ui/review_ui/review_context.py` -> 4 levels up = project root
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 REVIEWS_ROOT = PROJECT_ROOT / "data" / "reviews"
+
 SUPPORTED_INPUT_SUFFIXES = {".pdf", ".msg", ".eml", ".xlsx", ".xls"}
 
 
@@ -29,9 +30,23 @@ class ReviewInput:
     review_id: str | None = None
     review_dir: Path | None = None
 
+    @property
+    def work_dir(self) -> Path:
+        """Where pipeline step artifacts live for this review.
+
+        - Review mode: the review folder under ``data/reviews/``.
+        - Upload mode: the upload temp folder (same dir the file lives in).
+
+        Either way, the pipeline can write ``01_extracted.json``,
+        ``02_matches.json``, ``03_quotation.json`` and the draft PDF here
+        and they end up in a sensible place.
+        """
+        if self.review_dir is not None:
+            return self.review_dir
+        return self.input_path.parent
+
 
 # ------------------------------------------------------------------ public
-
 
 def get_review_id_from_query() -> str | None:
     for key in ("review_id", "id"):
@@ -55,11 +70,9 @@ def load_review_input(raw_review_id: str) -> ReviewInput:
     review_dir = REVIEWS_ROOT / review_id
     if not review_dir.exists() or not review_dir.is_dir():
         raise FileNotFoundError(f"Review nicht gefunden: {review_dir}")
-
     meta = _load_review_meta(review_dir)
     input_path = _find_review_input_file(review_dir, meta)
     payload = input_path.read_bytes()
-
     return ReviewInput(
         input_path=input_path,
         content_hash=review_id,
@@ -83,7 +96,6 @@ def store_review_context(review_input: ReviewInput) -> None:
 
 # ------------------------------------------------------------------ internal
 
-
 def _load_review_meta(review_dir: Path) -> dict:
     meta_path = review_dir / "mail.json"
     if not meta_path.exists():
@@ -97,7 +109,6 @@ def _load_review_meta(review_dir: Path) -> dict:
 def _find_review_input_file(review_dir: Path, meta: dict) -> Path:
     candidates = list(_candidate_paths_from_meta(review_dir, meta))
     candidates.extend(_candidate_paths_from_folder(review_dir))
-
     seen: set[Path] = set()
     for candidate in candidates:
         candidate = candidate.resolve()
@@ -106,7 +117,6 @@ def _find_review_input_file(review_dir: Path, meta: dict) -> Path:
         seen.add(candidate)
         if _is_valid_input_file(candidate):
             return candidate
-
     raise FileNotFoundError(
         f"Keine passende Eingabedatei in {review_dir} gefunden. "
         "Erwartet wird z. B. eine PDF-, MSG-, EML-, XLSX- oder XLS-Datei."
@@ -122,7 +132,6 @@ def _candidate_paths_from_meta(review_dir: Path, meta: dict):
         value = meta.get(key)
         if isinstance(value, str):
             yield from _resolve_review_relative_path(review_dir, value)
-
     attachments = meta.get("attachments", [])
     if isinstance(attachments, list):
         for attachment in attachments:

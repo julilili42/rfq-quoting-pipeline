@@ -1,12 +1,7 @@
 /**
- * Step indicator — 3 stages aligned with the Streamlit review UI.
- *
- *   1. Anfrage analysieren   — mail loaded, ready to extract
- *   2. Angebot erstellen     — review created, refining quote
- *   3. Angebot versenden     — draft mail with PDF being prepared
- *
- * Stage is derived purely from the workflow state — no internal state.
+ * Step indicator — 3 business stages aligned with the Streamlit review UI.
  */
+
 import type { MailWorkflowState } from "../mailWorkflowStorage";
 
 type StepsProps = {
@@ -20,13 +15,15 @@ const STEPS = [
 ] as const;
 
 function activeIndex(state: MailWorkflowState): number {
-  // 0-based: step 1 = index 0
   switch (state) {
     case "new":
       return 0;
+
+    case "review_running":
     case "review_created":
     case "review_opened":
       return 1;
+
     case "quote_sent":
       return 2;
   }
@@ -34,27 +31,29 @@ function activeIndex(state: MailWorkflowState): number {
 
 export function Steps({ workflowState }: StepsProps) {
   const current = activeIndex(workflowState);
-  // quote_sent means step 3 is *done*, not just active. Show all done in that case.
   const allDone = workflowState === "quote_sent";
 
   return (
     <div className="steps" role="list" aria-label="Workflow-Fortschritt">
-      {STEPS.map((s, i) => {
+      {STEPS.map((step, index) => {
         const status =
-          allDone || i < current
+          allDone || index < current
             ? "done"
-            : i === current
+            : index === current
               ? "active"
               : "idle";
+
         return (
           <div
-            key={s.num}
+            key={step.num}
             role="listitem"
             className={`step ${status}`}
             aria-current={status === "active" ? "step" : undefined}
           >
-            <div className="step-num">{status === "done" ? "✓" : s.num}</div>
-            <div className="step-label">{s.label}</div>
+            <div className="step-num">
+              {status === "done" ? "✓" : step.num}
+            </div>
+            <div className="step-label">{step.label}</div>
           </div>
         );
       })}

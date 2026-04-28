@@ -11,13 +11,19 @@ from quoting.ui.review_ui.resources import extract_cached, mail_body_cached
 from quoting.ui.review_ui.state import reset_agent_state, reset_editor_state
 
 
-def load_anfrage_once(content_hash: str, input_path: Path) -> Anfrage:
+def load_anfrage_once(
+    content_hash: str,
+    input_path: Path,
+    work_dir: Path,
+) -> Anfrage:
     if st.session_state.get("anfrage_hash") != content_hash:
         reset_editor_state()
         reset_agent_state()
         anfrage_dict = _load_saved_anfrage_dict()
         if anfrage_dict is None:
-            anfrage_dict = extract_cached(content_hash, str(input_path))
+            anfrage_dict = extract_cached(
+                content_hash, str(input_path), str(work_dir),
+            )
             st.session_state["loaded_extraction_source"] = "neu extrahiert"
         st.session_state["anfrage"] = Anfrage.model_validate(anfrage_dict)
         st.session_state["anfrage_hash"] = content_hash
@@ -51,16 +57,15 @@ def _load_saved_anfrage_dict() -> dict | None:
     if not review_dir_raw:
         return None
     review_dir = Path(review_dir_raw)
-
     candidate_paths = [
         review_dir / "anfrage_reviewed.json",
         review_dir / "anfrage.json",
         review_dir / "extracted_anfrage.json",
         review_dir / "extraction.json",
+        review_dir / "01_extracted.json",
         review_dir / "pipeline" / "01_extracted.json",
     ]
     candidate_paths.extend(sorted(review_dir.rglob("01_extracted.json")))
-
     seen: set[Path] = set()
     for path in candidate_paths:
         path = path.resolve()

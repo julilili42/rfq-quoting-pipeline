@@ -40,7 +40,6 @@ def _configure_page() -> None:
 
 # --------------------------------------------------------------------- run
 
-
 def run() -> None:
     _ensure_project_path()
     _configure_page()
@@ -51,13 +50,11 @@ def run() -> None:
         apply_style,
         render_header,
         render_sidebar_dashboard,
-        render_sidebar_review,
     )
     from quoting.ui.review_ui.review_context import (
         REVIEWS_ROOT,
         ReviewInput,
         get_review_id_from_query,
-        load_review_input,
         store_review_context,
     )
     from quoting.ui.review_ui.upload import handle_upload
@@ -70,7 +67,6 @@ def run() -> None:
     if not review_id:
         # ----- Dashboard mode --------------------------------------------------
         uploaded = render_sidebar_dashboard()
-
         if uploaded is not None:
             input_path, content_hash, payload = handle_upload(uploaded)
             review_input = ReviewInput(
@@ -93,10 +89,9 @@ def run() -> None:
 
 # ----------------------------------------------------------- review detail
 
-
 def _render_review_detail(review_id: str) -> None:
     """Render a single review's editing flow (steps 1 → 2 → 3)."""
-    from quoting.matching import match_positions
+    from quoting.pipeline import MatchingStep, PythonMatcher, StepContext
     from quoting.ui.review_ui.extraction import (
         detect_and_store_agent_language,
         load_anfrage_once,
@@ -108,7 +103,7 @@ def _render_review_detail(review_id: str) -> None:
         reset_step,
     )
     from quoting.ui.review_ui.quotation_flow import hydrate_existing_review_state
-    from quoting.ui.review_ui.resources import settings, stammdaten
+    from quoting.ui.review_ui.resources import get_pipeline, settings
     from quoting.ui.review_ui.review_context import (
         ReviewInput,
         load_review_input,
@@ -144,7 +139,23 @@ def _render_review_detail(review_id: str) -> None:
         return
 
     store_review_context(review_input)
-    fuzzy_threshold = render_sidebar_review(review_id=review_input.review_id or review_id)
+    fuzzy_threshold = render_sidebar_review(
+        review_id=review_input.review_id or review_id
+    )
+
+    from quoting.ui.review_ui.pipeline_progress import (
+    is_review_failed,
+    is_review_processing,
+    read_review_progress,
+    render_pipeline_progress,
+)
+
+    progress = read_review_progress(review_input.work_dir)
+
+    if is_review_processing(progress) or is_review_failed(progress):
+        render_review_title(review_input.review_id, review_input.input_path)
+        render_pipeline_progress(progress)
+        return
 
     # ----- hero + steps ----------------------------------------------------
     render_review_title(review_input.review_id, review_input.input_path)
@@ -154,7 +165,9 @@ def _render_review_detail(review_id: str) -> None:
     # ----- extract once ----------------------------------------------------
     try:
         anfrage = load_anfrage_once(
-            review_input.content_hash, review_input.input_path,
+            review_input.content_hash,
+            review_input.input_path,
+            review_input.work_dir,
         )
     except Exception as e:
         st.error(f"❌ Fehler bei der Extraktion: {e}")
@@ -164,25 +177,33 @@ def _render_review_detail(review_id: str) -> None:
         review_input.content_hash, review_input.input_path, anfrage,
     )
 
-    # Compute matches silently — both step 2 and step 3 need them, but
-    # only step 2 displays the matching panel.
-    matches = match_positions(
-        anfrage.positionen,
-        stammdaten(),
-        fuzzy_threshold=fuzzy_threshold,
-        semantic_threshold=settings().semantic_threshold,
+    # ----- match once via the pipeline -------------------------------------
+    # The slider lets the user override the fuzzy threshold per session, so
+    # we build a one-off MatchingStep around it instead of using the
+    # pipeline's default matcher. Stammdaten still come from the cached
+    # pipeline instance.
+    pipeline = get_pipeline()
+    matching_step = MatchingStep(
+        matcher=PythonMatcher(
+            fuzzy_threshold=fuzzy_threshold,
+            semantic_threshold=settings().semantic_threshold,
+        ),
+        stammdaten=pipeline.stammdaten,
     )
+    review_input.work_dir.mkdir(parents=True, exist_ok=True)
+    ctx = StepContext(work_dir=review_input.work_dir)
+    matches = matching_step.run(anfrage, ctx)
+
     hydrate_existing_review_state(
         content_hash=review_input.content_hash, matches=matches,
     )
 
     # ----- single active step ---------------------------------------------
     active = get_step()
-
     if active == 1:
         _render_step_one(review_input, anfrage)
     elif active == 2:
-        _render_step_two(review_input, anfrage, matches, fuzzy_threshold)
+        _render_step_two(review_input, anfrage, matches)
     else:
         _render_step_three(review_input, anfrage, matches)
 
@@ -205,7 +226,7 @@ def _render_step_one(review_input, anfrage) -> None:
     render_step_nav(can_advance=True)
 
 
-def _render_step_two(review_input, anfrage, matches, fuzzy_threshold) -> None:
+def _render_step_two(review_input, anfrage, matches) -> None:
     """Step 2 — Angebot erstellen."""
     from quoting.ui.review_ui.matching_view import render_matching
     from quoting.ui.review_ui.nav import render_step_nav
@@ -219,10 +240,8 @@ def _render_step_two(review_input, anfrage, matches, fuzzy_threshold) -> None:
         matches=matches,
     )
     st.markdown("---")
-    # Re-render the matching panel for the user to see the breakdown.
-    # It re-computes (cheap, deterministic) so the displayed numbers
-    # match exactly what's used downstream.
-    render_matching(anfrage, fuzzy_threshold)
+    render_matching(anfrage, matches)
+
     st.markdown("---")
     render_generate_button(
         anfrage=anfrage,

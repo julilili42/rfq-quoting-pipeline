@@ -1,15 +1,14 @@
 """Stammdaten matching panel.
 
-Renders the master-data match for each position with metrics and a
-detailed table. Read-only — corrections happen in the editor.
+Renders a metrics-and-table view of master-data matches that were already
+computed by the pipeline. Read-only — corrections happen in the editor.
 """
 from __future__ import annotations
 
 import streamlit as st
 
 from quoting.core import Anfrage
-from quoting.matching import match_positions
-from quoting.ui.review_ui.resources import settings, stammdaten
+from quoting.matching import MatchResult
 
 
 _STATUS_LABELS = {
@@ -20,20 +19,13 @@ _STATUS_LABELS = {
 }
 
 
-def render_matching(anfrage: Anfrage, fuzzy_threshold: int):
-    """Match each position and render a metrics + table view."""
+def render_matching(anfrage: Anfrage, matches: list[MatchResult]) -> None:
+    """Render a metrics + table view of pre-computed matches."""
     st.markdown(
         '<div class="ek-section-label" style="margin-top: 8px;">'
         "Stammdaten-Abgleich"
         "</div>",
         unsafe_allow_html=True,
-    )
-
-    matches = match_positions(
-        anfrage.positionen,
-        stammdaten(),
-        fuzzy_threshold=fuzzy_threshold,
-        semantic_threshold=settings().semantic_threshold,
     )
 
     exact = sum(1 for m in matches if m.status == "exact")
@@ -60,5 +52,3 @@ def render_matching(anfrage: Anfrage, fuzzy_threshold: int):
 
     if rows:
         st.dataframe(rows, use_container_width=True, hide_index=True)
-
-    return matches

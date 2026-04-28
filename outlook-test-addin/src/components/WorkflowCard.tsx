@@ -1,17 +1,12 @@
 /**
- * WorkflowCard — the only card in the plugin body.
- *
- * It renders one of four faces depending on the current per-mail
- * workflow state. The user always sees:
- *   - what we know about the mail (one line, clamped)
- *   - where we are in the workflow (status pill)
- *   - the next sensible action (one primary button, optional secondary)
- *
- * Everything else lives behind the "Erweitert" disclosure at the
- * bottom of the panel.
+ * WorkflowCard — the main action card in the plugin body.
  */
+
 import type { MailSnapshot } from "../types";
-import type { MailWorkflow, MailWorkflowState } from "../mailWorkflowStorage";
+import type {
+  MailWorkflow,
+  MailWorkflowState,
+} from "../mailWorkflowStorage";
 import {
   CheckIcon,
   ClockIcon,
@@ -36,8 +31,11 @@ type WorkflowCardProps = {
 
 function formatDate(iso?: string): string {
   if (!iso) return "—";
+
   const d = new Date(iso);
+
   if (Number.isNaN(d.getTime())) return iso;
+
   return d.toLocaleString("de-DE", {
     dateStyle: "short",
     timeStyle: "short",
@@ -49,16 +47,31 @@ function deriveState(workflow: MailWorkflow | null): MailWorkflowState {
 }
 
 function StatusPill({ state }: { state: MailWorkflowState }) {
-  const meta: Record<
-    MailWorkflowState,
-    { label: string; cls: string }
-  > = {
-    new: { label: "Neue Anfrage", cls: "pill pill-neutral" },
-    review_created: { label: "Review bereit", cls: "pill pill-info" },
-    review_opened: { label: "In Bearbeitung", cls: "pill pill-info" },
-    quote_sent: { label: "Angebot versendet", cls: "pill pill-success" },
+  const meta: Record<MailWorkflowState, { label: string; cls: string }> = {
+    new: {
+      label: "Neue Anfrage",
+      cls: "pill pill-neutral",
+    },
+    review_running: {
+      label: "Pipeline läuft",
+      cls: "pill pill-info",
+    },
+    review_created: {
+      label: "Review bereit",
+      cls: "pill pill-info",
+    },
+    review_opened: {
+      label: "In Bearbeitung",
+      cls: "pill pill-info",
+    },
+    quote_sent: {
+      label: "Angebot versendet",
+      cls: "pill pill-success",
+    },
   };
+
   const { label, cls } = meta[state];
+
   return (
     <span className={cls}>
       <span className="pill-dot" />
@@ -79,11 +92,12 @@ export function WorkflowCard({
   onReloadMail,
 }: WorkflowCardProps) {
   const state = deriveState(workflow);
+
   const subject =
     workflow?.subject || snapshot?.subject || "Keine Mail geladen";
+
   const sender = workflow?.sender || snapshot?.from || "";
 
-  // ─── empty / waiting ────────────────────────────────────────────────
   if (!isOutlook && !snapshot) {
     return (
       <section className="card">
@@ -99,11 +113,12 @@ export function WorkflowCard({
     );
   }
 
-  // Highlight color shifts depending on stage
   const cardCls =
     state === "quote_sent"
       ? "card card-success"
-      : state === "review_created" || state === "review_opened"
+      : state === "review_running" ||
+          state === "review_created" ||
+          state === "review_opened"
         ? "card card-info"
         : "card";
 
@@ -112,6 +127,7 @@ export function WorkflowCard({
       <div className="card-stack">
         <div className="row-between">
           <StatusPill state={state} />
+
           {workflow?.review?.review_id && (
             <code className="review-id" title="Review-ID">
               {workflow.review.review_id}
@@ -120,20 +136,23 @@ export function WorkflowCard({
         </div>
 
         <div className="mail-subject">{subject}</div>
+
         {sender && <div className="mail-sender">{sender}</div>}
 
-        {(state === "review_created" ||
+        {(state === "review_running" ||
+          state === "review_created" ||
           state === "review_opened" ||
           state === "quote_sent") && (
           <div className="meta-grid">
             {workflow?.reviewCreatedAt && (
               <div className="meta-cell">
-                <span className="meta-label">Review erstellt</span>
+                <span className="meta-label">Review gestartet</span>
                 <span className="meta-value">
                   {formatDate(workflow.reviewCreatedAt)}
                 </span>
               </div>
             )}
+
             {workflow?.quoteSentAt && (
               <div className="meta-cell">
                 <span className="meta-label">Versendet</span>
@@ -146,7 +165,6 @@ export function WorkflowCard({
         )}
 
         <div className="actions">
-          {/* Primary action depends on state */}
           {state === "new" && (
             <>
               <button
@@ -157,6 +175,7 @@ export function WorkflowCard({
                 <SparkIcon className="btn-icon" />
                 Review erstellen
               </button>
+
               <button
                 className="btn btn-ghost"
                 disabled={!isOutlook || loading}
@@ -164,6 +183,28 @@ export function WorkflowCard({
               >
                 <RefreshIcon className="btn-icon" />
                 Mail neu laden
+              </button>
+            </>
+          )}
+
+          {state === "review_running" && (
+            <>
+              <button
+                className="btn btn-secondary"
+                disabled={loading}
+                onClick={onOpenReview}
+              >
+                <ExternalIcon className="btn-icon" />
+                Statusseite öffnen
+              </button>
+
+              <button
+                className="btn btn-ghost"
+                disabled={loading}
+                onClick={onResetWorkflow}
+              >
+                <TrashIcon className="btn-icon" />
+                Aus Ansicht entfernen
               </button>
             </>
           )}
@@ -178,6 +219,7 @@ export function WorkflowCard({
                 <ExternalIcon className="btn-icon" />
                 Review-UI öffnen
               </button>
+
               <button
                 className="btn btn-ghost"
                 disabled={loading}
@@ -199,6 +241,7 @@ export function WorkflowCard({
                 <SendIcon className="btn-icon" />
                 Angebotsmail erstellen
               </button>
+
               <button
                 className="btn btn-secondary"
                 disabled={loading}
@@ -220,6 +263,7 @@ export function WorkflowCard({
                 <SendIcon className="btn-icon" />
                 Erneut versenden
               </button>
+
               <button
                 className="btn btn-ghost"
                 disabled={loading}
@@ -228,6 +272,7 @@ export function WorkflowCard({
                 <ExternalIcon className="btn-icon" />
                 Review öffnen
               </button>
+
               <button
                 className="btn btn-danger-ghost"
                 disabled={loading}
@@ -240,7 +285,6 @@ export function WorkflowCard({
           )}
         </div>
 
-        {/* CheckIcon appears in success card */}
         {state === "quote_sent" && (
           <div className="success-banner">
             <CheckIcon className="btn-icon" />

@@ -657,3 +657,136 @@ pre.debug-pre {
 }
 
 .footer-link:hover { text-decoration: underline; }
+
+
+
+/* ---------- Pipeline progress ---------- */
+
+.card-error {
+  border-color: var(--ek-danger-border);
+  background:
+    linear-gradient(180deg, var(--ek-danger-soft) 0%, var(--ek-surface) 70%);
+  box-shadow: var(--ek-shadow-2);
+}
+
+.pill-danger {
+  background: var(--ek-danger-soft);
+  color: var(--ek-danger);
+  border-color: var(--ek-danger-border);
+}
+
+.pipeline-current-detail {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--ek-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.pipeline-progress-bar {
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--ek-surface-2);
+  border: 1px solid var(--ek-border);
+  overflow: hidden;
+}
+
+.pipeline-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: currentColor;
+  color: var(--ek-accent);
+  transition: width 0.2s ease;
+}
+
+.card-error .pipeline-progress-fill {
+  color: var(--ek-danger);
+}
+
+.pipeline-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pipeline-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: var(--ek-radius-md);
+  border: 1px solid var(--ek-border);
+  background: var(--ek-surface-2);
+  color: var(--ek-text-secondary);
+}
+
+.pipeline-step-running {
+  background: var(--ek-warning-soft);
+  border-color: var(--ek-warning-border);
+  color: var(--ek-warning);
+}
+
+.pipeline-step-completed {
+  background: var(--ek-success-soft);
+  border-color: var(--ek-success-border);
+  color: var(--ek-success);
+}
+
+.pipeline-step-failed {
+  background: var(--ek-danger-soft);
+  border-color: var(--ek-danger-border);
+  color: var(--ek-danger);
+}
+
+.pipeline-step-skipped {
+  background: var(--ek-surface-2);
+  border-color: var(--ek-border);
+  color: var(--ek-text-muted);
+}
+
+.pipeline-step-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.pipeline-step-running .pipeline-step-icon {
+  animation: ek-spin 1s linear infinite;
+}
+
+.pipeline-step-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.pipeline-step-name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pipeline-step-detail {
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: var(--ek-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pipeline-step-status {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: currentColor;
+  flex-shrink: 0;
+}
+
+.pipeline-error {
+  padding: 8px 10px;
+  border-radius: var(--ek-radius-md);
+  border: 1px solid var(--ek-danger-border);
+  background: var(--ek-danger-soft);
+  color: var(--ek-danger);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

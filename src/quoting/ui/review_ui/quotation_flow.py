@@ -1,3 +1,10 @@
+"""Per-review quotation flow — pricing, rendering, persistence.
+
+Sits on top of the pipeline's per-step API. The only thing that's *not*
+a pipeline step is the manual-override layer between pricing and
+rendering, because it's a UI-specific concept (the chat agent's
+human-in-the-loop edits).
+"""
 from __future__ import annotations
 
 import json
@@ -10,18 +17,22 @@ from typing import Any
 import streamlit as st
 
 from quoting.core import Anfrage
-from quoting.output import build_draft_pdf
-from quoting.pricing import Quotation, QuotationItem, build_quotation
+from quoting.pipeline import StepContext
+from quoting.pricing import Quotation, QuotationItem
 from quoting.ui.review_agent import apply_manual_overrides, build_agent_summary
-from quoting.ui.review_ui.resources import settings
+from quoting.ui.review_ui.resources import get_pipeline, make_streamlit_progress
 from quoting.ui.review_ui.state import safe_file_stub
 
 
+# ---------- state hydration -----------------------------------------------
+
 def hydrate_existing_review_state(content_hash: str, matches) -> None:
+    """Reload a previously-saved quotation/PDF from disk into session state."""
     review_dir_raw = st.session_state.get("review_dir")
     review_id = st.session_state.get("review_id")
     if not review_dir_raw:
         return
+
     if (
         st.session_state.get("quotation_hash") == content_hash
         and st.session_state.get("quotation")
@@ -29,7 +40,6 @@ def hydrate_existing_review_state(content_hash: str, matches) -> None:
         return
 
     review_dir = Path(review_dir_raw)
-
     overrides = _load_json(review_dir / "manual_overrides.json")
     if isinstance(overrides, list):
         st.session_state["manual_discount_overrides"] = overrides
@@ -43,6 +53,7 @@ def hydrate_existing_review_state(content_hash: str, matches) -> None:
         st.session_state["pdf_file_name"] = (
             f"Angebot_Draft_{review_id or content_hash}.pdf"
         )
+
         pdf_path = _find_current_pdf(review_dir, review_id)
         if pdf_path and pdf_path.exists():
             st.session_state["generated_pdf_path"] = str(pdf_path)
@@ -61,6 +72,8 @@ def hydrate_existing_review_state(content_hash: str, matches) -> None:
             ]
 
 
+# ---------- core flow ------------------------------------------------------
+
 def pdf_output_path(content_hash: str) -> Path:
     review_dir = st.session_state.get("review_dir")
     if review_dir:
@@ -78,26 +91,54 @@ def rebuild_quotation_pdf(
     content_hash: str,
     agent_lang: str,
 ):
-    base_quotation = build_quotation(
-        anfrage, matches, settings().preise_path,
-    )
-    overrides = st.session_state.get("manual_discount_overrides", [])
-    quotation, applied_items = apply_manual_overrides(
-        base_quotation, anfrage, overrides, lang=agent_lang,
-    )
+    """Run pricing + render through the pipeline, applying manual overrides.
+
+    Live progress is reported into a ``st.status`` block so the user sees
+    each step happen instead of staring at a generic spinner.
+    """
+    pipeline = get_pipeline()
     pdf_out = pdf_output_path(content_hash)
-    build_draft_pdf(anfrage, quotation, pdf_out)
+    work_dir = pdf_out.parent
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    overrides = st.session_state.get("manual_discount_overrides", [])
+
+    with st.status(
+        "Angebot wird neu berechnet…", expanded=False,
+    ) as status:
+        progress = make_streamlit_progress(status)
+        ctx = StepContext(work_dir=work_dir, progress=progress)
+
+        base_quotation = pipeline.price(anfrage, matches, ctx)
+
+        if overrides:
+            quotation, applied_items = apply_manual_overrides(
+                base_quotation, anfrage, overrides, lang=agent_lang,
+            )
+        else:
+            quotation, applied_items = base_quotation, 0
+
+        pipeline.render(anfrage, quotation, pdf_out, ctx)
+
+        status.update(
+            label=(
+                f"✓ Angebot fertig — "
+                f"{quotation.gesamtsumme:.2f} {quotation.waehrung}"
+            ),
+            state="complete",
+        )
 
     st.session_state["quotation"] = quotation
     st.session_state["quotation_hash"] = content_hash
     st.session_state["generated_pdf_path"] = str(pdf_out)
-    st.session_state["pdf_bytes"] = pdf_out.read_bytes() if pdf_out.exists() else b""
+    st.session_state["pdf_bytes"] = (
+        pdf_out.read_bytes() if pdf_out.exists() else b""
+    )
 
     _persist_review_outputs(
         anfrage=anfrage, matches=matches, quotation=quotation,
         overrides=overrides, pdf_out=pdf_out,
     )
-
     return quotation, applied_items, pdf_out
 
 
@@ -120,38 +161,36 @@ def render_generate_button(
         return
 
     pdf_out = None
-    with st.spinner(
-        "PDF wird aktualisiert..." if is_review_mode else "Erstelle PDF..."
-    ):
-        try:
-            agent_lang = st.session_state.get("agent_lang", "de")
-            quotation, applied_items, pdf_out = rebuild_quotation_pdf(
-                anfrage=anfrage, matches=matches,
-                content_hash=content_hash, agent_lang=agent_lang,
+    try:
+        agent_lang = st.session_state.get("agent_lang", "de")
+        quotation, applied_items, pdf_out = rebuild_quotation_pdf(
+            anfrage=anfrage, matches=matches,
+            content_hash=content_hash, agent_lang=agent_lang,
+        )
+        if pdf_out.exists():
+            st.session_state["pdf_file_name"] = (
+                f"ElringKlinger_Angebot_{safe_file_stub(uploaded_name)}_"
+                f"{content_hash}.pdf"
             )
-            if pdf_out.exists():
-                st.session_state["pdf_file_name"] = (
-                    f"ElringKlinger_Angebot_{safe_file_stub(uploaded_name)}_"
-                    f"{content_hash}.pdf"
-                )
-                st.session_state["agent_messages"] = [
-                    {
-                        "role": "assistant",
-                        "content": build_agent_summary(
-                            quotation, matches,
-                            applied_items=applied_items, lang=agent_lang,
-                        ),
-                    }
-                ]
-        except Exception as e:
-            st.error(f"Fehler bei der Angebotserstellung: {e}")
-            st.stop()
+            st.session_state["agent_messages"] = [
+                {
+                    "role": "assistant",
+                    "content": build_agent_summary(
+                        quotation, matches,
+                        applied_items=applied_items, lang=agent_lang,
+                    ),
+                }
+            ]
+    except Exception as e:
+        st.error(f"Fehler bei der Angebotserstellung: {e}")
+        st.stop()
 
     if pdf_out and pdf_out.exists():
         if is_review_mode:
             st.success("✅ Review aktualisiert. Das neue PDF wurde gespeichert.")
         else:
             st.success("✅ Angebot erfolgreich erstellt!")
+
         st.download_button(
             label="📥 PDF herunterladen",
             data=st.session_state.get("pdf_bytes", b""),
@@ -171,11 +210,11 @@ def render_generate_button(
 
 # ----------------------------------------------------------------- internal
 
-
 def _persist_review_outputs(
     anfrage: Anfrage, matches, quotation,
     overrides: list, pdf_out: Path,
 ) -> None:
+    """Mirror the final review-state to ``data/reviews/{review_id}``."""
     review_dir_raw = st.session_state.get("review_dir")
     review_id = st.session_state.get("review_id")
     if not review_dir_raw:
@@ -217,10 +256,10 @@ def _persist_review_outputs(
 def _load_saved_quotation(review_dir: Path) -> Quotation | None:
     candidates = [
         review_dir / "quotation_reviewed.json",
+        review_dir / "03_quotation.json",
         review_dir / "pipeline" / "03_quotation.json",
     ]
     candidates.extend(sorted(review_dir.rglob("03_quotation.json")))
-
     seen: set[Path] = set()
     for path in candidates:
         path = path.resolve()
