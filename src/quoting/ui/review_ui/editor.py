@@ -1,9 +1,18 @@
 """Streamlit editor for the extracted Anfrage.
 
-Lets the reviewer correct customer details, commercial terms, and
-per-position fields. The data is stored back into
-``st.session_state["anfrage"]`` and returned so callers can keep using
-a fresh reference.
+The editor is split into two human-task views that mirror the new
+review workflow:
+
+- :func:`render_positions_editor` — Step 1 (positions + matching).
+  Shows match status and matched stammdaten article inline with each
+  position so the reviewer can verify "did the AI find the right
+  master-data row?" without leaving the position.
+
+- :func:`render_customer_editor` — Step 2 (customer header + commercial
+  terms + sender company profile).
+
+The legacy :func:`render_editor` is kept as a thin wrapper for backward
+compatibility — it just calls both new editors in sequence.
 
 Field changes are tracked in ``st.session_state["changed_fields"]`` for
 the approval audit log.
@@ -13,11 +22,20 @@ from __future__ import annotations
 import streamlit as st
 
 from quoting.core import Anfrage
+from quoting.matching import MatchResult
+
 
 _CONFIDENCE_META = {
     "high":   {"icon": "🟢", "label": "Hohe Sicherheit",    "tone": "success"},
     "medium": {"icon": "🟡", "label": "Mittlere Sicherheit", "tone": "warning"},
     "low":    {"icon": "🔴", "label": "Geringe Sicherheit",  "tone": "danger"},
+}
+
+_MATCH_META = {
+    "exact":    {"icon": "✅", "label": "Exakt-Treffer"},
+    "fuzzy":    {"icon": "🔁", "label": "Fuzzy-Treffer"},
+    "semantic": {"icon": "🧩", "label": "Semantischer Treffer"},
+    "no_match": {"icon": "❌", "label": "Kein Treffer"},
 }
 
 
@@ -43,15 +61,92 @@ def _input_with_tracking(
         "number": st.number_input,
         "select": st.selectbox,
     }[kind]
-
     out = fn(label, value, key=key, **kwargs) if kind != "number" else fn(
         label, value=value, key=key, **kwargs
     )
-
     if out != prev:
         _track_change(field_path)
     return out
 
+
+# --------------------------------------------------------------------- public
+
+def render_positions_editor(
+    anfrage: Anfrage,
+    matches: list[MatchResult],
+) -> Anfrage:
+    """Step 1: positions + per-position matching info.
+
+    Layout:
+    - Instruction banner
+    - Change indicator
+    - Matching summary metrics (4 cells)
+    - Per-position expanders (auto-expanded for low-confidence /
+      weak-match items so they don't get missed)
+    """
+    st.markdown(
+        '<div class="ek-section-label">Positionen prüfen · '
+        "KI-extrahierte Anfragepositionen</div>",
+        unsafe_allow_html=True,
+    )
+    st.info(
+        "Prüfe, ob alle Positionen aus der Anfrage korrekt erkannt und "
+        "den Stammdaten zugeordnet wurden. Korrigiere bei Bedarf "
+        "Artikelnummer, Menge oder Werkstoff.",
+        icon="📋",
+    )
+    _changes_indicator()
+    _matching_summary(matches)
+    st.markdown("&nbsp;", unsafe_allow_html=True)
+    anfrage.positionen = _position_block(anfrage, matches=matches)
+    st.session_state["anfrage"] = anfrage
+    return anfrage
+
+
+def render_customer_editor(anfrage: Anfrage) -> Anfrage:
+    """Step 2: customer + commercial terms + sender company data."""
+    st.markdown(
+        '<div class="ek-section-label">Kundendaten prüfen · '
+        "Empfänger und Angebotsmetadaten</div>",
+        unsafe_allow_html=True,
+    )
+    st.info(
+        "Prüfe, ob Kunde, Ansprechpartner und Angebotsinformationen "
+        "korrekt übernommen wurden. Diese Daten erscheinen direkt im "
+        "Angebots-PDF.",
+        icon="👤",
+    )
+    _changes_indicator()
+    _customer_validation(anfrage)
+    _customer_block(anfrage)
+    _commercial_block(anfrage)
+    _company_block()
+    st.session_state["anfrage"] = anfrage
+    return anfrage
+
+
+def render_editor(anfrage: Anfrage) -> Anfrage:
+    """Legacy combined editor (back-compat alias).
+
+    Renders customer + positions in one go. New code should call
+    :func:`render_positions_editor` and :func:`render_customer_editor`
+    separately.
+    """
+    st.markdown(
+        '<div class="ek-section-label">KI-extrahierte Daten · '
+        "Bitte prüfen und korrigieren</div>",
+        unsafe_allow_html=True,
+    )
+    _changes_indicator()
+    _customer_block(anfrage)
+    _commercial_block(anfrage)
+    _company_block()
+    anfrage.positionen = _position_block(anfrage)
+    st.session_state["anfrage"] = anfrage
+    return anfrage
+
+
+# --------------------------------------------------------------------- blocks
 
 def _customer_block(anfrage: Anfrage) -> None:
     """Editable customer / header information — open by default."""
@@ -72,6 +167,7 @@ def _customer_block(anfrage: Anfrage) -> None:
                 key="ed_kunde_email",
                 placeholder="kontakt@firma.de",
             )
+
         with c2:
             anfrage.kunde_ansprechpartner = _input_with_tracking(
                 kind="text", label="Ansprechpartner",
@@ -165,14 +261,29 @@ def _company_block() -> None:
         c3.metric("Gültigkeit", f"{profile.validity_days} Tage")
 
 
-def _position_block(anfrage: Anfrage) -> list:
-    """Editable per-position blocks. Returns the edited positions list."""
-    st.markdown(
-        '<div class="ek-section-label" style="margin-top:18px;">'
-        f"📦 Positionen · {len(anfrage.positionen)}"
-        "</div>",
-        unsafe_allow_html=True,
-    )
+def _position_block(
+    anfrage: Anfrage,
+    matches: list[MatchResult] | None = None,
+) -> list:
+    """Editable per-position blocks. Returns the edited positions list.
+
+    When ``matches`` is provided, each position shows a status banner
+    indicating the match quality and the matched stammdaten article.
+    Positions that need attention (low confidence or fuzzy/semantic/
+    no_match) are auto-expanded.
+    """
+    matches_by_pos: dict[int, MatchResult] = {
+        m.pos_nr: m for m in (matches or [])
+    }
+
+    if not matches:
+        # Legacy path keeps the original section label
+        st.markdown(
+            '<div class="ek-section-label" style="margin-top:18px;">'
+            f"📦 Positionen · {len(anfrage.positionen)}"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 
     edited_positions = []
     for i, pos in enumerate(anfrage.positionen):
@@ -180,14 +291,31 @@ def _position_block(anfrage: Anfrage) -> list:
             pos.confidence,
             {"icon": "⚪", "label": "Unbekannt", "tone": ""},
         )
+        match = matches_by_pos.get(pos.pos_nr)
+        match_meta = _MATCH_META.get(match.status) if match else None
+
+        prefix = meta["icon"]
+        if match_meta:
+            prefix = f"{meta['icon']}  {match_meta['icon']}"
+
         label = (
-            f"{meta['icon']}  Pos {pos.pos_nr} · "
+            f"{prefix}  Pos {pos.pos_nr} · "
             f"{pos.artikelnummer or 'Unbekannt'}  ·  "
             f"{int(pos.menge)} {pos.einheit}"
         )
 
-        with st.expander(label, expanded=False):
+        # Auto-expand positions that need a closer look
+        needs_attention = bool(
+            pos.confidence == "low"
+            or (match and match.status in ("fuzzy", "semantic", "no_match"))
+        )
+
+        with st.expander(label, expanded=needs_attention):
+            if match is not None:
+                _render_match_info(match)
+
             st.caption(f"KI-Sicherheit: **{meta['label']}**")
+
             c1, c2 = st.columns(2)
             with c1:
                 pos.artikelnummer = _input_with_tracking(
@@ -208,6 +336,7 @@ def _position_block(anfrage: Anfrage) -> list:
                     field_path=f"positionen[{i}].einheit",
                     key=f"eh_{i}",
                 )
+
             with c2:
                 pos.liefertermin = _input_with_tracking(
                     kind="text", label="Liefertermin",
@@ -273,11 +402,82 @@ def _position_block(anfrage: Anfrage) -> list:
 
             if pos.source_quote:
                 st.caption(
-                    f'**Quelle:** "{pos.source_quote[:120]}'
-                    f'{"…" if len(pos.source_quote) > 120 else ""}"'
+                    f'**Quelle aus der Anfrage:** "{pos.source_quote[:160]}'
+                    f'{"…" if len(pos.source_quote) > 160 else ""}"'
                 )
-        edited_positions.append(pos)
+
+            edited_positions.append(pos)
+
     return edited_positions
+
+
+# ------------------------------------------------------------------ helpers
+
+def _render_match_info(match: MatchResult) -> None:
+    """Inline match-quality banner inside a position expander."""
+    meta = _MATCH_META.get(match.status, {"icon": "?", "label": "Unbekannt"})
+    score_pct = f"{match.score:.0%}" if match.score else "—"
+
+    if match.status == "exact":
+        st.success(
+            f"{meta['icon']} **{meta['label']}** · Stammdaten-Artikel "
+            f"`{match.matched_artikelnr}` — {match.matched_bezeichnung}",
+            icon=None,
+        )
+    elif match.status == "no_match":
+        st.warning(
+            f"{meta['icon']} **{meta['label']}** — kein Stammdaten-Artikel "
+            "gefunden. Bitte Artikelnummer prüfen oder manuell zuordnen.",
+            icon=None,
+        )
+    else:
+        st.info(
+            f"{meta['icon']} **{meta['label']}** ({score_pct}) · "
+            f"Vorschlag: `{match.matched_artikelnr}` — "
+            f"{match.matched_bezeichnung}. **Bitte verifizieren.**",
+            icon=None,
+        )
+
+
+def _matching_summary(matches: list[MatchResult]) -> None:
+    """4-cell metric strip showing the match-status distribution."""
+    if not matches:
+        return
+    exact = sum(1 for m in matches if m.status == "exact")
+    fuzzy = sum(1 for m in matches if m.status == "fuzzy")
+    semantic = sum(1 for m in matches if m.status == "semantic")
+    no_match = sum(1 for m in matches if m.status == "no_match")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Exakt", exact, help="Direkter Treffer auf Artikelnummer")
+    c2.metric("Fuzzy", fuzzy, help="Ähnliche Artikelnummer (Tippfehler/OCR)")
+    c3.metric(
+        "Semantisch", semantic,
+        help="Treffer über Bezeichnung & Werkstoff",
+    )
+    c4.metric(
+        "Kein Treffer", no_match,
+        help="Manuelle Zuordnung notwendig",
+    )
+
+
+def _customer_validation(anfrage: Anfrage) -> None:
+    """Lightweight validation: surface obviously missing fields."""
+    missing: list[str] = []
+    if not (anfrage.kunde_firma or "").strip():
+        missing.append("Firma")
+    if (
+        not (anfrage.kunde_email or "").strip()
+        and not (anfrage.kunde_ansprechpartner or "").strip()
+    ):
+        missing.append("Ansprechpartner oder E-Mail")
+
+    if missing:
+        st.warning(
+            f"Fehlende oder leere Pflichtfelder: **{', '.join(missing)}**. "
+            "Bitte vor Bestätigung ergänzen.",
+            icon="⚠️",
+        )
 
 
 def _changes_indicator() -> None:
@@ -289,28 +489,10 @@ def _changes_indicator() -> None:
     st.markdown(
         f"""
         <div class="ek-changes-indicator">
-          <span class="ek-pill-dot"></span>
-          <strong>{n}</strong> {'Änderung' if n == 1 else 'Änderungen'}
-          gegenüber KI-Extraktion
+            <span class="ek-pill-dot"></span>
+            <strong>{n}</strong> {'Änderung' if n == 1 else 'Änderungen'}
+            gegenüber KI-Extraktion
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-
-def render_editor(anfrage: Anfrage) -> Anfrage:
-    """Render the full editor for an extracted Anfrage."""
-    st.markdown(
-        '<div class="ek-section-label">KI-extrahierte Daten · '
-        "Bitte prüfen und korrigieren</div>",
-        unsafe_allow_html=True,
-    )
-
-    _changes_indicator()
-    _customer_block(anfrage)
-    _commercial_block(anfrage)
-    _company_block()
-    anfrage.positionen = _position_block(anfrage)
-
-    st.session_state["anfrage"] = anfrage
-    return anfrage

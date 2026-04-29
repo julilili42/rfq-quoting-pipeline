@@ -1,12 +1,15 @@
 """Shared step vocabulary + navigation widgets.
 
 The review UI uses a single-active-step layout (no tabs). The user
-moves through three named stages — the same names that appear in the
-Outlook plugin — and "Zurück" / "Weiter" buttons make the linear flow
-explicit.
+moves through three named human-review stages — same names that appear
+in the Outlook plugin — and "Zurück" / "Weiter" buttons make the
+linear flow explicit.
 
-A reset action is also exposed here so it lives in one place across the
-review-detail page.
+The three review steps are now strictly human-task-oriented:
+
+    1. Positionen prüfen
+    2. Kundendaten prüfen
+    3. Angebot vergleichen & freigeben
 """
 from __future__ import annotations
 
@@ -27,12 +30,22 @@ class Step:
 
 
 STEPS: tuple[Step, ...] = (
-    Step(1, "Anfrage analysieren",
-         "Extrahierte Daten prüfen und Positionen korrigieren."),
-    Step(2, "Angebot erstellen",
-         "Stammdaten validieren und Angebots-PDF generieren."),
-    Step(3, "Angebot freigeben",
-         "Anpassen, freigeben und PDF für die Kundenmail bereitstellen."),
+    Step(
+        1,
+        "Positionen prüfen",
+        "Prüfe, ob alle Positionen aus der Anfrage korrekt erkannt und "
+        "den Stammdaten zugeordnet wurden.",
+    ),
+    Step(
+        2,
+        "Kundendaten prüfen",
+        "Prüfe, ob die Kundendaten vollständig und korrekt übernommen wurden.",
+    ),
+    Step(
+        3,
+        "Angebot vergleichen & freigeben",
+        "Vergleiche den Angebotsentwurf mit dem Originaleingang und gib ihn frei.",
+    ),
 )
 
 
@@ -68,10 +81,9 @@ def render_step_indicator() -> None:
 
     Completed steps are clickable for quick back-navigation. Current and
     future steps stay inert so reviewers must advance through the normal
-    "Weiter" action.
+    "Bestätigen" action.
     """
     current = get_step()
-
     parts = ['<div class="ek-steps">']
     for s in STEPS:
         cls = "ek-step"
@@ -95,7 +107,6 @@ def render_step_indicator() -> None:
         else:
             parts.append(f'<div class="{cls}">{inner}</div>')
     parts.append("</div>")
-
     st.markdown("".join(parts), unsafe_allow_html=True)
 
 
@@ -124,14 +135,19 @@ def render_step_nav(
     *,
     can_advance: bool = True,
     advance_disabled_reason: str = "",
+    forward_label: str = "Weiter →",
     on_finish: Callable[[], None] | None = None,
     finish_label: str = "✓ Workflow abschließen",
 ) -> None:
     """Bottom navigation bar inside a step.
 
-    - On step 1: only ``Weiter →``
-    - On step 2: both buttons
-    - On step 3: ``← Zurück`` + optional ``finish`` action
+    - On step 1: only the forward button (default ``"Weiter →"``).
+    - On step 2: both buttons.
+    - On step 3: ``← Zurück`` + optional ``finish`` action.
+
+    Pass ``forward_label`` to use a step-specific primary action like
+    ``"✓ Positionen bestätigen"`` so the user always sees the named task
+    instead of a generic "Weiter".
     """
     current = get_step()
     total = len(STEPS)
@@ -151,7 +167,7 @@ def render_step_nav(
     with cols[2]:
         if current < total:
             if st.button(
-                "Weiter →",
+                forward_label,
                 key=f"_nav_next_{current}",
                 type="primary",
                 disabled=not can_advance,
