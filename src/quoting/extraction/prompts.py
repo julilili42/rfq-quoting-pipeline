@@ -24,13 +24,17 @@ EXTRACTION RULES
 6. Dimensions (e.g. "108x15", "DN50") belong in `abmessungen`, not bezeichnung.
 7. Quantities: parse German decimals ("1,5" = 1.5). Units: Stk, kg, m, lfdm, St.
 8. If a value is missing, use null. Do NOT invent.
-9. confidence:
+9. Extract customer number into `kundennummer` if present. If not present, use null.
+10. Extract `lieferzeit` and `lieferwerk` per position if the RFQ specifies
+   them for that line. Do not copy one position's values to another unless the
+   document clearly states that they apply to all positions.
+11. confidence:
    - high: value appears verbatim, unambiguous
    - medium: inferred from context or partially legible
    - low: guessed, unclear, or OCR-questionable
-10. source_quote: literal snippet (<=120 chars) proving where you got the
+12. source_quote: literal snippet (<=120 chars) proving where you got the
     article number + quantity from. Required for audit.
-11. List anything suspicious in `unsicherheiten` (open questions for Sales).
+13. List anything suspicious in `unsicherheiten` (open questions for Sales).
 
 OUTPUT
 ======
@@ -48,6 +52,7 @@ Input snippet:
 
 Expected JSON (abbreviated):
 {
+  "kundennummer": null,
   "positionen": [
     {
       "pos_nr": 10,
@@ -57,6 +62,8 @@ Expected JSON (abbreviated):
       "menge": 500,
       "einheit": "Stk",
       "werkstoff": "PTFE/Graphit",
+      "lieferzeit": null,
+      "lieferwerk": null,
       "ist_zertifikat": false,
       "confidence": "high",
       "source_quote": "Pos 10  001GLP108015  Gleitstück PTFE/Graphit 108x15  500 Stk"

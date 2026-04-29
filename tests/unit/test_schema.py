@@ -28,6 +28,8 @@ def test_menge_accepts_int_string():
 
 def test_defaults_for_optional_fields():
     p = Position(**_kwargs())
+    assert p.lieferzeit is None
+    assert p.lieferwerk is None
     assert p.werkstoff is None
     assert p.werkstoff_alternativen == []
     assert p.ist_zertifikat is False
@@ -35,5 +37,6 @@ def test_defaults_for_optional_fields():
 
 def test_anfrage_with_empty_positions():
     a = Anfrage(positionen=[])
+    assert a.kundennummer is None
     assert a.positionen == []
     assert a.unsicherheiten == []

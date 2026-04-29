@@ -25,8 +25,14 @@ def load_anfrage_once(
                 content_hash, str(input_path), str(work_dir),
             )
             st.session_state["loaded_extraction_source"] = "neu extrahiert"
-        st.session_state["anfrage"] = Anfrage.model_validate(anfrage_dict)
+        st.session_state["anfrage"] = _coerce_current_anfrage(anfrage_dict)
         st.session_state["anfrage_hash"] = content_hash
+
+    # Streamlit can keep old Pydantic model instances alive across hot reloads.
+    # Re-validating through the current schema adds newly introduced defaults.
+    st.session_state["anfrage"] = _coerce_current_anfrage(
+        st.session_state["anfrage"],
+    )
     return st.session_state["anfrage"]
 
 
@@ -87,6 +93,12 @@ def _load_saved_anfrage_dict() -> dict | None:
                 st.session_state["loaded_extraction_source"] = str(path)
             return normalized
     return None
+
+
+def _coerce_current_anfrage(value) -> Anfrage:
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(mode="python")
+    return Anfrage.model_validate(value)
 
 
 def _read_json(path: Path) -> dict | list | None:

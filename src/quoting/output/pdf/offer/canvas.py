@@ -142,10 +142,15 @@ def _draw_offer_header(
 
     y -= 0.45 * cm
 
+    customer_no = (
+        getattr(quotation, "kundennummer", None)
+        or config.customer_no_fallback
+    )
+
     rows = [
         ("Datum:", datetime.now().strftime("%d.%m.%Y")),
         ("Beleg-Nr.:", document_no),
-        ("Kunden-Nr.:", config.customer_no_fallback),
+        ("Kunden-Nr.:", customer_no),
     ]
 
     if page_num == 1:

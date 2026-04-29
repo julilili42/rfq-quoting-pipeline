@@ -17,6 +17,8 @@ class Position(BaseModel):
     menge: float
     einheit: str
     liefertermin: str | None = None
+    lieferzeit: str | None = None
+    lieferwerk: str | None = None
     werkstoff: str | None = None
     werkstoff_alternativen: list[str] = Field(default_factory=list)
     zeichnungsnummer: str | None = None
@@ -57,6 +59,7 @@ class Anfrage(BaseModel):
     kunde_firma: str | None = None
     kunde_ansprechpartner: str | None = None
     kunde_email: str | None = None
+    kundennummer: str | None = None
     incoterms: str | None = None
     zahlungsbedingungen: str | None = None
     positionen: list[Position]

@@ -35,6 +35,7 @@ class Quotation:
     kunde_firma: str | None
     kunde_ansprechpartner: str | None
     kunde_email: str | None
+    kundennummer: str | None
     belegnummer: str | None
     incoterms: str | None
     zahlungsbedingungen: str | None
@@ -71,6 +72,7 @@ def build_quotation(
         kunde_firma=anfrage.kunde_firma,
         kunde_ansprechpartner=anfrage.kunde_ansprechpartner,
         kunde_email=anfrage.kunde_email,
+        kundennummer=anfrage.kundennummer,
         belegnummer=anfrage.belegnummer,
         incoterms=anfrage.incoterms,
         zahlungsbedingungen=anfrage.zahlungsbedingungen,

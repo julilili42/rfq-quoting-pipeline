@@ -25,31 +25,32 @@ def build_story(
     valid_until = today + timedelta(days=config.validity_days)
 
     story: list[Any] = []
-
     story.append(address_block(quotation, doc_width, config, styles))
     story.append(Spacer(1, 0.25 * cm))
-
     story.append(offer_meta_table(quotation, today, valid_until, doc_width, config, styles))
     story.append(Spacer(1, 0.45 * cm))
-
     story.append(Paragraph(greeting(quotation), styles["body"]))
 
     for line in config.intro_lines:
         story.append(Paragraph(html_escape(line), styles["body"]))
 
-    story.append(Spacer(1, 0.15 * cm))
-    story.append(ai_notice(doc_width, config, styles))
-    story.append(Spacer(1, 0.45 * cm))
+    # Draft warning banner — suppressed for final PDFs.
+    if not config.is_final:
+        story.append(Spacer(1, 0.15 * cm))
+        story.append(ai_notice(doc_width, config, styles))
 
+    story.append(Spacer(1, 0.45 * cm))
     story.append(items_table(anfrage, quotation, doc_width, config, styles))
     story.append(Spacer(1, 0.35 * cm))
-
     story.append(total_table(quotation, doc_width))
     story.append(Spacer(1, 0.45 * cm))
 
-    story.extend(internal_notes(anfrage, quotation, styles))
-    story.extend(closing_flowables(config, styles))
+    # Internal notes only on draft PDFs — these are review hints,
+    # not customer-facing content.
+    if not config.is_final:
+        story.extend(internal_notes(anfrage, quotation, styles))
 
+    story.extend(closing_flowables(config, styles))
     return story
 
 
@@ -63,10 +64,8 @@ def address_block(
     from reportlab.platypus import Paragraph, Table, TableStyle
 
     recipient_parts = [f"<b>{html_escape(quotation.kunde_firma or 'Kunde')}</b>"]
-
     if quotation.kunde_ansprechpartner:
         recipient_parts.append(html_escape(quotation.kunde_ansprechpartner))
-
     if quotation.kunde_email:
         recipient_parts.append(html_escape(quotation.kunde_email))
 
@@ -175,7 +174,6 @@ def items_table(
         2.5 * cm,
         1.0 * cm,
     ]
-
     delta = width - sum(col_widths)
     if delta > 0:
         col_widths[2] += delta
@@ -193,8 +191,10 @@ def items_table(
     certificate_positions = {
         pos.pos_nr for pos in anfrage.positionen if pos.ist_zertifikat
     }
+    positions_by_nr = {pos.pos_nr: pos for pos in anfrage.positionen}
 
     for item in quotation.items:
+        source_pos = positions_by_nr.get(item.pos_nr)
         price_unit = 1 if item.pos_nr in certificate_positions else 100
         display_price = item.einzelpreis * price_unit
 
@@ -222,23 +222,27 @@ def items_table(
         data.append([
             "",
             Paragraph("Lieferzeit:", styles["table_small"]),
-            Paragraph(html_escape(config.delivery_time), styles["table_small"]),
+            Paragraph(
+                html_escape(_position_text(source_pos, "lieferzeit", config.delivery_time)),
+                styles["table_small"],
+            ),
             "",
             "",
             "",
             "",
         ])
-
         data.append([
             "",
             Paragraph("Lieferwerk:", styles["table_small"]),
-            Paragraph(html_escape(config.delivery_plant), styles["table_small"]),
+            Paragraph(
+                html_escape(_position_text(source_pos, "lieferwerk", config.delivery_plant)),
+                styles["table_small"],
+            ),
             "",
             "",
             "",
             "",
         ])
-
         data.append(["", "", "", "", "", "", ""])
 
     table = Table(
@@ -264,6 +268,12 @@ def items_table(
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     return table
+
+
+def _position_text(pos, field_name: str, fallback: str) -> str:
+    value = getattr(pos, field_name, None) if pos is not None else None
+    text = str(value or "").strip()
+    return text or fallback
 
 
 def total_table(quotation: Quotation, width: float):
@@ -310,10 +320,8 @@ def internal_notes(
     flowables: list[Any] = [
         Paragraph("Interne Hinweise zur Freigabe", styles["section_heading"]),
     ]
-
     for note in notes:
         flowables.append(Paragraph(f"- {html_escape(note)}", styles["small"]))
-
     flowables.append(Spacer(1, 0.35 * cm))
     return flowables
 
@@ -326,18 +334,14 @@ def closing_flowables(
     from reportlab.platypus import Paragraph, Spacer
 
     flowables: list[Any] = []
-
-    for line in config.closing_lines:
+    for line in config.effective_closing():
         flowables.append(Paragraph(html_escape(line), styles["body"]))
-
-    flowables.append(Spacer(1, 0.1 * cm))
+        flowables.append(Spacer(1, 0.1 * cm))
     return flowables
 
 
 def greeting(quotation: Quotation) -> str:
     contact = (quotation.kunde_ansprechpartner or "").strip()
-
     if contact:
         return f"Sehr geehrte Damen und Herren, z. Hd. {html_escape(contact)},"
-
     return "Sehr geehrte Damen und Herren,"

@@ -1,4 +1,10 @@
-"""Agent chat panel — natural-language commercial edits on the quotation."""
+"""Agent chat panel — natural-language commercial edits on the quotation.
+
+Layout note: the chat input is rendered at the *top* of the panel (just
+under the section label), so it never sits awkwardly below the
+workflow-completion buttons. The conversation history and the latest
+download button render below the input.
+"""
 from __future__ import annotations
 
 import streamlit as st
@@ -30,28 +36,32 @@ def render_agent_chat(
     )
 
     agent_lang = st.session_state.get("agent_lang", "de")
-    messages = st.session_state.setdefault("agent_messages", [])
 
-    if not messages:
-        intro = (
-            "Try: *Discount 5% on article ABC*, *Set pos 3 to 12 EUR*, "
-            "*What is the total?*"
-            if agent_lang == "en"
-            else "Beispiele: *5% Rabatt auf Artikel ABC*, *Setze pos 3 auf 12 EUR*, "
-                 "*Wie hoch ist die Summe?*"
-        )
-        st.info(intro, icon="💡")
-
-    for msg in messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
+    # --- chat input first --------------------------------------------------
     chat_placeholder = (
         "Schreibe eine Anpassung: Rabatt je Position/Artikel, Kommentar oder Summenfrage"
         if agent_lang == "de"
         else "Write an edit: discount by position/article, comment, or total question"
     )
     user_msg = st.chat_input(chat_placeholder)
+
+    # --- intro hint --------------------------------------------------------
+    messages = st.session_state.setdefault("agent_messages", [])
+    if not messages:
+        intro = (
+            "Try: *Discount 5% on article ABC*, *Set pos 3 to 12 EUR*, "
+            "*What is the total?*"
+            if agent_lang == "en"
+            else "Beispiele: *5% Rabatt auf Artikel ABC*, *Setze pos 3 auf 12 EUR*, "
+            "*Wie hoch ist die Summe?*"
+        )
+        st.info(intro, icon="💡")
+
+    # --- history -----------------------------------------------------------
+    for msg in messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
     if user_msg:
         _handle_agent_message(
             user_msg=user_msg,
@@ -62,8 +72,8 @@ def render_agent_chat(
             messages=messages,
         )
 
+    # --- inline download (compact) ----------------------------------------
     if st.session_state.get("pdf_bytes"):
-        st.markdown("&nbsp;", unsafe_allow_html=True)
         st.download_button(
             label="📥 Aktuelles PDF herunterladen",
             data=st.session_state["pdf_bytes"],
@@ -91,6 +101,7 @@ def _handle_agent_message(
     known_articles = [
         p.artikelnummer for p in anfrage.positionen if p.artikelnummer
     ]
+
     parsed_override, parse_feedback = parse_edit_instruction(
         user_msg, known_articles, lang=agent_lang
     )
@@ -100,6 +111,7 @@ def _handle_agent_message(
         st.session_state["manual_discount_overrides"] = upsert_override(
             overrides, parsed_override
         )
+
         spinner_text = (
             "Anpassung wird angewendet und PDF neu berechnet..."
             if agent_lang == "de"

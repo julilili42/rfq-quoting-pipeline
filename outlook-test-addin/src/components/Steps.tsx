@@ -1,59 +1,39 @@
 /**
- * Step indicator — 3 business stages aligned with the Streamlit review UI.
+ * Steps — 4-stage progress indicator at the top of the panel.
+ *
+ * Mirrors the Streamlit review-detail step strip but compressed for the
+ * narrow Outlook panel: just the marker + short label.
  */
-
 import type { MailWorkflowState } from "../mailWorkflowStorage";
 
-type StepsProps = {
-  workflowState: MailWorkflowState;
+type StepDef = {
+  key: MailWorkflowState[];
+  num: string;
+  title: string;
 };
 
-const STEPS = [
-  { num: 1, label: "Anfrage" },
-  { num: 2, label: "Angebot" },
-  { num: 3, label: "Versand" },
-] as const;
+const STEPS: StepDef[] = [
+  { key: ["new"],                              num: "01", title: "Anfrage" },
+  { key: ["review_running"],                   num: "02", title: "Pipeline" },
+  { key: ["review_created", "review_opened"],  num: "03", title: "Review" },
+  { key: ["quote_sent"],                       num: "04", title: "Versendet" },
+];
 
-function activeIndex(state: MailWorkflowState): number {
-  switch (state) {
-    case "new":
-      return 0;
-
-    case "review_running":
-    case "review_created":
-    case "review_opened":
-      return 1;
-
-    case "quote_sent":
-      return 2;
-  }
-}
-
-export function Steps({ workflowState }: StepsProps) {
-  const current = activeIndex(workflowState);
-  const allDone = workflowState === "quote_sent";
+export function Steps({ workflowState }: { workflowState: MailWorkflowState }) {
+  const activeIndex = STEPS.findIndex((s) => s.key.includes(workflowState));
 
   return (
-    <div className="steps" role="list" aria-label="Workflow-Fortschritt">
-      {STEPS.map((step, index) => {
-        const status =
-          allDone || index < current
-            ? "done"
-            : index === current
-              ? "active"
-              : "idle";
-
+    <div className="steps">
+      {STEPS.map((s, i) => {
+        const cls =
+          i < activeIndex ? "step done" :
+          i === activeIndex ? "step active" :
+          "step";
+        const marker = i < activeIndex ? "✓" : s.num;
         return (
-          <div
-            key={step.num}
-            role="listitem"
-            className={`step ${status}`}
-            aria-current={status === "active" ? "step" : undefined}
-          >
-            <div className="step-num">
-              {status === "done" ? "✓" : step.num}
-            </div>
-            <div className="step-label">{step.label}</div>
+          <div key={s.num} className={cls}>
+            <div className="step-num">{marker}</div>
+            <div className="step-title">{s.title}</div>
           </div>
         );
       })}

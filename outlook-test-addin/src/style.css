@@ -1,64 +1,50 @@
-/* ---------------------------------------------------------------
- * Quotation Add-in — visual system
+/* =====================================================================
+ * ElringKlinger Quoting · Outlook taskpane
  *
- * Design: native to Outlook (Fluent 2 inspired), with ElringKlinger
- * red as a single restrained brand accent. The plugin renders one
- * card at a time so the user always sees the next sensible action.
- * ------------------------------------------------------------- */
+ * Design language mirrors the Streamlit UI: ElringKlinger-red accent,
+ * Inter Tight for headings, Inter for body. Layout is a single vertical
+ * column ~380px wide, optimised for the narrow Outlook side panel.
+ * Everything fits in one card per active state — no nested sections,
+ * no separate progress card.
+ * ===================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700;800&display=swap");
 
 :root {
-  --ek-bg: #fafafa;
-  --ek-surface: #ffffff;
-  --ek-surface-2: #f5f5f4;
-  --ek-surface-sunken: #f3f4f6;
-
-  --ek-border: #e5e7eb;
+  --ek-bg:            #f8f9fb;
+  --ek-surface:       #ffffff;
+  --ek-surface-2:     #f5f5f4;
+  --ek-border:        #e5e7eb;
   --ek-border-strong: #d1d5db;
-  --ek-divider: #f1f5f9;
+  --ek-divider:       #f1f5f9;
 
-  --ek-text: #111827;
-  --ek-text-secondary: #4b5563;
-  --ek-text-muted: #6b7280;
-  --ek-text-faint: #9ca3af;
+  --ek-text:          #0f172a;
+  --ek-text-2:        #334155;
+  --ek-muted:         #64748b;
+  --ek-faint:         #94a3b8;
 
-  --ek-accent: #0f6cbd;
-  --ek-accent-hover: #115ea3;
-  --ek-accent-soft: #ebf3fa;
-  --ek-accent-border: #cfe2f3;
+  --ek-brand:         #e30613;
+  --ek-brand-dark:    #b8000b;
+  --ek-brand-soft:    #fef2f2;
+  --ek-brand-border:  #fecaca;
 
-  --ek-brand: #e30613;
-  --ek-brand-dark: #b8000b;
-
-  --ek-success: #0f7a3e;
-  --ek-success-soft: #ecfdf5;
-  --ek-success-border: #a7f3d0;
-
-  --ek-info: #1d4ed8;
-  --ek-info-soft: #eff6ff;
-  --ek-info-border: #bfdbfe;
-
-  --ek-warning: #b45309;
-  --ek-warning-soft: #fff7ed;
-  --ek-warning-border: #fed7aa;
-
-  --ek-danger: #b91c1c;
-  --ek-danger-soft: #fef2f2;
+  --ek-success:       #047857;
+  --ek-success-soft:  #ecfdf5;
+  --ek-success-border:#a7f3d0;
+  --ek-info:          #1d4ed8;
+  --ek-info-soft:     #eff6ff;
+  --ek-info-border:   #bfdbfe;
+  --ek-warning:       #b45309;
+  --ek-warning-soft:  #fff7ed;
+  --ek-warning-border:#fde68a;
+  --ek-danger:        #b91c1c;
+  --ek-danger-soft:   #fef2f2;
   --ek-danger-border: #fecaca;
-
-  --ek-radius-sm: 6px;
-  --ek-radius-md: 8px;
-  --ek-radius-lg: 12px;
 
   --ek-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04),
                  0 1px 1px rgba(15, 23, 42, 0.02);
-  --ek-shadow-2: 0 4px 12px rgba(15, 23, 42, 0.06),
+  --ek-shadow-2: 0 6px 20px rgba(15, 23, 42, 0.06),
                  0 1px 2px rgba(15, 23, 42, 0.04);
-
-  --ek-font-sans: "Segoe UI Variable", "Segoe UI", -apple-system,
-                  BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
-                  Arial, sans-serif;
-  --ek-font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono",
-                  Consolas, "Courier New", monospace;
 }
 
 * { box-sizing: border-box; }
@@ -68,169 +54,99 @@ html, body {
   padding: 0;
   background: var(--ek-bg);
   color: var(--ek-text);
-  font-family: var(--ek-font-sans);
-  font-size: 14px;
-  line-height: 1.45;
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-button, input, textarea { font-family: inherit; }
-
-/* ---------- App shell ---------- */
-
-.panel {
+#root {
   min-height: 100vh;
-  padding: 14px 14px 24px;
+}
+
+/* ---------------- Panel layout ----------------------------------------- */
+.panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 14px;
+  max-width: 460px;
+  margin: 0 auto;
 }
 
-/* ---------- Header (minimal) ---------- */
-
-.app-header {
-  display: flex;
-  align-items: center;
-  padding: 0 0 6px;
-  margin-bottom: 2px;
-}
-
-.brand-mark {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--ek-radius-md);
-  background: linear-gradient(135deg, var(--ek-brand) 0%, var(--ek-brand-dark) 100%);
-  color: white;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  box-shadow: 0 2px 6px rgba(227, 6, 19, 0.22);
-  flex-shrink: 0;
-}
-
-
-/* ---------- Step indicator ---------- */
+/* ---------------- Steps indicator ------------------------------------- */
 .steps {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
 }
-
 .step {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 6px 6px;
   background: var(--ek-surface);
   border: 1px solid var(--ek-border);
-  border-radius: var(--ek-radius-md);
-  transition: border-color 0.18s ease, background 0.18s ease;
+  border-radius: 10px;
+  padding: 8px 6px 9px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--ek-shadow-1);
+  transition: border-color 0.18s ease;
 }
-
-.step.active {
-  border-color: var(--ek-accent-border);
-  background: var(--ek-accent-soft);
+.step::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--ek-border);
 }
-
-.step.done {
-  border-color: var(--ek-success-border);
-  background: var(--ek-success-soft);
-}
+.step.active::before { background: var(--ek-brand); }
+.step.done::before   { background: var(--ek-success); }
 
 .step-num {
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  display: grid;
-  place-items: center;
-  font-size: 10px;
+  font-family: "Inter Tight", sans-serif;
   font-weight: 700;
-  background: var(--ek-surface-2);
-  color: var(--ek-text-muted);
-  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--ek-faint);
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
 }
+.step.active .step-num { color: var(--ek-brand); }
+.step.done   .step-num { color: var(--ek-success); }
 
-.step.active .step-num {
-  background: var(--ek-accent);
-  color: white;
-}
-
-.step.done .step-num {
-  background: var(--ek-success);
-  color: white;
-}
-
-.step-label {
-  min-width: 0;
+.step-title {
   font-size: 11px;
   font-weight: 600;
-  color: var(--ek-text-secondary);
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--ek-text);
+  letter-spacing: -0.005em;
+  line-height: 1.25;
 }
 
-.step.active .step-label {
-  color: var(--ek-accent-hover);
-}
-
-.step.done .step-label {
-  color: var(--ek-success);
-}
-
-/* Sehr schmale Outlook-Panes */
-@media (max-width: 320px) {
-  .step {
-    padding: 6px 4px;
-    gap: 3px;
-  }
-
-  .step-label {
-    font-size: 10px;
-  }
-
-  .step-num {
-    width: 16px;
-    height: 16px;
-    font-size: 9px;
-  }
-}
-
-
-/* ---------- Card ---------- */
-
+/* ---------------- Card (the workhorse element) ------------------------- */
 .card {
   background: var(--ek-surface);
   border: 1px solid var(--ek-border);
-  border-radius: var(--ek-radius-lg);
-  padding: 14px 14px;
+  border-radius: 14px;
+  padding: 16px;
   box-shadow: var(--ek-shadow-1);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-
 .card-info {
   border-color: var(--ek-info-border);
-  background:
-    linear-gradient(180deg, var(--ek-info-soft) 0%, var(--ek-surface) 70%);
-  box-shadow: var(--ek-shadow-2);
+  background: linear-gradient(180deg, var(--ek-info-soft) 0%, white 35%);
 }
-
 .card-success {
   border-color: var(--ek-success-border);
-  background:
-    linear-gradient(180deg, var(--ek-success-soft) 0%, var(--ek-surface) 70%);
-  box-shadow: var(--ek-shadow-2);
+  background: linear-gradient(180deg, var(--ek-success-soft) 0%, white 35%);
+}
+.card-error {
+  border-color: var(--ek-danger-border);
+  background: linear-gradient(180deg, var(--ek-danger-soft) 0%, white 35%);
 }
 
 .card-stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .row-between {
@@ -240,119 +156,40 @@ button, input, textarea { font-family: inherit; }
   gap: 8px;
 }
 
-.empty-state {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--ek-text-muted);
-  padding: 4px 0;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-/* ---------- Mail subject/sender ---------- */
-
-.mail-subject {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ek-text);
-  line-height: 1.35;
-  letter-spacing: -0.005em;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.mail-sender {
-  font-size: 12.5px;
-  color: var(--ek-text-muted);
-  margin-top: -4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ---------- Meta grid (timestamps) ---------- */
-
-.meta-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  background: var(--ek-surface-2);
-  border-radius: var(--ek-radius-md);
-  padding: 8px 10px;
-  border: 1px solid var(--ek-border);
-}
-
-.meta-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.meta-label {
-  font-size: 10.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ek-text-muted);
-}
-
-.meta-value {
-  font-size: 12.5px;
-  color: var(--ek-text);
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.review-id {
-  font-family: var(--ek-font-mono);
-  font-size: 11px;
-  color: var(--ek-text-muted);
-  background: white;
-  border: 1px solid var(--ek-border);
-  padding: 2px 7px;
-  border-radius: 999px;
-}
-
-/* ---------- Pills ---------- */
-
+/* ---------------- Pills ------------------------------------------------ */
 .pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 3px 9px 3px 7px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
-  line-height: 1.5;
-  background: var(--ek-surface-2);
-  color: var(--ek-text-secondary);
+  line-height: 1.4;
   border: 1px solid var(--ek-border);
+  background: var(--ek-surface);
+  color: var(--ek-text-2);
 }
-
-.pill-success {
-  background: var(--ek-success-soft);
-  color: var(--ek-success);
-  border-color: var(--ek-success-border);
+.pill-neutral {
+  background: var(--ek-surface-2);
+  color: var(--ek-text-2);
+  border-color: var(--ek-border);
 }
-
 .pill-info {
   background: var(--ek-info-soft);
   color: var(--ek-info);
   border-color: var(--ek-info-border);
 }
-
-.pill-neutral {
-  background: var(--ek-surface-2);
-  color: var(--ek-text-secondary);
-  border-color: var(--ek-border);
+.pill-success {
+  background: var(--ek-success-soft);
+  color: var(--ek-success);
+  border-color: var(--ek-success-border);
 }
-
+.pill-warning {
+  background: var(--ek-warning-soft);
+  color: var(--ek-warning);
+  border-color: var(--ek-warning-border);
+}
 .pill-dot {
   width: 6px;
   height: 6px;
@@ -361,51 +198,119 @@ button, input, textarea { font-family: inherit; }
   display: inline-block;
 }
 
-/* ---------- Buttons ---------- */
+/* ---------------- Mail header info ------------------------------------ */
+.review-id {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ek-muted);
+  background: var(--ek-surface-2);
+  border: 1px solid var(--ek-border);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
+.mail-subject {
+  font-family: "Inter Tight", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ek-text);
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+  word-break: break-word;
+}
+.mail-sender {
+  font-size: 12px;
+  color: var(--ek-muted);
+  margin-top: 2px;
+  word-break: break-word;
+}
+
+/* ---------------- Meta grid ------------------------------------------- */
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--ek-surface-2);
+  border: 1px solid var(--ek-border);
+  border-radius: 10px;
+}
+.meta-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.meta-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ek-muted);
+}
+.meta-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ek-text);
+  word-break: break-word;
+}
+
+/* ---------------- Actions (button row) -------------------------------- */
 .actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 4px;
 }
 
 .btn {
-  border: 1px solid transparent;
-  border-radius: var(--ek-radius-md);
-  padding: 9px 14px;
-  font-weight: 600;
-  font-size: 13.5px;
-  cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition:
-    background 0.14s ease,
-    border-color 0.14s ease,
-    color 0.14s ease,
-    box-shadow 0.14s ease,
-    transform 0.06s ease;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--ek-border-strong);
+  background: var(--ek-surface);
+  color: var(--ek-text);
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: 13px;
   letter-spacing: -0.005em;
-  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
 }
-
-.btn:focus-visible {
-  outline: 2px solid var(--ek-accent);
-  outline-offset: 2px;
+.btn:hover:not(:disabled) {
+  background: var(--ek-surface-2);
+  border-color: var(--ek-text-2);
 }
-
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
 
 .btn-primary {
-  background: var(--ek-accent);
+  background: var(--ek-text);
   color: white;
-  box-shadow: 0 1px 2px rgba(15, 108, 189, 0.22);
+  border-color: var(--ek-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
-
-.btn-primary:hover:not(:disabled) { background: var(--ek-accent-hover); }
+.btn-primary:hover:not(:disabled) {
+  background: #000;
+  border-color: #000;
+  transform: translateY(-1px);
+  box-shadow: var(--ek-shadow-2);
+}
 
 .btn-secondary {
   background: var(--ek-surface);
@@ -413,380 +318,326 @@ button, input, textarea { font-family: inherit; }
   border-color: var(--ek-border-strong);
 }
 
-.btn-secondary:hover:not(:disabled) {
-  background: var(--ek-surface-sunken);
-  border-color: var(--ek-text-muted);
-}
-
 .btn-ghost {
   background: transparent;
-  color: var(--ek-text-secondary);
+  color: var(--ek-muted);
+  border-color: transparent;
 }
-
 .btn-ghost:hover:not(:disabled) {
-  background: var(--ek-surface-sunken);
+  background: var(--ek-surface-2);
   color: var(--ek-text);
+  border-color: var(--ek-border);
 }
 
 .btn-danger-ghost {
   background: transparent;
   color: var(--ek-danger);
+  border-color: transparent;
 }
-
 .btn-danger-ghost:hover:not(:disabled) {
   background: var(--ek-danger-soft);
+  border-color: var(--ek-danger-border);
 }
 
-.btn-icon {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-
-/* ---------- Success banner ---------- */
-
+/* ---------------- Success banner -------------------------------------- */
 .success-banner {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 4px;
-  padding: 8px 10px;
-  background: white;
+  padding: 10px 12px;
+  background: var(--ek-success-soft);
   border: 1px solid var(--ek-success-border);
-  border-radius: var(--ek-radius-md);
   color: var(--ek-success);
+  border-radius: 10px;
   font-size: 12.5px;
   font-weight: 600;
 }
 
-/* ---------- Status banner ---------- */
-
-.status {
+/* ---------------- Empty state ----------------------------------------- */
+.empty-state {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  border-radius: var(--ek-radius-md);
-  padding: 10px 12px;
+  color: var(--ek-muted);
   font-size: 13px;
   line-height: 1.5;
-  border: 1px solid var(--ek-border);
+  padding: 4px;
+}
+
+/* ---------------- Pipeline progress (folded into card) ---------------- */
+.pipeline-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
   background: var(--ek-surface-2);
-  color: var(--ek-text-secondary);
-}
-
-.status-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.status-text { word-break: break-word; overflow-wrap: anywhere; }
-
-.status-loading {
-  background: var(--ek-warning-soft);
-  border-color: var(--ek-warning-border);
-  color: var(--ek-warning);
-}
-
-.status-loading .status-icon {
-  animation: ek-spin 1s linear infinite;
-}
-
-.status-success {
-  background: var(--ek-success-soft);
-  border-color: var(--ek-success-border);
-  color: var(--ek-success);
-}
-
-.status-error {
-  background: var(--ek-danger-soft);
-  border-color: var(--ek-danger-border);
-  color: var(--ek-danger);
-}
-
-@keyframes ek-spin { to { transform: rotate(360deg); } }
-
-/* ---------- Advanced (single collapsible) ---------- */
-
-details.advanced {
   border: 1px solid var(--ek-border);
-  border-radius: var(--ek-radius-md);
-  background: var(--ek-surface);
-  overflow: hidden;
+  border-radius: 10px;
 }
 
-details.advanced > summary {
-  cursor: pointer;
-  padding: 9px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ek-text-muted);
-  list-style: none;
+.pipeline-inline-current {
   display: flex;
   align-items: center;
   gap: 8px;
-  user-select: none;
-}
-
-details.advanced > summary::-webkit-details-marker { display: none; }
-details.advanced > summary > svg { transition: transform 0.18s ease; }
-details.advanced[open] > summary > svg { transform: rotate(-90deg); }
-
-.advanced-meta {
-  margin-left: auto;
-  color: var(--ek-text-faint);
-  font-weight: 500;
-}
-
-.advanced-body {
-  border-top: 1px solid var(--ek-divider);
-  padding: 10px 12px 12px;
-}
-
-/* attachment list inside advanced */
-
-.attachment-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.attachment {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  background: var(--ek-surface-2);
-  border: 1px solid var(--ek-border);
-  border-radius: var(--ek-radius-md);
-  font-size: 13px;
-}
-
-.attachment-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--ek-radius-sm);
-  background: white;
-  border: 1px solid var(--ek-border);
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--ek-text-secondary);
-}
-
-.attachment-icon.is-pdf {
-  color: var(--ek-brand);
-  border-color: #fecaca;
-  background: #fef2f2;
-}
-
-.attachment-body { min-width: 0; flex: 1; }
-
-.attachment-name {
-  font-weight: 500;
+  font-size: 12.5px;
+  font-weight: 600;
   color: var(--ek-text);
+  min-width: 0;
+}
+.pipeline-inline-icon-running {
+  color: var(--ek-info);
+  display: inline-flex;
+  animation: ek-spin 1.6s linear infinite;
+}
+.pipeline-inline-icon-error {
+  color: var(--ek-danger);
+  display: inline-flex;
+}
+.pipeline-inline-text {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.attachment-meta {
-  color: var(--ek-text-muted);
-  font-size: 11.5px;
-  margin-top: 1px;
-}
-
-/* debug nested inside advanced */
-
-details.debug-inner {
-  margin-top: 12px;
-  border-top: 1px solid var(--ek-divider);
-  padding-top: 10px;
-}
-
-details.debug-inner > summary {
-  cursor: pointer;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--ek-text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.debug-section-label {
-  margin-top: 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ek-text-muted);
-}
-
-pre.debug-pre {
-  margin: 6px 0 0;
-  max-height: 200px;
-  overflow: auto;
-  background: #0f172a;
-  color: #e2e8f0;
-  padding: 10px 12px;
-  border-radius: var(--ek-radius-md);
-  font-size: 11.5px;
-  line-height: 1.5;
-  font-family: var(--ek-font-mono);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* ---------- Footer ---------- */
-
-.footer-note {
-  margin-top: auto;
-  padding-top: 8px;
-  color: var(--ek-text-faint);
-  font-size: 11.5px;
-  text-align: center;
-  letter-spacing: 0.01em;
-}
-
-.footer-link {
-  color: var(--ek-accent);
-  text-decoration: none;
-  font-weight: 600;
-}
-
-.footer-link:hover { text-decoration: underline; }
-
-
-
-/* ---------- Pipeline progress ---------- */
-
-.card-error {
-  border-color: var(--ek-danger-border);
-  background:
-    linear-gradient(180deg, var(--ek-danger-soft) 0%, var(--ek-surface) 70%);
-  box-shadow: var(--ek-shadow-2);
-}
-
-.pill-danger {
-  background: var(--ek-danger-soft);
-  color: var(--ek-danger);
-  border-color: var(--ek-danger-border);
-}
-
-.pipeline-current-detail {
-  margin-top: 3px;
-  font-size: 12.5px;
-  color: var(--ek-text-muted);
-  overflow-wrap: anywhere;
+@keyframes ek-spin {
+  to { transform: rotate(360deg); }
 }
 
 .pipeline-progress-bar {
   width: 100%;
-  height: 7px;
+  height: 5px;
+  background: var(--ek-border);
   border-radius: 999px;
-  background: var(--ek-surface-2);
-  border: 1px solid var(--ek-border);
   overflow: hidden;
 }
-
 .pipeline-progress-fill {
   height: 100%;
+  background: linear-gradient(90deg, var(--ek-brand) 0%, var(--ek-brand-dark) 100%);
+  transition: width 0.4s ease;
   border-radius: 999px;
-  background: currentColor;
-  color: var(--ek-accent);
-  transition: width 0.2s ease;
 }
 
-.card-error .pipeline-progress-fill {
-  color: var(--ek-danger);
+.pipeline-inline-details {
+  border-top: 1px dashed var(--ek-border);
+  padding-top: 8px;
+}
+.pipeline-inline-details > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ek-muted);
+  user-select: none;
+}
+.pipeline-inline-details > summary::-webkit-details-marker { display: none; }
+.pipeline-inline-details[open] > summary > svg {
+  transform: rotate(180deg);
+  transition: transform 0.2s ease;
+}
+.pipeline-inline-details > summary > svg {
+  transition: transform 0.2s ease;
+}
+
+.advanced-meta {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ek-faint);
+  background: var(--ek-surface);
+  border: 1px solid var(--ek-border);
+  padding: 1px 7px;
+  border-radius: 999px;
 }
 
 .pipeline-steps {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-top: 8px;
 }
-
 .pipeline-step {
   display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
-  border-radius: var(--ek-radius-md);
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--ek-surface);
   border: 1px solid var(--ek-border);
-  background: var(--ek-surface-2);
-  color: var(--ek-text-secondary);
+  font-size: 12px;
 }
-
-.pipeline-step-running {
-  background: var(--ek-warning-soft);
-  border-color: var(--ek-warning-border);
-  color: var(--ek-warning);
-}
-
 .pipeline-step-completed {
-  background: var(--ek-success-soft);
   border-color: var(--ek-success-border);
-  color: var(--ek-success);
+  background: var(--ek-success-soft);
 }
-
+.pipeline-step-running {
+  border-color: var(--ek-info-border);
+  background: var(--ek-info-soft);
+}
 .pipeline-step-failed {
-  background: var(--ek-danger-soft);
   border-color: var(--ek-danger-border);
-  color: var(--ek-danger);
-}
-
-.pipeline-step-skipped {
-  background: var(--ek-surface-2);
-  border-color: var(--ek-border);
-  color: var(--ek-text-muted);
-}
-
-.pipeline-step-icon {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-
-.pipeline-step-running .pipeline-step-icon {
-  animation: ek-spin 1s linear infinite;
-}
-
-.pipeline-step-body {
-  min-width: 0;
-  flex: 1;
-}
-
-.pipeline-step-name {
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.pipeline-step-detail {
-  margin-top: 1px;
-  font-size: 11.5px;
-  color: var(--ek-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pipeline-step-status {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: currentColor;
-  flex-shrink: 0;
-}
-
-.pipeline-error {
-  padding: 8px 10px;
-  border-radius: var(--ek-radius-md);
-  border: 1px solid var(--ek-danger-border);
   background: var(--ek-danger-soft);
-  color: var(--ek-danger);
-  font-size: 12.5px;
+}
+.pipeline-step-pending {
+  background: var(--ek-surface);
+  color: var(--ek-muted);
+}
+.pipeline-step-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pipeline-step-name {
   font-weight: 600;
-  overflow-wrap: anywhere;
+  color: var(--ek-text);
+  font-size: 12px;
+}
+.pipeline-step-detail {
+  color: var(--ek-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.pipeline-error {
+  font-size: 12px;
+  color: var(--ek-danger);
+  font-weight: 500;
+  padding: 6px 10px;
+  background: var(--ek-danger-soft);
+  border: 1px solid var(--ek-danger-border);
+  border-radius: 8px;
+  word-break: break-word;
+}
+
+/* ---------------- Status card (one-liner) ----------------------------- */
+.status-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--ek-surface);
+  border: 1px solid var(--ek-border);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--ek-text-2);
+  min-height: 38px;
+}
+.status-card.loading {
+  background: var(--ek-info-soft);
+  border-color: var(--ek-info-border);
+  color: var(--ek-info);
+}
+.status-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--ek-info-border);
+  border-top-color: var(--ek-info);
+  border-radius: 50%;
+  animation: ek-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ---------------- Quoting Übersicht link (prominent) ------------------ */
+.overview-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, var(--ek-brand-soft) 0%, white 100%);
+  border: 1px solid var(--ek-brand-border);
+  border-radius: 12px;
+  font-family: "Inter Tight", sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  color: var(--ek-brand-dark);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  box-shadow: var(--ek-shadow-1);
+}
+.overview-link:hover {
+  border-color: var(--ek-brand);
+  background: linear-gradient(135deg, var(--ek-brand-soft) 0%, var(--ek-brand-soft) 100%);
+  transform: translateY(-1px);
+  box-shadow: var(--ek-shadow-2);
+}
+.overview-link-text {
+  flex: 1 1 auto;
+  text-align: left;
+}
+.overview-link-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+}
+.overview-link:hover .overview-link-icon {
+  transform: translate(2px, -2px);
+}
+
+
+/* ---------------- Outlook blue overrides ------------------ */
+:root {
+  --outlook-blue: #0f6cbd;
+  --outlook-blue-hover: #115ea3;
+  --outlook-blue-soft: #ebf3fa;
+  --outlook-blue-border: #cfe2f3;
+}
+
+/* Schritte 1–4 in Outlook-Blau statt Rot/Grün */
+.step.active::before,
+.step.done::before {
+  background: var(--outlook-blue);
+}
+
+.step.active .step-num,
+.step.done .step-num {
+  color: var(--outlook-blue);
+}
+
+.step.active {
+  border-color: var(--outlook-blue-border);
+  background: linear-gradient(180deg, var(--outlook-blue-soft) 0%, white 70%);
+}
+
+.step.done {
+  border-color: var(--outlook-blue-border);
+  background: linear-gradient(180deg, var(--outlook-blue-soft) 0%, white 70%);
+}
+
+.step.active .step-title,
+.step.done .step-title {
+  color: var(--outlook-blue-hover);
+}
+
+/* Pipeline-/Extraktions-Ladebalken in Outlook-Blau statt EK-Rot */
+.pipeline-progress-fill {
+  background: linear-gradient(
+    90deg,
+    var(--outlook-blue) 0%,
+    var(--outlook-blue-hover) 100%
+  );
+}
+
+/* Quoting-Übersicht-Link in Outlook-Blau */
+.overview-link {
+  background: linear-gradient(135deg, var(--outlook-blue-soft) 0%, white 100%);
+  border-color: var(--outlook-blue-border);
+  color: var(--outlook-blue-hover);
+}
+
+.overview-link:hover {
+  border-color: var(--outlook-blue);
+  background: linear-gradient(
+    135deg,
+    var(--outlook-blue-soft) 0%,
+    var(--outlook-blue-soft) 100%
+  );
 }

@@ -65,7 +65,7 @@ def render_review_overview(
     anfrage: Anfrage,
     matches,
 ) -> None:
-    """KPI strip + collapsible details for the current review."""
+    """KPI strip for the current review."""
     total_positions = len(anfrage.positionen)
     exact = sum(1 for m in matches if m.status == "exact")
     fuzzy = sum(1 for m in matches if m.status == "fuzzy")
@@ -87,19 +87,3 @@ def render_review_overview(
     c2.metric("Match-Quote", f"{match_rate:.0%}")
     c3.metric("Angebotssumme", total_eur)
     c4.metric("PDF", "Bereit" if pdf_ready else "Offen")
-
-    with st.expander("Details anzeigen", expanded=False):
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.markdown(f"**Datei**  \n`{input_path.name}`")
-            st.markdown(f"**Review-ID**  \n`{review_id or '—'}`")
-        with col_b:
-            st.markdown(
-                f"**Matching**  \n"
-                f"exakt = `{exact}`, fuzzy = `{fuzzy}`, "
-                f"semantisch = `{semantic}`, kein Treffer = `{no_match}`"
-            )
-            loaded_source = st.session_state.get(
-                "loaded_extraction_source", "unbekannt"
-            )
-            st.markdown(f"**Geladene Extraktion**  \n`{loaded_source}`")

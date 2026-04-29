@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 
 from ..core import Anfrage, Settings, add_file_handler, get_logger, load_settings
 from ..ingestion import Mail
@@ -58,15 +59,12 @@ class QuotingPipeline:
         self.settings = settings or load_settings()
         self._stammdaten: list[dict] | None = None
 
-        # Defaults are the standard implementations. Pass any of these
-        # explicitly to swap behaviour (e.g. a RustMatcher inside MatchingStep).
         self._extraction = extraction_step or ExtractionStep(self.settings)
-        self._matching = matching_step  # built lazily — needs stammdaten
+        self._matching = matching_step
         self._pricing = pricing_step or PricingStep(self.settings.preise_path)
         self._render = render_step or RenderStep()
 
     # ---------- shared resources ----------------------------------------
-
     @property
     def stammdaten(self) -> list[dict]:
         if self._stammdaten is None:
@@ -86,13 +84,15 @@ class QuotingPipeline:
         return self._matching
 
     # ---------- end-to-end ----------------------------------------------
-
     def run(
         self,
         mail: Mail,
         output_dir: Path | None = None,
         work_name: str | None = None,
         progress: ProgressCallback | None = None,
+        *,
+        is_final: bool = False,
+        company_profile: Any | None = None,
     ) -> PipelineResult:
         """Run all four steps in sequence."""
         if not mail.has_content:
@@ -113,8 +113,8 @@ class QuotingPipeline:
         log.info("Work dir    : %s", work_dir)
 
         ctx = StepContext(work_dir=work_dir, progress=progress or noop_progress)
-
         start = time.time()
+
         anfrage = self.extract(mail, ctx)
         matches = self.match(anfrage, ctx)
         quotation = self.price(anfrage, matches, ctx)
@@ -123,9 +123,11 @@ class QuotingPipeline:
             quotation,
             work_dir / f"{work_dir.name}_ANGEBOT_DRAFT.pdf",
             ctx,
+            is_final=is_final,
+            company_profile=company_profile,
         )
-        duration = time.time() - start
 
+        duration = time.time() - start
         log.info("Done in %.2fs - total %.2f EUR",
                  duration, quotation.gesamtsumme)
 
@@ -140,7 +142,6 @@ class QuotingPipeline:
         )
 
     # ---------- individual steps ----------------------------------------
-
     def extract(self, mail: Mail, ctx: StepContext) -> Anfrage:
         return self._extraction.run(mail, ctx)
 
@@ -161,8 +162,18 @@ class QuotingPipeline:
         quotation: Quotation,
         output_path: Path,
         ctx: StepContext,
+        *,
+        is_final: bool = False,
+        company_profile: Any | None = None,
     ) -> Path:
-        return self._render.run(anfrage, quotation, output_path, ctx)
+        # If caller didn't override the step, use a one-off render step
+        # that knows about approval state and company profile. Otherwise
+        # respect the injected step.
+        if isinstance(self._render, RenderStep) and (is_final or company_profile is not None):
+            step = RenderStep(is_final=is_final, company_profile=company_profile)
+        else:
+            step = self._render
+        return step.run(anfrage, quotation, output_path, ctx)
 
 
 def _derive_work_name(mail: Mail) -> str:
