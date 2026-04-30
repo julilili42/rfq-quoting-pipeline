@@ -30,7 +30,6 @@ def build_story(
     story.append(offer_meta_table(quotation, today, valid_until, doc_width, config, styles))
     story.append(Spacer(1, 0.45 * cm))
     story.append(Paragraph(greeting(quotation), styles["body"]))
-
     for line in config.intro_lines:
         story.append(Paragraph(html_escape(line), styles["body"]))
 
@@ -69,8 +68,11 @@ def address_block(
     if quotation.kunde_email:
         recipient_parts.append(html_escape(quotation.kunde_email))
 
+    company_name = _clean_placeholder(config.company_name) or "Absender"
+    address_html = _clean_address_html(config.company_address_html)
+
     sender = Paragraph(
-        f"<b>{html_escape(config.company_name)}</b><br/>{config.company_address_html}",
+        f"<b>{html_escape(company_name)}</b><br/>{address_html}",
         styles["sender"],
     )
     recipient = Paragraph("<br/>".join(recipient_parts), styles["address"])
@@ -107,8 +109,8 @@ def offer_meta_table(
         ("Gültig bis:", valid_until.strftime("%d.%m.%Y")),
         ("Kundenansprechpartner:", quotation.kunde_ansprechpartner or "-"),
         ("E-Mail:", quotation.kunde_email or "-"),
-        ("Lieferbedingung:", quotation.incoterms or config.delivery_term),
-        ("Zahlungsbedingung:", quotation.zahlungsbedingungen or config.payment_term),
+        ("Lieferbedingung:", _first_real(quotation.incoterms, config.delivery_term, "—")),
+        ("Zahlungsbedingung:", _first_real(quotation.zahlungsbedingungen, config.payment_term, "—")),
     ]
 
     data = [
@@ -161,18 +163,34 @@ def items_table(
     config: OfferPdfConfig,
     styles: dict[str, Any],
 ):
+    """Position list with clear unit price + line total.
+
+    Column layout:
+
+        Pos · Artikelnr. · Bezeichnung · Menge · ME · Stückpreis · Gesamtpreis
+
+    The previous version showed ``einzelpreis * 100`` with a separate
+    ``PE=100`` cell, which was misleading: the displayed "Preis" could
+    be larger than the line total. Now both prices are unambiguous —
+    the *Stückpreis* is the per-piece price actually used for the
+    calculation, and *Gesamtpreis* is the matching line total.
+
+    For certificate / pauschal positions there is no per-piece
+    distinction, so *Stückpreis* and *Gesamtpreis* carry the same
+    flat amount and the line is annotated as a "Pauschalposition".
+    """
     from reportlab.lib import colors
     from reportlab.lib.units import cm
     from reportlab.platypus import Paragraph, Table, TableStyle
 
     col_widths = [
-        0.8 * cm,
-        3.25 * cm,
-        4.9 * cm,
-        2.1 * cm,
-        1.35 * cm,
-        2.5 * cm,
-        1.0 * cm,
+        0.8 * cm,    # Pos
+        3.10 * cm,   # Artikelnr.
+        4.50 * cm,   # Bezeichnung
+        1.95 * cm,   # Menge
+        1.20 * cm,   # ME
+        2.55 * cm,   # Stückpreis EUR
+        2.55 * cm,   # Gesamtpreis EUR
     ]
     delta = width - sum(col_widths)
     if delta > 0:
@@ -184,8 +202,8 @@ def items_table(
         "Bezeichnung",
         "Menge",
         "ME",
-        "Preis EUR",
-        "PE",
+        "Stückpreis EUR",
+        "Gesamtpreis EUR",
     ]]
 
     certificate_positions = {
@@ -195,8 +213,13 @@ def items_table(
 
     for item in quotation.items:
         source_pos = positions_by_nr.get(item.pos_nr)
-        price_unit = 1 if item.pos_nr in certificate_positions else 100
-        display_price = item.einzelpreis * price_unit
+        is_certificate = item.pos_nr in certificate_positions
+
+        # Both prices come straight from the quotation engine. No
+        # multiplication, no PE confusion: Stückpreis is per piece,
+        # Gesamtpreis is the line total.
+        unit_price = item.einzelpreis
+        line_total = item.gesamtpreis
 
         data.append([
             str(item.pos_nr),
@@ -204,19 +227,27 @@ def items_table(
             Paragraph(html_escape(item.bezeichnung), styles["table"]),
             format_qty(item.menge),
             html_escape(item.einheit),
-            format_eur_de(display_price),
-            str(price_unit),
+            format_eur_de(unit_price),
+            format_eur_de(line_total),
         ])
+
+        if is_certificate:
+            data.append([
+                "",
+                Paragraph("Pauschalposition", styles["table_small"]),
+                Paragraph(
+                    "Einmaliger Pauschalbetrag, kein Mengen-Multiplikator.",
+                    styles["table_small"],
+                ),
+                "", "", "", "",
+            ])
 
         if item.bemerkung:
             data.append([
                 "",
                 Paragraph("Hinweis:", styles["table_small"]),
                 Paragraph(html_escape(item.bemerkung), styles["table_small"]),
-                "",
-                "",
-                "",
-                "",
+                "", "", "", "",
             ])
 
         data.append([
@@ -226,10 +257,7 @@ def items_table(
                 html_escape(_position_text(source_pos, "lieferzeit", config.delivery_time)),
                 styles["table_small"],
             ),
-            "",
-            "",
-            "",
-            "",
+            "", "", "", "",
         ])
         data.append([
             "",
@@ -238,11 +266,9 @@ def items_table(
                 html_escape(_position_text(source_pos, "lieferwerk", config.delivery_plant)),
                 styles["table_small"],
             ),
-            "",
-            "",
-            "",
-            "",
+            "", "", "", "",
         ])
+
         data.append(["", "", "", "", "", "", ""])
 
     table = Table(
@@ -260,8 +286,9 @@ def items_table(
         ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
         ("FONTSIZE", (0, 1), (-1, -1), 8.0),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (5, 1), (5, -1), "RIGHT"),
-        ("ALIGN", (6, 1), (6, -1), "RIGHT"),
+        ("ALIGN", (3, 1), (3, -1), "RIGHT"),  # Menge
+        ("ALIGN", (5, 1), (5, -1), "RIGHT"),  # Stückpreis
+        ("ALIGN", (6, 1), (6, -1), "RIGHT"),  # Gesamtpreis
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ("TOPPADDING", (0, 0), (-1, -1), 5),
@@ -271,9 +298,59 @@ def items_table(
 
 
 def _position_text(pos, field_name: str, fallback: str) -> str:
+    """Return the position field if set, otherwise the config fallback.
+
+    The fallback used to be a placeholder like ``[LIEFERZEIT]`` even
+    when the position itself didn't have one — and even when the user
+    had a sensible value in their settings. We now treat any
+    placeholder-shaped fallback as ``"—"`` so the PDF doesn't render
+    raw placeholder strings to customers.
+    """
     value = getattr(pos, field_name, None) if pos is not None else None
     text = str(value or "").strip()
-    return text or fallback
+    if text:
+        return text
+
+    fallback = (fallback or "").strip()
+    if not fallback or _is_placeholder(fallback):
+        return "—"
+    return fallback
+
+
+def _is_placeholder(text: str) -> bool:
+    """Detect ``[FOO]``-style placeholder strings."""
+    text = text.strip()
+    return bool(text) and text.startswith("[") and text.endswith("]")
+
+
+def _clean_placeholder(text: str) -> str:
+    """Return ``text`` if it isn't placeholder-shaped, otherwise empty."""
+    if not text:
+        return ""
+    text = text.strip()
+    if _is_placeholder(text):
+        return ""
+    return text
+
+
+def _clean_address_html(address_html: str) -> str:
+    """Strip out ``[...]`` placeholder lines from a ``<br/>``-joined address."""
+    if not address_html:
+        return "—"
+    parts = address_html.split("<br/>")
+    cleaned = [p for p in (s.strip() for s in parts) if p and not _is_placeholder(p)]
+    return "<br/>".join(cleaned) if cleaned else "—"
+
+
+def _first_real(*candidates: str | None) -> str:
+    """Return the first candidate that's neither empty nor placeholder-shaped."""
+    for candidate in candidates:
+        if not candidate:
+            continue
+        text = str(candidate).strip()
+        if text and not _is_placeholder(text):
+            return text
+    return "—"
 
 
 def total_table(quotation: Quotation, width: float):
@@ -313,7 +390,6 @@ def internal_notes(
 
     notes = list(quotation.warnungen)
     notes.extend(f"Extraktion: {u}" for u in anfrage.unsicherheiten)
-
     if not notes:
         return []
 

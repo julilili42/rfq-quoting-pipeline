@@ -19,7 +19,15 @@ customise the flow:
 Each step is configured once at construction time. Pass custom step
 instances to swap an implementation without touching the orchestrator —
 this is the documented way to slot in a Rust matcher later.
+
+Master data is reached through the
+:class:`quoting.data.StammdatenRepository` boundary. The default is a
+CSV-backed repository; injecting a SQL or SAP-backed one only requires
+passing it to the constructor::
+
+    pipeline = QuotingPipeline(stammdaten_repo=MySapRepo(...))
 """
+
 from __future__ import annotations
 
 import time
@@ -27,8 +35,9 @@ from pathlib import Path
 from typing import Any
 
 from ..core import Anfrage, Settings, add_file_handler, get_logger, load_settings
+from ..data import StammdatenRepository, build_repository
 from ..ingestion import Mail
-from ..matching import MatchResult, load_stammdaten
+from ..matching import MatchResult
 from ..pricing import Quotation
 from .context import StepContext
 from .progress import ProgressCallback, noop_progress
@@ -51,25 +60,36 @@ class QuotingPipeline:
         self,
         settings: Settings | None = None,
         *,
+        stammdaten_repo: StammdatenRepository | None = None,
         extraction_step: ExtractionStep | None = None,
         matching_step: MatchingStep | None = None,
         pricing_step: PricingStep | None = None,
         render_step: RenderStep | None = None,
     ):
         self.settings = settings or load_settings()
-        self._stammdaten: list[dict] | None = None
-
+        self._stammdaten_repo = stammdaten_repo
         self._extraction = extraction_step or ExtractionStep(self.settings)
         self._matching = matching_step
         self._pricing = pricing_step or PricingStep(self.settings.preise_path)
         self._render = render_step or RenderStep()
 
     # ---------- shared resources ----------------------------------------
+
+    @property
+    def stammdaten_repo(self) -> StammdatenRepository:
+        """The configured master-data repository (built lazily)."""
+        if self._stammdaten_repo is None:
+            self._stammdaten_repo = build_repository(self.settings.stammdaten_path)
+        return self._stammdaten_repo
+
     @property
     def stammdaten(self) -> list[dict]:
-        if self._stammdaten is None:
-            self._stammdaten = load_stammdaten(self.settings.stammdaten_path)
-        return self._stammdaten
+        """Master data in the legacy ``list[dict]`` shape.
+
+        Kept for back-compat with code that still expects rows. New
+        callers should prefer :attr:`stammdaten_repo`.
+        """
+        return self.stammdaten_repo.as_rows()
 
     @property
     def matching(self) -> MatchingStep:
@@ -84,6 +104,7 @@ class QuotingPipeline:
         return self._matching
 
     # ---------- end-to-end ----------------------------------------------
+
     def run(
         self,
         mail: Mail,
@@ -99,22 +120,18 @@ class QuotingPipeline:
             raise ValueError(
                 "Mail has neither body nor attachments — nothing to extract."
             )
-
         output_dir = output_dir or self.settings.output_dir
         work_dir = output_dir / (work_name or _derive_work_name(mail))
         work_dir.mkdir(parents=True, exist_ok=True)
         add_file_handler(work_dir / "run.log")
-
         log.info("=" * 60)
         log.info("Subject     : %s", mail.subject or "(no subject)")
         log.info("From        : %s", mail.sender or "(unknown)")
         log.info("Body length : %d chars", len(mail.body))
         log.info("Attachments : %d", len(mail.attachments))
         log.info("Work dir    : %s", work_dir)
-
         ctx = StepContext(work_dir=work_dir, progress=progress or noop_progress)
         start = time.time()
-
         anfrage = self.extract(mail, ctx)
         matches = self.match(anfrage, ctx)
         quotation = self.price(anfrage, matches, ctx)
@@ -126,11 +143,9 @@ class QuotingPipeline:
             is_final=is_final,
             company_profile=company_profile,
         )
-
         duration = time.time() - start
         log.info("Done in %.2fs - total %.2f EUR",
                  duration, quotation.gesamtsumme)
-
         return PipelineResult(
             mail=mail,
             work_dir=work_dir,
@@ -142,6 +157,7 @@ class QuotingPipeline:
         )
 
     # ---------- individual steps ----------------------------------------
+
     def extract(self, mail: Mail, ctx: StepContext) -> Anfrage:
         return self._extraction.run(mail, ctx)
 

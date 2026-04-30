@@ -1,6 +1,10 @@
 """Hero block + KPI strip for the review-detail page.
 
-Step rendering and navigation moved to :mod:`nav`.
+Owns the small top-of-page render: a context breadcrumb that signals
+where the user is in the larger Outlook → Pipeline → Review flow,
+plus the page title and the single Review-ID chip. The sidebar no
+longer carries a duplicate review-id box, so this is the canonical
+place where the active review is identified.
 """
 from __future__ import annotations
 
@@ -13,25 +17,26 @@ from quoting.core import Anfrage
 
 # --------------------------------------------------------------------- hero
 
-
 def render_review_title(review_id: str | None, input_path: Path | None) -> None:
-    """Render the hero block at the top of the review-detail page."""
-    is_existing = bool(review_id)
+    """Render the breadcrumb + hero block at the top of the review page."""
+    is_outlook_review = bool(review_id)
 
-    mode_chip = (
+    _render_breadcrumb(is_outlook_review)
+
+    review_chip = (
         '<span class="ek-chip ek-chip-success">'
         '<span class="ek-pill-dot"></span>'
-        f"Bestehender Review · <code>{review_id}</code>"
+        f"Review · <code>{review_id}</code>"
         "</span>"
-        if is_existing
+        if is_outlook_review
         else '<span class="ek-chip ek-chip-brand">'
-        '<span class="ek-pill-dot"></span>'
-        "Neuer Upload"
-        "</span>"
+             '<span class="ek-pill-dot"></span>'
+             "Direkter Upload"
+             "</span>"
     )
 
     file_chip = (
-        f'<span class="ek-chip">📄 {input_path.name}</span>'
+        f'<span class="ek-chip ek-chip-muted">{input_path.name}</span>'
         if input_path is not None and str(input_path) != "—"
         else ""
     )
@@ -47,7 +52,7 @@ def render_review_title(review_id: str | None, input_path: Path | None) -> None:
                 validieren und ein verkaufsfertiges Angebot erstellen.
             </p>
             <div class="ek-meta-row">
-                {mode_chip}
+                {review_chip}
                 {file_chip}
             </div>
         </div>
@@ -56,8 +61,42 @@ def render_review_title(review_id: str | None, input_path: Path | None) -> None:
     )
 
 
-# --------------------------------------------------------------------- KPIs
+def _render_breadcrumb(is_outlook_review: bool) -> None:
+    """Slim trail showing the user's position in the larger workflow.
 
+    For Outlook-originated reviews:
+        Anfrage › Pipeline › **Review**
+
+    For direct uploads (no Outlook context):
+        Direkter Upload › **Review**
+
+    The active node is the always "Review" — the user is inside the
+    review UI. The breadcrumb is informational; nodes are not clickable
+    because the upstream stages live outside this app.
+    """
+    if is_outlook_review:
+        nodes = [
+            ("Anfrage", False),
+            ("Pipeline", False),
+            ("Review", True),
+        ]
+    else:
+        nodes = [
+            ("Direkter Upload", False),
+            ("Review", True),
+        ]
+
+    parts = ['<div class="ek-breadcrumb">']
+    for i, (label, active) in enumerate(nodes):
+        cls = "ek-breadcrumb-node active" if active else "ek-breadcrumb-node"
+        parts.append(f'<span class="{cls}">{label}</span>')
+        if i < len(nodes) - 1:
+            parts.append('<span class="ek-breadcrumb-sep">›</span>')
+    parts.append("</div>")
+    st.markdown("".join(parts), unsafe_allow_html=True)
+
+
+# --------------------------------------------------------------------- KPIs
 
 def render_review_overview(
     review_id: str | None,
@@ -70,7 +109,6 @@ def render_review_overview(
     exact = sum(1 for m in matches if m.status == "exact")
     fuzzy = sum(1 for m in matches if m.status == "fuzzy")
     semantic = sum(1 for m in matches if m.status == "semantic")
-    no_match = sum(1 for m in matches if m.status == "no_match")
     matched = exact + fuzzy + semantic
     match_rate = matched / total_positions if total_positions else 0.0
 

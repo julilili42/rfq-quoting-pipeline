@@ -1,23 +1,23 @@
 """Streamlit editor for the extracted Anfrage.
 
-The editor is split into two human-task views that mirror the new
-review workflow:
+Two human-task entry points that mirror the new review workflow:
 
 - :func:`render_positions_editor` — Step 1 (positions + matching).
-  Shows match status and matched stammdaten article inline with each
-  position so the reviewer can verify "did the AI find the right
-  master-data row?" without leaving the position.
+  Each position carries a *compact* inline match chip showing how the AI
+  matched it against the master data. Positions stay collapsed until the
+  reviewer opens them.
 
 - :func:`render_customer_editor` — Step 2 (customer header + commercial
-  terms + sender company profile).
-
-The legacy :func:`render_editor` is kept as a thin wrapper for backward
-compatibility — it just calls both new editors in sequence.
+  terms + sender company profile). Defaults are pulled from the user's
+  settings and can be overridden per offer; the override propagates
+  back into the Anfrage so subsequent PDF renders pick it up.
 
 Field changes are tracked in ``st.session_state["changed_fields"]`` for
 the approval audit log.
 """
 from __future__ import annotations
+
+from html import escape
 
 import streamlit as st
 
@@ -25,17 +25,17 @@ from quoting.core import Anfrage
 from quoting.matching import MatchResult
 
 
-_CONFIDENCE_META = {
-    "high":   {"icon": "🟢", "label": "Hohe Sicherheit",    "tone": "success"},
-    "medium": {"icon": "🟡", "label": "Mittlere Sicherheit", "tone": "warning"},
-    "low":    {"icon": "🔴", "label": "Geringe Sicherheit",  "tone": "danger"},
+_CONFIDENCE_LABEL = {
+    "high":   "hoch",
+    "medium": "mittel",
+    "low":    "gering",
 }
 
-_MATCH_META = {
-    "exact":    {"icon": "✅", "label": "Exakt-Treffer"},
-    "fuzzy":    {"icon": "🔁", "label": "Fuzzy-Treffer"},
-    "semantic": {"icon": "🧩", "label": "Semantischer Treffer"},
-    "no_match": {"icon": "❌", "label": "Kein Treffer"},
+_MATCH_LABEL = {
+    "exact":    "Exakt",
+    "fuzzy":    "Fuzzy",
+    "semantic": "Semantisch",
+    "no_match": "Kein Treffer",
 }
 
 
@@ -75,29 +75,15 @@ def render_positions_editor(
     anfrage: Anfrage,
     matches: list[MatchResult],
 ) -> Anfrage:
-    """Step 1: positions + per-position matching info.
-
-    Layout:
-    - Instruction banner
-    - Change indicator
-    - Matching summary metrics (4 cells)
-    - Per-position expanders (auto-expanded for low-confidence /
-      weak-match items so they don't get missed)
-    """
+    """Step 1: positions + per-position matching info."""
     st.markdown(
-        '<div class="ek-section-label">Positionen prüfen · '
-        "KI-extrahierte Anfragepositionen</div>",
+        '<div class="ek-section-label">Positionen prüfen</div>',
         unsafe_allow_html=True,
     )
-    st.info(
-        "Prüfe, ob alle Positionen aus der Anfrage korrekt erkannt und "
-        "den Stammdaten zugeordnet wurden. Korrigiere bei Bedarf "
-        "Artikelnummer, Menge oder Werkstoff.",
-        icon="📋",
-    )
+
     _changes_indicator()
     _matching_summary(matches)
-    st.markdown("&nbsp;", unsafe_allow_html=True)
+
     anfrage.positionen = _position_block(anfrage, matches=matches)
     st.session_state["anfrage"] = anfrage
     return anfrage
@@ -106,42 +92,35 @@ def render_positions_editor(
 def render_customer_editor(anfrage: Anfrage) -> Anfrage:
     """Step 2: customer + commercial terms + sender company data."""
     st.markdown(
-        '<div class="ek-section-label">Kundendaten prüfen · '
-        "Empfänger und Angebotsmetadaten</div>",
+        '<div class="ek-section-label">Kundendaten prüfen</div>',
         unsafe_allow_html=True,
     )
-    st.info(
-        "Prüfe, ob Kunde, Ansprechpartner und Angebotsinformationen "
-        "korrekt übernommen wurden. Diese Daten erscheinen direkt im "
-        "Angebots-PDF.",
-        icon="👤",
-    )
+
     _changes_indicator()
     _customer_validation(anfrage)
     _customer_block(anfrage)
     _commercial_block(anfrage)
     _company_block()
+
     st.session_state["anfrage"] = anfrage
     return anfrage
 
 
 def render_editor(anfrage: Anfrage) -> Anfrage:
-    """Legacy combined editor (back-compat alias).
-
-    Renders customer + positions in one go. New code should call
-    :func:`render_positions_editor` and :func:`render_customer_editor`
-    separately.
-    """
+    """Legacy combined editor (back-compat alias)."""
     st.markdown(
-        '<div class="ek-section-label">KI-extrahierte Daten · '
-        "Bitte prüfen und korrigieren</div>",
+        '<div class="ek-section-label">'
+        "KI-extrahierte Daten · Bitte prüfen und korrigieren"
+        "</div>",
         unsafe_allow_html=True,
     )
+
     _changes_indicator()
     _customer_block(anfrage)
     _commercial_block(anfrage)
     _company_block()
     anfrage.positionen = _position_block(anfrage)
+
     st.session_state["anfrage"] = anfrage
     return anfrage
 
@@ -150,7 +129,7 @@ def render_editor(anfrage: Anfrage) -> Anfrage:
 
 def _customer_block(anfrage: Anfrage) -> None:
     """Editable customer / header information — open by default."""
-    with st.expander("👤 Kunde & Anfrage-Header", expanded=True):
+    with st.expander("Kunde & Anfrage-Header", expanded=True):
         c1, c2 = st.columns(2)
         with c1:
             anfrage.kunde_firma = _input_with_tracking(
@@ -167,7 +146,6 @@ def _customer_block(anfrage: Anfrage) -> None:
                 key="ed_kunde_email",
                 placeholder="kontakt@firma.de",
             )
-
         with c2:
             anfrage.kunde_ansprechpartner = _input_with_tracking(
                 kind="text", label="Ansprechpartner",
@@ -204,117 +182,204 @@ def _customer_block(anfrage: Anfrage) -> None:
 
 
 def _commercial_block(anfrage: Anfrage) -> None:
-    """Commercial terms — relevant for PDF generation. Collapsed by default."""
-    with st.expander("💼 Kommerzielle Bedingungen", expanded=False):
+    """Commercial terms — pulls defaults from settings, allows override.
+
+    The defaults shown here come from the user's company profile; any
+    edit replaces the default for *this* Anfrage and is what the PDF
+    renderer will use. Empty values fall back to the profile.
+    """
+    from quoting.api.settings_store import load_settings
+
+    profile = load_settings().company
+
+    with st.expander("Kommerzielle Bedingungen", expanded=False):
         c1, c2 = st.columns(2)
         with c1:
-            anfrage.incoterms = _input_with_tracking(
+            current_incoterms = (anfrage.incoterms or "").strip()
+            display_incoterms = current_incoterms or (profile.delivery_term or "")
+            new_incoterms = _input_with_tracking(
                 kind="text", label="Lieferbedingung / Incoterms",
-                value=anfrage.incoterms or "",
+                value=display_incoterms,
                 field_path="incoterms",
                 key="ed_incoterms",
                 placeholder="z. B. EXW Werk",
-                help="Wenn leer, werden die Werte aus den Einstellungen verwendet.",
+                help=(
+                    f"Standard aus den Einstellungen: "
+                    f"{profile.delivery_term or '—'}"
+                ),
             )
+            # Only persist into the Anfrage if the user actually typed
+            # something — keep the field "empty" when it matches the
+            # default so settings changes propagate naturally.
+            if new_incoterms.strip() != (profile.delivery_term or "").strip():
+                anfrage.incoterms = new_incoterms or None
+            else:
+                anfrage.incoterms = None
+
         with c2:
-            anfrage.zahlungsbedingungen = _input_with_tracking(
+            current_pay = (anfrage.zahlungsbedingungen or "").strip()
+            display_pay = current_pay or (profile.payment_term or "")
+            new_pay = _input_with_tracking(
                 kind="text", label="Zahlungsbedingung",
-                value=anfrage.zahlungsbedingungen or "",
+                value=display_pay,
                 field_path="zahlungsbedingungen",
                 key="ed_zahlungsbed",
                 placeholder="z. B. 30 Tage netto",
-                help="Wenn leer, werden die Werte aus den Einstellungen verwendet.",
+                help=(
+                    f"Standard aus den Einstellungen: "
+                    f"{profile.payment_term or '—'}"
+                ),
             )
+            if new_pay.strip() != (profile.payment_term or "").strip():
+                anfrage.zahlungsbedingungen = new_pay or None
+            else:
+                anfrage.zahlungsbedingungen = None
 
 
 def _company_block() -> None:
-    """Sender-side company data with quick-fill from settings."""
+    """Sender-side company data — quick-fill from settings, override per offer.
+
+    Edits here are stored on the session for *this* review only and
+    the PDF renderer picks them up via :func:`get_effective_company_profile`.
+    They do not persist back to the global settings.
+    """
+    from dataclasses import replace
+
     from quoting.api.settings_store import load_settings
 
-    settings = load_settings()
-    profile = settings.company
+    base_profile = load_settings().company
+    has_profile = bool(base_profile.company_name and base_profile.contact_person)
 
-    has_profile = bool(profile.company_name and profile.contact_person)
+    overrides: dict = st.session_state.get("company_profile_overrides", {})
 
-    with st.expander("🏢 Eigene Firmendaten (für das Angebots-PDF)", expanded=False):
-        if has_profile:
-            st.success(
-                f"**{profile.company_name}** · {profile.contact_person} "
-                f"({profile.contact_email or 'keine E-Mail'})",
-                icon="✅",
-            )
+    def _val(field: str) -> str:
+        if field in overrides:
+            return str(overrides[field] or "")
+        return str(getattr(base_profile, field, "") or "")
+
+    with st.expander(
+        "Eigene Firmendaten (für das Angebots-PDF)",
+        expanded=False,
+    ):
+        if has_profile and not overrides:
             st.caption(
-                "Diese Daten werden automatisch in die Angebots-PDF übernommen. "
-                "Ändern unter „Einstellungen“ in der Sidebar."
+                f"Standardwerte aus den Einstellungen werden verwendet. "
+                f"Hier kannst du sie für *dieses* Angebot überschreiben."
+            )
+        elif overrides:
+            st.caption(
+                "Es sind individuelle Anpassungen für dieses Angebot aktiv."
             )
         else:
             st.warning(
-                "Keine Firmendaten hinterlegt. Bitte zuerst unter "
-                "„Einstellungen“ in der Sidebar ausfüllen — sonst erscheinen "
+                "Keine Firmendaten in den Einstellungen. Bitte zuerst "
+                "unter „Einstellungen“ ausfüllen — sonst erscheinen "
                 "Platzhalter im PDF.",
-                icon="⚠️",
             )
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Lieferbedingung", profile.delivery_term or "—")
-        c2.metric("Zahlungsbedingung", profile.payment_term or "—")
-        c3.metric("Gültigkeit", f"{profile.validity_days} Tage")
+        new_overrides: dict = {}
+
+        c1, c2 = st.columns(2)
+        with c1:
+            new_overrides["company_name"] = st.text_input(
+                "Firmenname",
+                value=_val("company_name"),
+                key="company_override_name",
+                placeholder="z. B. ElringKlinger Kunststofftechnik GmbH",
+            )
+            new_overrides["contact_person"] = st.text_input(
+                "Kontaktperson",
+                value=_val("contact_person"),
+                key="company_override_contact",
+                placeholder="z. B. Max Mustermann",
+            )
+            new_overrides["contact_phone"] = st.text_input(
+                "Telefon",
+                value=_val("contact_phone"),
+                key="company_override_phone",
+                placeholder="+49 …",
+            )
+        with c2:
+            new_overrides["contact_email"] = st.text_input(
+                "E-Mail",
+                value=_val("contact_email"),
+                key="company_override_email",
+                placeholder="vertrieb@firma.de",
+            )
+            new_overrides["delivery_term"] = st.text_input(
+                "Standard-Lieferbedingung",
+                value=_val("delivery_term"),
+                key="company_override_delivery",
+                placeholder="z. B. EXW Werk",
+                help="Wirkt nur, wenn die Anfrage selbst keine "
+                     "Lieferbedingung enthält.",
+            )
+            new_overrides["payment_term"] = st.text_input(
+                "Standard-Zahlungsbedingung",
+                value=_val("payment_term"),
+                key="company_override_payment",
+                placeholder="z. B. 30 Tage netto",
+            )
+
+        # Track an override only if it differs from the saved profile.
+        diff: dict = {}
+        for key, val in new_overrides.items():
+            if str(val or "") != str(getattr(base_profile, key, "") or ""):
+                diff[key] = val
+        if diff != overrides:
+            _track_change("company_profile")
+            st.session_state["company_profile_overrides"] = diff
+
+
+def get_effective_company_profile():
+    """Resolve the company profile to use for *this* PDF render.
+
+    Combines the saved settings profile with any per-review overrides
+    that the user typed into the editor.
+    """
+    from dataclasses import replace
+    from quoting.api.settings_store import load_settings
+
+    base = load_settings().company
+    overrides = st.session_state.get("company_profile_overrides") or {}
+    if not overrides:
+        return base
+    return replace(base, **overrides)
 
 
 def _position_block(
     anfrage: Anfrage,
     matches: list[MatchResult] | None = None,
 ) -> list:
-    """Editable per-position blocks. Returns the edited positions list.
-
-    When ``matches`` is provided, each position shows a status banner
-    indicating the match quality and the matched stammdaten article.
-    Positions that need attention (low confidence or fuzzy/semantic/
-    no_match) are auto-expanded.
-    """
+    """Editable per-position blocks. Returns the edited positions list."""
     matches_by_pos: dict[int, MatchResult] = {
         m.pos_nr: m for m in (matches or [])
     }
 
     if not matches:
-        # Legacy path keeps the original section label
         st.markdown(
             '<div class="ek-section-label" style="margin-top:18px;">'
-            f"📦 Positionen · {len(anfrage.positionen)}"
+            f"Positionen · {len(anfrage.positionen)}"
             "</div>",
             unsafe_allow_html=True,
         )
 
     edited_positions = []
     for i, pos in enumerate(anfrage.positionen):
-        meta = _CONFIDENCE_META.get(
-            pos.confidence,
-            {"icon": "⚪", "label": "Unbekannt", "tone": ""},
-        )
         match = matches_by_pos.get(pos.pos_nr)
-        match_meta = _MATCH_META.get(match.status) if match else None
-
-        prefix = meta["icon"]
-        if match_meta:
-            prefix = f"{meta['icon']}  {match_meta['icon']}"
-
         label = (
-            f"{prefix}  Pos {pos.pos_nr} · "
-            f"{pos.artikelnummer or 'Unbekannt'}  ·  "
+            f"Pos {pos.pos_nr} · "
+            f"{pos.artikelnummer or 'Unbekannt'} · "
             f"{int(pos.menge)} {pos.einheit}"
         )
 
-        # Auto-expand positions that need a closer look
-        needs_attention = bool(
-            pos.confidence == "low"
-            or (match and match.status in ("fuzzy", "semantic", "no_match"))
-        )
-
-        with st.expander(label, expanded=needs_attention):
+        with st.expander(label, expanded=False):
             if match is not None:
-                _render_match_info(match)
+                _render_match_chip(match)
 
-            st.caption(f"KI-Sicherheit: **{meta['label']}**")
+            st.caption(
+                f"KI-Sicherheit: {_CONFIDENCE_LABEL.get(pos.confidence, pos.confidence)}"
+            )
 
             c1, c2 = st.columns(2)
             with c1:
@@ -336,7 +401,6 @@ def _position_block(
                     field_path=f"positionen[{i}].einheit",
                     key=f"eh_{i}",
                 )
-
             with c2:
                 pos.liefertermin = _input_with_tracking(
                     kind="text", label="Liefertermin",
@@ -406,41 +470,48 @@ def _position_block(
                     f'{"…" if len(pos.source_quote) > 160 else ""}"'
                 )
 
-            edited_positions.append(pos)
+        edited_positions.append(pos)
 
     return edited_positions
 
 
 # ------------------------------------------------------------------ helpers
 
-def _render_match_info(match: MatchResult) -> None:
-    """Inline match-quality banner inside a position expander."""
-    meta = _MATCH_META.get(match.status, {"icon": "?", "label": "Unbekannt"})
-    score_pct = f"{match.score:.0%}" if match.score else "—"
+def _render_match_chip(match: MatchResult) -> None:
+    """Compact, single-line match-status chip at the top of a position.
 
-    if match.status == "exact":
-        st.success(
-            f"{meta['icon']} **{meta['label']}** · Stammdaten-Artikel "
-            f"`{match.matched_artikelnr}` — {match.matched_bezeichnung}",
-            icon=None,
-        )
-    elif match.status == "no_match":
-        st.warning(
-            f"{meta['icon']} **{meta['label']}** — kein Stammdaten-Artikel "
-            "gefunden. Bitte Artikelnummer prüfen oder manuell zuordnen.",
-            icon=None,
-        )
+    Replaces the previous full-width Streamlit callouts which were too
+    visually loud. The chip shows status + score + matched article in
+    one line, color-coded via CSS.
+    """
+    status = match.status
+    label = _MATCH_LABEL.get(status, status)
+    score_pct = f"{match.score:.0%}" if match.score else None
+
+    if status == "no_match":
+        meta_html = "kein Stammdaten-Treffer"
     else:
-        st.info(
-            f"{meta['icon']} **{meta['label']}** ({score_pct}) · "
-            f"Vorschlag: `{match.matched_artikelnr}` — "
-            f"{match.matched_bezeichnung}. **Bitte verifizieren.**",
-            icon=None,
-        )
+        article = escape(match.matched_artikelnr or "—")
+        bezeichnung = escape((match.matched_bezeichnung or "")[:80])
+        bits = [f"<code>{article}</code>"]
+        if score_pct:
+            bits.append(f"Score {score_pct}")
+        if bezeichnung:
+            bits.append(bezeichnung)
+        meta_html = " · ".join(bits)
+
+    st.markdown(
+        f'<div class="ek-match-chip {status}">'
+        f'<span class="ek-pill-dot"></span>'
+        f'<span class="ek-match-chip-label">{label}</span>'
+        f'<span class="ek-match-chip-meta">{meta_html}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _matching_summary(matches: list[MatchResult]) -> None:
-    """4-cell metric strip showing the match-status distribution."""
+    """Subtle inline summary of the match-status distribution."""
     if not matches:
         return
     exact = sum(1 for m in matches if m.status == "exact")
@@ -448,16 +519,22 @@ def _matching_summary(matches: list[MatchResult]) -> None:
     semantic = sum(1 for m in matches if m.status == "semantic")
     no_match = sum(1 for m in matches if m.status == "no_match")
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Exakt", exact, help="Direkter Treffer auf Artikelnummer")
-    c2.metric("Fuzzy", fuzzy, help="Ähnliche Artikelnummer (Tippfehler/OCR)")
-    c3.metric(
-        "Semantisch", semantic,
-        help="Treffer über Bezeichnung & Werkstoff",
+    items = (
+        ("exact", "Exakt", exact),
+        ("fuzzy", "Fuzzy", fuzzy),
+        ("semantic", "Semantisch", semantic),
+        ("no_match", "Kein Treffer", no_match),
     )
-    c4.metric(
-        "Kein Treffer", no_match,
-        help="Manuelle Zuordnung notwendig",
+    summary = "".join(
+        f'<span class="ek-match-summary-item {status}">'
+        f'<span class="ek-match-summary-count">{count}</span>'
+        f'<span>{label}</span>'
+        f'</span>'
+        for status, label, count in items
+    )
+    st.markdown(
+        f'<div class="ek-match-summary">{summary}</div>',
+        unsafe_allow_html=True,
     )
 
 
@@ -476,7 +553,6 @@ def _customer_validation(anfrage: Anfrage) -> None:
         st.warning(
             f"Fehlende oder leere Pflichtfelder: **{', '.join(missing)}**. "
             "Bitte vor Bestätigung ergänzen.",
-            icon="⚠️",
         )
 
 

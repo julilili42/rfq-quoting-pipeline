@@ -4,6 +4,9 @@ Layout note: the chat input is rendered at the *top* of the panel (just
 under the section label), so it never sits awkwardly below the
 workflow-completion buttons. The conversation history and the latest
 download button render below the input.
+
+Icon policy: no decorative emoji on labels, callouts, or downloads. The
+rest of the app is intentionally quiet, the chat panel follows suit.
 """
 from __future__ import annotations
 
@@ -37,7 +40,6 @@ def render_agent_chat(
 
     agent_lang = st.session_state.get("agent_lang", "de")
 
-    # --- chat input first --------------------------------------------------
     chat_placeholder = (
         "Schreibe eine Anpassung: Rabatt je Position/Artikel, Kommentar oder Summenfrage"
         if agent_lang == "de"
@@ -45,19 +47,18 @@ def render_agent_chat(
     )
     user_msg = st.chat_input(chat_placeholder)
 
-    # --- intro hint --------------------------------------------------------
     messages = st.session_state.setdefault("agent_messages", [])
+
     if not messages:
         intro = (
             "Try: *Discount 5% on article ABC*, *Set pos 3 to 12 EUR*, "
             "*What is the total?*"
             if agent_lang == "en"
             else "Beispiele: *5% Rabatt auf Artikel ABC*, *Setze pos 3 auf 12 EUR*, "
-            "*Wie hoch ist die Summe?*"
+                 "*Wie hoch ist die Summe?*"
         )
-        st.info(intro, icon="💡")
+        st.info(intro)
 
-    # --- history -----------------------------------------------------------
     for msg in messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
@@ -72,10 +73,9 @@ def render_agent_chat(
             messages=messages,
         )
 
-    # --- inline download (compact) ----------------------------------------
     if st.session_state.get("pdf_bytes"):
         st.download_button(
-            label="📥 Aktuelles PDF herunterladen",
+            label="Aktuelles PDF herunterladen",
             data=st.session_state["pdf_bytes"],
             file_name=st.session_state.get(
                 "pdf_file_name",
@@ -101,7 +101,6 @@ def _handle_agent_message(
     known_articles = [
         p.artikelnummer for p in anfrage.positionen if p.artikelnummer
     ]
-
     parsed_override, parse_feedback = parse_edit_instruction(
         user_msg, known_articles, lang=agent_lang
     )
@@ -111,7 +110,6 @@ def _handle_agent_message(
         st.session_state["manual_discount_overrides"] = upsert_override(
             overrides, parsed_override
         )
-
         spinner_text = (
             "Anpassung wird angewendet und PDF neu berechnet..."
             if agent_lang == "de"

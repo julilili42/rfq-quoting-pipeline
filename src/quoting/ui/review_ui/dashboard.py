@@ -4,6 +4,10 @@ Shows every review on disk with its current status, plus value-oriented
 statistics (extraction quality, match rate, time saved). Each row links
 into the review detail via ``?review_id=…``.
 
+Icon policy: section labels and empty states use plain text (no
+decorative emoji). PDF availability is signalled via the action button
+on the right of each card — not via emoji.
+
 Layout
 ------
 - Hero
@@ -23,11 +27,12 @@ import streamlit as st
 
 from quoting.ui.review_ui.review_loader import ReviewSummary, scan_reviews
 
+
 # Conservative estimate: how long would a human take to do one review by
 # hand. Used only for the "time saved" headline.
 MINUTES_PER_MANUAL_REVIEW = 15
-
 PAGE_SIZE = 12
+
 
 _STATUS_LABEL = {
     "abgeschlossen": "Abgeschlossen",
@@ -55,8 +60,7 @@ def render_dashboard(reviews_root: Path) -> None:
         return
 
     st.markdown("&nbsp;", unsafe_allow_html=True)
-
-    with st.expander("📊 Insights anzeigen", expanded=False):
+    with st.expander("Insights anzeigen", expanded=False):
         _render_value_metrics(summaries)
         st.markdown("&nbsp;", unsafe_allow_html=True)
         _render_insights(summaries)
@@ -71,13 +75,13 @@ def _render_hero() -> None:
     st.markdown(
         """
         <div class="ek-title-block">
-          <h1 class="ek-title">
-            Quoting-Übersicht<span class="ek-accent-dot">.</span>
-          </h1>
-          <p class="ek-subtitle">
-            Alle Anfragen, die durch die KI-Pipeline gelaufen sind —
-            inklusive Status, Match-Qualität und Bearbeitungsverlauf.
-          </p>
+            <h1 class="ek-title">
+                Quoting-Übersicht<span class="ek-accent-dot">.</span>
+            </h1>
+            <p class="ek-subtitle">
+                Alle Anfragen, die durch die KI-Pipeline gelaufen sind —
+                inklusive Status, Match-Qualität und Bearbeitungsverlauf.
+            </p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -90,7 +94,6 @@ def _render_empty_state() -> None:
         "an die Review-API gesendet wird, erscheint sie hier — "
         "alternativ links eine Datei hochladen und ein Angebot manuell "
         "generieren.",
-        icon="📭",
     )
 
 
@@ -162,7 +165,7 @@ def _render_filters_and_list(summaries: list[ReviewSummary]) -> None:
     with col_search:
         query = st.text_input(
             "Suche",
-            placeholder="🔍 Betreff oder Absender…",
+            placeholder="Betreff oder Absender…",
             label_visibility="collapsed",
         )
 
@@ -172,13 +175,11 @@ def _render_filters_and_list(summaries: list[ReviewSummary]) -> None:
         st.caption(f"Keine Reviews mit Filter „{status_filter}“ gefunden.")
         return
 
-    # Pagination
     total = len(filtered)
     page_count = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page_key = f"_dashboard_page_{status_filter}_{query}"
     current_page = int(st.session_state.get(page_key, 1))
     current_page = max(1, min(current_page, page_count))
-
     start = (current_page - 1) * PAGE_SIZE
     end = start + PAGE_SIZE
     page_items = filtered[start:end]
@@ -208,7 +209,6 @@ def _apply_filters(
     }.get(status_filter)
 
     q = (query or "").strip().lower()
-
     out = []
     for s in summaries:
         if target and s.status != target:
@@ -222,40 +222,41 @@ def _apply_filters(
 def _render_review_row(s: ReviewSummary) -> None:
     """One review as a compact card with inline actions."""
     overrides_marker = (
-        f' · ✏️ {s.manual_overrides_count} '
+        f' · {s.manual_overrides_count} '
         f'{"Anpassung" if s.manual_overrides_count == 1 else "Anpassungen"}'
         if s.manual_overrides_count
         else ""
     )
-    pdf_marker = " · 📄 PDF" if s.pdf_path else ""
+
+    pdf_marker = " · PDF vorhanden" if s.pdf_path else ""
     pdf_action = _pdf_download_action(s)
     open_href = f"?review_id={quote(s.review_id, safe='')}"
 
     st.markdown(
         f"""
         <div class="ek-review-card">
-          <a class="ek-review-card-link"
-             href="{open_href}"
-             target="_self"
-             aria-label="Review {_safe_html(s.review_id)} öffnen"></a>
-          <div class="ek-review-main">
-            <div class="ek-review-head-row">
-              <span class="{_STATUS_PILL_CLASS[s.status]}">
-                <span class="ek-pill-dot"></span>{_STATUS_LABEL[s.status]}
-              </span>
-              <code class="ek-review-id">{_safe_html(s.review_id)}</code>
+            <a class="ek-review-card-link"
+               href="{open_href}"
+               target="_self"
+               aria-label="Review {_safe_html(s.review_id)} öffnen"></a>
+            <div class="ek-review-main">
+                <div class="ek-review-head-row">
+                    <span class="{_STATUS_PILL_CLASS[s.status]}">
+                        <span class="ek-pill-dot"></span>{_STATUS_LABEL[s.status]}
+                    </span>
+                    <code class="ek-review-id">{_safe_html(s.review_id)}</code>
+                </div>
+                <div class="ek-review-subject">{_safe_html(s.subject)}</div>
+                <div class="ek-review-meta">
+                    {_safe_html(s.sender) or "—"}
+                    · {s.positions} Pos · Match {s.match_rate:.0%}
+                    · {s.total_eur:,.2f} {s.currency}{pdf_marker}{overrides_marker}
+                </div>
             </div>
-            <div class="ek-review-subject">{_safe_html(s.subject)}</div>
-            <div class="ek-review-meta">
-              {_safe_html(s.sender) or "—"}
-              · {s.positions} Pos · Match {s.match_rate:.0%}
-              · {s.total_eur:,.2f} {s.currency}{pdf_marker}{overrides_marker}
+            <div class="ek-review-actions">
+                <span class="ek-review-date">{_format_date(s.updated_at)}</span>
+                {pdf_action}
             </div>
-          </div>
-          <div class="ek-review-actions">
-            <span class="ek-review-date">{_format_date(s.updated_at)}</span>
-            {pdf_action}
-          </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -374,7 +375,6 @@ def _safe_html(s: str) -> str:
 def _pdf_download_action(s: ReviewSummary) -> str:
     if not s.pdf_path or not s.pdf_path.exists():
         return ""
-
     encoded = b64encode(s.pdf_path.read_bytes()).decode("ascii")
     filename = _safe_html(s.pdf_path.name)
     return (

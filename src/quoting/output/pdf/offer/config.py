@@ -1,8 +1,10 @@
 """Static PDF configuration.
 
 Prototype note:
+
 All personal / company-specific production data is intentionally represented
-as placeholders. Replace these values later with real ERP / CRM data.
+as placeholders. Replace these values later with real ERP / CRM data, or
+hand a populated ``CompanyProfile`` to :func:`config_from_company_profile`.
 """
 from __future__ import annotations
 
@@ -25,11 +27,13 @@ class OfferPdfConfig:
     document_no_fallback: str = "ENTWURF"
     customer_no_fallback: str = "[KUNDEN-NR.]"
 
-    # Commercial prototype defaults
-    delivery_term: str = "[LIEFERBEDINGUNG]"
-    payment_term: str = "[ZAHLUNGSBEDINGUNG]"
-    delivery_time: str = "[LIEFERZEIT]"
-    delivery_plant: str = "[LIEFERWERK]"
+    # Commercial prototype defaults — empty strings here mean "fall back
+    # to the per-position value or to a dash". Avoid ``[…]`` placeholders
+    # so they never leak into the final PDF.
+    delivery_term: str = "EXW Werk"
+    payment_term: str = "30 Tage netto"
+    delivery_time: str = ""
+    delivery_plant: str = ""
     validity_days: int = 28
 
     # Logo path relative to src/quoting/
@@ -82,20 +86,42 @@ class OfferPdfConfig:
         return replace(self, **kwargs)
 
     def effective_closing(self) -> tuple[str, ...]:
-        """Closing block uses the same contact person as the offer header."""
+        """Closing block uses the same contact person as the offer header.
+
+        If no real contact person is set, the ``[NAME / SIGNATUR]`` line
+        is dropped entirely instead of leaving the placeholder visible
+        in the PDF.
+        """
         lines = self.closing_lines if self.is_final else self.closing_lines_draft
-        signature_name = (self.contact_person or "").strip() or "[KONTAKTPERSON]"
-        resolved = tuple(
-            signature_name if line == "[NAME / SIGNATUR]" else line
-            for line in lines
+        signature_name = (self.contact_person or "").strip()
+        is_placeholder_name = (
+            not signature_name
+            or (signature_name.startswith("[") and signature_name.endswith("]"))
         )
-        if signature_name not in resolved:
-            resolved += (signature_name,)
-        return resolved
+
+        resolved: list[str] = []
+        for line in lines:
+            if line == "[NAME / SIGNATUR]":
+                if is_placeholder_name:
+                    continue
+                resolved.append(signature_name)
+            else:
+                resolved.append(line)
+
+        if not is_placeholder_name and signature_name not in resolved:
+            resolved.append(signature_name)
+
+        return tuple(resolved)
 
 
 def config_from_company_profile(profile, *, is_final: bool = False) -> OfferPdfConfig:
-    """Build a config from a CompanyProfile dataclass (settings_store)."""
+    """Build a config from a CompanyProfile dataclass (settings_store).
+
+    Empty strings on the profile fall back to ``[...]`` placeholders for
+    the visible header/footer fields, but the *runtime* PDF flow filters
+    placeholders before rendering — see ``flowables._clean_placeholder``
+    and friends.
+    """
     if profile is None:
         return OfferPdfConfig(is_final=is_final)
 
@@ -112,8 +138,8 @@ def config_from_company_profile(profile, *, is_final: bool = False) -> OfferPdfC
         contact_person=profile.contact_person or "[KONTAKTPERSON]",
         contact_phone=profile.contact_phone or "[TELEFON]",
         contact_email=profile.contact_email or "[E-MAIL]",
-        delivery_term=profile.delivery_term or "[LIEFERBEDINGUNG]",
-        payment_term=profile.payment_term or "[ZAHLUNGSBEDINGUNG]",
+        delivery_term=profile.delivery_term or "",
+        payment_term=profile.payment_term or "",
         validity_days=int(profile.validity_days or 28),
         is_final=is_final,
     )

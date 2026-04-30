@@ -1,54 +1,28 @@
-"""Master-data loading (stammdaten)."""
+"""Master-data loading.
+
+Historically this module owned both file I/O and the dict shape passed
+to the matcher. Both responsibilities now live in
+:mod:`quoting.data`. The function below is a thin convenience wrapper
+preserved so existing callers (``quoting.pipeline.orchestrator``,
+tests, scripts) keep working unchanged.
+
+New code should depend on :class:`quoting.data.StammdatenRepository`
+directly.
+"""
+
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 
-from ..core import get_logger
-
-log = get_logger()
-
-_REQUIRED_COLS = {"artikel_nr", "bezeichnung"}
+from ..data import build_repository
 
 
 def load_stammdaten(path: Path) -> list[dict]:
-    """Load master data from CSV. Falls back to mock data if file missing."""
-    if not path.exists():
-        log.warning("Stammdaten not found at %s, using mock data", path)
-        return _mock_stammdaten()
+    """Return master data as ``list[dict]``.
 
-    rows: list[dict] = []
-    with open(path, encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        missing = _REQUIRED_COLS - set(reader.fieldnames or [])
-        if missing:
-            raise ValueError(f"Stammdaten missing columns: {missing}")
-        rows.extend(reader)
-    log.info("Loaded %d master-data rows from %s", len(rows), path.name)
-    return rows
-
-
-def _mock_stammdaten() -> list[dict]:
-    return [
-        {
-            "artikel_nr": "001GLP108015",
-            "bezeichnung": "Gleitstück für Wiegenträger PTFE/Graphit 108x15",
-            "werkstoff": "PTFE mit 15% Graphit",
-            "basispreis_eur": "24.50",
-            "zkalk_offset_eur": "1.20",
-        },
-        {
-            "artikel_nr": "002GLS082003",
-            "bezeichnung": "Gleitstück für Wiegenträger variabler Werkstoff 108x15",
-            "werkstoff": "PTFE (diverse Compound-Optionen)",
-            "basispreis_eur": "28.75",
-            "zkalk_offset_eur": "1.80",
-        },
-        {
-            "artikel_nr": "001APZ00031B",
-            "bezeichnung": "Abnahmeprüfzeugnis DIN EN 10204:2005-01 3.1",
-            "werkstoff": "-",
-            "basispreis_eur": "45.00",
-            "zkalk_offset_eur": "0.00",
-        },
-    ]
+    Falls back to the repository's mock dataset when ``path`` does not
+    exist on disk. The dict shape matches what the matcher and pricing
+    modules already consume (``artikel_nr``, ``bezeichnung``,
+    ``werkstoff``, ``basispreis_eur``, ``zkalk_offset_eur``, …).
+    """
+    return build_repository(path).as_rows()

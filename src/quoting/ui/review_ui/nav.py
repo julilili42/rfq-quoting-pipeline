@@ -1,21 +1,22 @@
 """Shared step vocabulary + navigation widgets.
 
-The review UI uses a single-active-step layout (no tabs). The user
-moves through three named human-review stages — same names that appear
-in the Outlook plugin — and "Zurück" / "Weiter" buttons make the
-linear flow explicit.
-
-The three review steps are now strictly human-task-oriented:
+Three human-task steps inside the Review UI:
 
     1. Positionen prüfen
     2. Kundendaten prüfen
     3. Angebot vergleichen & freigeben
+
+Navigation strategy
+-------------------
+The visual step indicator is a row of clickable chips. Completed steps
+act as quick "jump back" links — no separate button row beneath, no
+emoji, no heavy Streamlit primary buttons. Forward progression goes
+through the bottom nav bar's primary action.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable
-from urllib.parse import urlencode
 
 import streamlit as st
 
@@ -33,18 +34,18 @@ STEPS: tuple[Step, ...] = (
     Step(
         1,
         "Positionen prüfen",
-        "Prüfe, ob alle Positionen aus der Anfrage korrekt erkannt und "
-        "den Stammdaten zugeordnet wurden.",
+        "KI-extrahierte Positionen kontrollieren und Stammdaten-Treffer "
+        "validieren.",
     ),
     Step(
         2,
         "Kundendaten prüfen",
-        "Prüfe, ob die Kundendaten vollständig und korrekt übernommen wurden.",
+        "Empfänger, Ansprechpartner und kommerzielle Bedingungen prüfen.",
     ),
     Step(
         3,
         "Angebot vergleichen & freigeben",
-        "Vergleiche den Angebotsentwurf mit dem Originaleingang und gib ihn frei.",
+        "Angebotsentwurf mit dem Originaleingang vergleichen und freigeben.",
     ),
 )
 
@@ -77,32 +78,33 @@ def reset_step() -> None:
 # ---------- visual indicator ----------------------------------------------
 
 def render_step_indicator() -> None:
-    """Three cards showing where the user is.
-
-    Completed steps are clickable for quick back-navigation. Current and
-    future steps stay inert so reviewers must advance through the normal
-    "Bestätigen" action.
-    """
+    """Visual progress strip — completed steps are clickable links."""
     current = get_step()
+
     parts = ['<div class="ek-steps">']
     for s in STEPS:
         cls = "ek-step"
-        if s.num < current:
-            cls += " done"
-        elif s.num == current:
-            cls += " active"
+        is_done = s.num < current
+        is_active = s.num == current
+        clickable = is_done
 
-        marker = "✓" if s.num < current else f"{s.num:02d}"
+        if is_done:
+            cls += " done"
+        elif is_active:
+            cls += " active"
+        if clickable:
+            cls += " clickable"
+
+        marker = "✓" if is_done else f"{s.num:02d}"
         inner = (
-            f'  <div class="ek-step-num">{marker}</div>'
-            f'  <div class="ek-step-title">{s.title}</div>'
-            f'  <p class="ek-step-desc">{s.description}</p>'
+            f'<div class="ek-step-num">{marker}</div>'
+            f'<div class="ek-step-title">{s.title}</div>'
+            f'<p class="ek-step-desc">{s.description}</p>'
         )
-        if s.num < current:
+        if clickable:
+            href = f"?step={s.num}"
             parts.append(
-                f'<a class="{cls} clickable" href="{_step_href(s.num)}" '
-                f'target="_self" aria-label="Zu Schritt {s.num}: {s.title} springen">'
-                f"{inner}</a>"
+                f'<a class="{cls}" href="{href}" target="_self">{inner}</a>'
             )
         else:
             parts.append(f'<div class="{cls}">{inner}</div>')
@@ -120,34 +122,21 @@ def _step_from_query() -> int | None:
         return None
 
 
-def _step_href(step: int) -> str:
-    params = {
-        key: st.query_params.get(key)
-        for key in st.query_params
-    }
-    params["step"] = str(step)
-    return "?" + urlencode(params, doseq=True)
-
-
 # ---------- nav buttons ----------------------------------------------------
 
 def render_step_nav(
     *,
     can_advance: bool = True,
     advance_disabled_reason: str = "",
-    forward_label: str = "Weiter →",
+    forward_label: str = "Weiter",
     on_finish: Callable[[], None] | None = None,
-    finish_label: str = "✓ Workflow abschließen",
+    finish_label: str = "Fertig",
 ) -> None:
     """Bottom navigation bar inside a step.
 
-    - On step 1: only the forward button (default ``"Weiter →"``).
-    - On step 2: both buttons.
-    - On step 3: ``← Zurück`` + optional ``finish`` action.
-
-    Pass ``forward_label`` to use a step-specific primary action like
-    ``"✓ Positionen bestätigen"`` so the user always sees the named task
-    instead of a generic "Weiter".
+    - Step 1: only the forward button.
+    - Step 2: both buttons.
+    - Step 3: ``← Zurück`` + optional ``finish`` action.
     """
     current = get_step()
     total = len(STEPS)
@@ -194,39 +183,52 @@ def render_reset_button(
     on_confirmed: Callable[[], None],
     confirm: bool = True,
 ) -> None:
-    """Always-available reset button that re-runs the pipeline.
+    """Sidebar danger-zone reset button.
 
-    The actual API call lives in the caller — this widget just handles
-    the confirmation dance and dispatches.
+    Renders inside the sidebar's "Weitere Aktionen" expander. The
+    visual treatment comes from the ``ek-sidebar-danger`` CSS in
+    ``layout.py`` — a soft red accent that signals destructive action
+    without screaming.
     """
     state_key = f"_reset_confirm_{review_id}"
     pending = st.session_state.get(state_key, False)
 
+    st.markdown(
+        '<div class="ek-sidebar-danger">'
+        '<div class="ek-sidebar-danger-title">Pipeline neu starten</div>'
+        '<div class="ek-sidebar-danger-desc">'
+        "Verarbeitet die Anfrage komplett neu. Alle bisherigen "
+        "Anpassungen gehen verloren, Anhänge bleiben erhalten."
+        "</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
     if not confirm:
         if st.button(
-            "🔄 Pipeline neu starten",
+            "Neu starten",
             key=f"_reset_{review_id}",
             use_container_width=True,
-            help="Verarbeitet die Mail komplett neu mit der KI-Pipeline.",
         ):
             on_confirmed()
         return
 
     if not pending:
         if st.button(
-            "🔄 Pipeline neu starten",
+            "Neu starten",
             key=f"_reset_{review_id}",
             use_container_width=True,
-            help="Verarbeitet die Mail komplett neu mit der KI-Pipeline.",
         ):
             st.session_state[state_key] = True
             st.rerun()
         return
 
-    st.warning(
-        "Alle bisherigen Anpassungen werden verworfen und die Pipeline "
-        "läuft komplett neu. Anhänge bleiben erhalten.",
-        icon="⚠️",
+    st.markdown(
+        '<div class="ek-sidebar-danger-confirm">'
+        "Wirklich neu starten? Diese Aktion kann nicht rückgängig "
+        "gemacht werden."
+        "</div>",
+        unsafe_allow_html=True,
     )
     col_confirm, col_cancel = st.columns(2)
     with col_confirm:

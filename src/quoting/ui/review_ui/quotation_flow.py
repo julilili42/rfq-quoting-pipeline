@@ -20,13 +20,30 @@ from typing import Any
 
 import streamlit as st
 
-from quoting.api.settings_store import load_settings as load_app_settings
 from quoting.core import Anfrage
 from quoting.pipeline import StepContext
 from quoting.pricing import Quotation, QuotationItem
 from quoting.ui.review_agent import apply_manual_overrides, build_agent_summary
 from quoting.ui.review_ui.resources import get_pipeline, make_streamlit_progress
 from quoting.ui.review_ui.state import safe_file_stub
+
+
+def _resolve_company_profile():
+    """Pick the right CompanyProfile for the current render.
+
+    Defers the import of the editor's helper so tests that don't load
+    Streamlit context don't blow up. The editor stores per-review
+    overrides on session state; the helper merges them with the saved
+    settings profile.
+    """
+    try:
+        from quoting.ui.review_ui.editor import get_effective_company_profile
+
+        return get_effective_company_profile()
+    except Exception:
+        from quoting.api.settings_store import load_settings as load_app_settings
+
+        return load_app_settings().company
 
 
 # ---------- state hydration -----------------------------------------------
@@ -45,6 +62,7 @@ def hydrate_existing_review_state(content_hash: str, matches) -> None:
         return
 
     review_dir = Path(review_dir_raw)
+
     overrides = _load_json(review_dir / "manual_overrides.json")
     if isinstance(overrides, list):
         st.session_state["manual_discount_overrides"] = overrides
@@ -106,29 +124,28 @@ def rebuild_quotation_pdf(
     pdf_out = pdf_output_path(content_hash, final=is_final)
     work_dir = pdf_out.parent
     work_dir.mkdir(parents=True, exist_ok=True)
+
     overrides = st.session_state.get("manual_discount_overrides", [])
 
-    # Pull company profile from user settings so the PDF carries the
-    # right sender data instead of the placeholder defaults.
-    app_settings = load_app_settings()
-    company_profile = app_settings.company
+    # Pull the per-review-effective company profile (saved settings +
+    # any inline overrides the user typed in step 2). This is what
+    # actually ends up baked into the PDF, replacing placeholder text
+    # like [FIRMA] / [KONTAKTPERSON] / [LIEFERZEIT] with real values.
+    company_profile = _resolve_company_profile()
 
     def _build(ctx: StepContext):
         base_quotation = pipeline.price(anfrage, matches, ctx)
-
         if overrides:
             built_quotation, built_applied_items = apply_manual_overrides(
                 base_quotation, anfrage, overrides, lang=agent_lang,
             )
         else:
             built_quotation, built_applied_items = base_quotation, 0
-
         pipeline.render(
             anfrage, built_quotation, pdf_out, ctx,
             is_final=is_final,
             company_profile=company_profile,
         )
-
         return built_quotation, built_applied_items
 
     if show_status:
@@ -165,12 +182,9 @@ def rebuild_quotation_pdf(
 
 
 def maybe_auto_refresh(anfrage: Anfrage, matches, content_hash: str) -> None:
-    """Auto-regenerate the PDF when the editor data has changed.
+    """Auto-regenerate the PDF when the editor data has changed."""
+    from quoting.api.settings_store import load_settings as load_app_settings
 
-    Strategy: hash the relevant editor inputs. If the hash differs from
-    the last persisted one and the user has auto-refresh enabled, run
-    the pricing + render pipeline silently in the background.
-    """
     if not load_app_settings().workflow.auto_refresh_pdf:
         return
 
@@ -179,10 +193,6 @@ def maybe_auto_refresh(anfrage: Anfrage, matches, content_hash: str) -> None:
     if current == last:
         return
 
-    # Skip the very first hash (initial load) so we don't auto-render
-    # before there's anything to render. If the current rerun already
-    # contains a tracked edit, render immediately so the first changed
-    # field is not swallowed as the baseline.
     changed_fields = st.session_state.get("changed_fields") or set()
     if last is None and not changed_fields:
         st.session_state["editor_state_hash"] = current
@@ -200,7 +210,6 @@ def maybe_auto_refresh(anfrage: Anfrage, matches, content_hash: str) -> None:
     except Exception as exc:
         st.warning(
             f"Auto-Refresh fehlgeschlagen: {exc}",
-            icon="⚠️",
         )
 
 
@@ -212,9 +221,9 @@ def render_generate_button(
 ) -> None:
     is_review_mode = bool(st.session_state.get("review_dir"))
     button_label = (
-        "💾 Änderungen übernehmen & PDF aktualisieren"
+        "Änderungen übernehmen & PDF aktualisieren"
         if is_review_mode
-        else "📝 Entwurf-Angebot erstellen"
+        else "Entwurf-Angebot erstellen"
     )
 
     if not st.button(
@@ -229,7 +238,6 @@ def render_generate_button(
             anfrage=anfrage, matches=matches,
             content_hash=content_hash, agent_lang=agent_lang,
         )
-
         if pdf_out.exists():
             st.session_state["pdf_file_name"] = (
                 f"ElringKlinger_Angebot_{safe_file_stub(uploaded_name)}_"
@@ -244,7 +252,6 @@ def render_generate_button(
                     ),
                 }
             ]
-            # Refresh the editor hash so auto-refresh doesn't double-fire.
             st.session_state["editor_state_hash"] = _editor_state_hash(anfrage)
     except Exception as e:
         st.error(f"Fehler bei der Angebotserstellung: {e}")
@@ -252,12 +259,12 @@ def render_generate_button(
 
     if pdf_out and pdf_out.exists():
         if is_review_mode:
-            st.success("✅ Review aktualisiert. Das neue PDF wurde gespeichert.")
+            st.success("Review aktualisiert. Das neue PDF wurde gespeichert.")
         else:
-            st.success("✅ Angebot erfolgreich erstellt!")
+            st.success("Angebot erfolgreich erstellt.")
 
         st.download_button(
-            label="📥 PDF herunterladen",
+            label="PDF herunterladen",
             data=st.session_state.get("pdf_bytes", b""),
             file_name=st.session_state.get(
                 "pdf_file_name",
@@ -292,7 +299,6 @@ def finalize_pdf(anfrage: Anfrage, matches, content_hash: str) -> str:
             return named.name
         except Exception:
             pass
-
     return pdf_out.name
 
 
@@ -304,6 +310,8 @@ def _editor_state_hash(anfrage: Anfrage) -> str:
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
     overrides = st.session_state.get("manual_discount_overrides") or []
     blob += json.dumps(overrides, sort_keys=True).encode("utf-8")
+    company_overrides = st.session_state.get("company_profile_overrides") or {}
+    blob += json.dumps(company_overrides, sort_keys=True).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()[:16]
 
 
@@ -327,6 +335,7 @@ def _persist_review_outputs(
         _write_json(review_dir / "matches_reviewed.json", matches)
         _write_json(review_dir / "quotation_reviewed.json", quotation)
         _write_json(review_dir / "manual_overrides.json", overrides)
+
         _write_json(
             review_dir / "review_state.json",
             {
@@ -339,18 +348,18 @@ def _persist_review_outputs(
             },
         )
 
-        if not review_id or not pdf_out.exists():
-            return
+    if not review_id or not pdf_out.exists():
+        return
 
-        for stale_pdf in review_dir.glob("Angebot_Draft_*.pdf"):
-            try:
-                stale_pdf.unlink()
-            except Exception:
-                pass
+    for stale_pdf in review_dir.glob("Angebot_Draft_*.pdf"):
+        try:
+            stale_pdf.unlink()
+        except Exception:
+            pass
 
-        named_pdf = review_dir / f"Angebot_Draft_{review_id}.pdf"
-        if named_pdf.resolve() != pdf_out.resolve():
-            shutil.copyfile(pdf_out, named_pdf)
+    named_pdf = review_dir / f"Angebot_Draft_{review_id}.pdf"
+    if named_pdf.resolve() != pdf_out.resolve():
+        shutil.copyfile(pdf_out, named_pdf)
 
 
 def _load_saved_quotation(review_dir: Path) -> Quotation | None:

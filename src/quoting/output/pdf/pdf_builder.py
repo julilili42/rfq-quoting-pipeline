@@ -32,9 +32,10 @@ def build_draft_pdf(
         If True, suppress the red AI-warning banner. Used when the
         review has been explicitly approved.
     company_profile
-        Optional ``CompanyProfile`` from settings_store. When provided,
-        sender/contact information from the user's settings is baked
-        into the PDF instead of the placeholder defaults.
+        Optional ``CompanyProfile`` from settings_store (or a
+        per-review override produced by the editor). When provided,
+        sender/contact information from this profile is baked into
+        the PDF instead of the placeholder defaults.
 
     Falls back to JSON if ReportLab is not installed.
     """

@@ -3,22 +3,18 @@
 Three top-level pages, selected by query params:
 
 - **Settings** (``?settings=1``)
-  Global config — company profile, fuzzy threshold, workflow toggles.
-
 - **Review-Detail** (``?review_id=…``)
-  Single-active-step layout for a specific review. Three human-task
-  steps:
-    1. Positionen prüfen (positions + matching)
-    2. Kundendaten prüfen (customer header + commercial terms)
-    3. Angebot vergleichen & freigeben (side-by-side with draft PDF)
-
+  Three human-task steps:
+    1. Positionen prüfen
+    2. Kundendaten prüfen
+    3. Angebot vergleichen & freigeben
 - **Dashboard** (no params, default)
-  List of all reviews with KPIs and insights.
 
 Step labels are shared with the Outlook plugin via :mod:`nav`.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import shutil
 import sys
 from pathlib import Path
@@ -31,17 +27,17 @@ def _ensure_project_path() -> None:
     this_file = Path(__file__).resolve()
     project_root = this_file.parents[4]
     src_dir = this_file.parents[3]
+
     for p in (project_root, src_dir):
         path = str(p)
         if path in sys.path:
             sys.path.remove(path)
         sys.path.insert(0, path)
 
-
-if __name__ == "__main__":
-    for name in list(sys.modules):
-        if name == "quoting" or name.startswith("quoting."):
-            del sys.modules[name]
+    if __name__ == "__main__":
+        for name in list(sys.modules):
+            if name == "quoting" or name.startswith("quoting."):
+                del sys.modules[name]
 
 
 def _configure_page() -> None:
@@ -53,13 +49,47 @@ def _configure_page() -> None:
     )
 
 
+@contextmanager
+def _viewer_expander(label: str, *, expanded: bool = True):
+    """Wrap a document viewer in a Streamlit expander.
+
+    The session flag lets nested renderers avoid creating another
+    expander inside this one.
+    """
+    key = "_review_viewer_expander_active"
+    previous = st.session_state.get(key, None)
+    with st.expander(label, expanded=expanded):
+        st.session_state[key] = True
+        try:
+            yield
+        finally:
+            if previous is None:
+                st.session_state.pop(key, None)
+            else:
+                st.session_state[key] = previous
+
+
+@contextmanager
+def _comparison_viewer_pair():
+    """Mark viewer renderers as part of the side-by-side comparison."""
+    key = "_review_compare_view_active"
+    previous = st.session_state.get(key, None)
+    st.session_state[key] = True
+    try:
+        yield
+    finally:
+        if previous is None:
+            st.session_state.pop(key, None)
+        else:
+            st.session_state[key] = previous
+
+
 # --------------------------------------------------------------------- run
 
 def run() -> None:
     _ensure_project_path()
     _configure_page()
 
-    # Imports kept inside run() so streamlit hot-reload picks up edits.
     from quoting.ui.review_ui.dashboard import render_dashboard
     from quoting.ui.review_ui.layout import (
         apply_style,
@@ -77,7 +107,6 @@ def run() -> None:
 
     apply_style()
 
-    # ------- Settings page ----------------------------------------------
     if _is_settings_view():
         uploaded = render_sidebar_settings()
         if uploaded is not None:
@@ -97,7 +126,6 @@ def run() -> None:
 
     review_id = get_review_id_from_query()
 
-    # ------- Dashboard mode ---------------------------------------------
     if not review_id:
         uploaded = render_sidebar_dashboard()
         if uploaded is not None:
@@ -114,7 +142,6 @@ def run() -> None:
         render_dashboard(REVIEWS_ROOT)
         return
 
-    # ------- Review-detail mode -----------------------------------------
     _render_review_detail(review_id)
 
 
@@ -161,14 +188,12 @@ def _render_review_detail(review_id: str) -> None:
     from quoting.ui.review_ui.state import reset_review_state
     from quoting.ui.review_ui.upload import lookup_uploaded_review
 
-    # If the review_id changed since last render, clear ALL session state.
     last_id = st.session_state.get("_active_review_id")
     if last_id != review_id:
         reset_step()
         reset_review_state()
         st.session_state["_active_review_id"] = review_id
 
-    # ----- input resolution -------------------------------------------------
     review_input: ReviewInput | None = None
     try:
         review_input = load_review_input(review_id)
@@ -177,7 +202,7 @@ def _render_review_detail(review_id: str) -> None:
 
     if review_input is None:
         st.error(
-            f"❌ Review **{review_id}** wurde nicht gefunden. "
+            f"Review **{review_id}** wurde nicht gefunden. "
             "Möglicherweise wurde sie verschoben oder nie gespeichert."
         )
         if st.button("← Zurück zur Übersicht"):
@@ -186,6 +211,7 @@ def _render_review_detail(review_id: str) -> None:
         return
 
     app_settings = load_app_settings()
+
     sidebar_actions = None
     if review_input.review_id and review_input.review_dir is not None:
         def sidebar_actions() -> None:
@@ -198,24 +224,19 @@ def _render_review_detail(review_id: str) -> None:
             )
 
     store_review_context(review_input)
-    render_sidebar_review(
-        review_id=review_input.review_id or review_id,
-        action_renderer=sidebar_actions,
-    )
+    render_sidebar_review(action_renderer=sidebar_actions)
 
-    # ----- pipeline progress -----------------------------------------------
     progress = read_review_progress(review_input.work_dir)
     if is_review_processing(progress) or is_review_failed(progress):
         render_review_title(review_input.review_id, review_input.input_path)
         render_pipeline_progress(progress)
         return
 
-    # ----- hero + steps ----------------------------------------------------
     render_review_title(review_input.review_id, review_input.input_path)
     render_step_indicator()
+
     st.markdown("&nbsp;", unsafe_allow_html=True)
 
-    # ----- extract once ----------------------------------------------------
     try:
         anfrage = load_anfrage_once(
             review_input.content_hash,
@@ -223,14 +244,13 @@ def _render_review_detail(review_id: str) -> None:
             review_input.work_dir,
         )
     except Exception as e:
-        st.error(f"❌ Fehler bei der Extraktion: {e}")
+        st.error(f"Fehler bei der Extraktion: {e}")
         return
 
     detect_and_store_agent_language(
         review_input.content_hash, review_input.input_path, anfrage,
     )
 
-    # ----- match once via the pipeline -------------------------------------
     pipeline = get_pipeline()
     matching_step = MatchingStep(
         matcher=PythonMatcher(
@@ -247,7 +267,6 @@ def _render_review_detail(review_id: str) -> None:
         content_hash=review_input.content_hash, matches=matches,
     )
 
-    # ----- single active step ---------------------------------------------
     active = get_step()
     if active == 1:
         _render_step_one(review_input, anfrage, matches)
@@ -260,17 +279,8 @@ def _render_review_detail(review_id: str) -> None:
 # ----------------------------------------------------------- step renders
 
 def _render_step_one(review_input, anfrage, matches) -> None:
-    """Step 1 — Positionen prüfen.
-
-    Layout:
-        [ Original-Anfrage ]   |   [ Positionen + Matching ]
-                               ↓
-                        ✓ Positionen bestätigen
-    """
-    from quoting.ui.review_ui.document_view import (
-        render_mail_body_pane,
-        render_original_request,
-    )
+    """Step 1 — Positionen prüfen."""
+    from quoting.ui.review_ui.document_view import render_input_panel
     from quoting.ui.review_ui.editor import render_positions_editor
     from quoting.ui.review_ui.nav import render_step_nav
     from quoting.ui.review_ui.quotation_flow import maybe_auto_refresh
@@ -279,48 +289,25 @@ def _render_step_one(review_input, anfrage, matches) -> None:
 
     with col_review:
         render_positions_editor(anfrage, matches)
-
-    # Build the refreshed draft in the background so step 3 already
-    # has a current PDF when the user gets there.
-    maybe_auto_refresh(
-        anfrage=anfrage,
-        matches=matches,
-        content_hash=review_input.content_hash,
-    )
+        maybe_auto_refresh(
+            anfrage=anfrage,
+            matches=matches,
+            content_hash=review_input.content_hash,
+        )
 
     with col_doc:
-        if _is_mail_body_only(review_input):
-            render_mail_body_pane(
-                body=_load_mail_body(review_input.input_path),
-                subject=anfrage.kunde_firma or review_input.input_path.name,
-                sender=anfrage.kunde_email or "",
-            )
-        else:
-            render_original_request(
-                review_input.input_path,
-                review_input.payload,
-                show_draft_toggle=False,
-            )
+        render_input_panel(review_input)
 
     st.markdown("---")
     render_step_nav(
         can_advance=True,
-        forward_label="✓ Positionen bestätigen",
+        forward_label="Positionen bestätigen",
     )
 
 
 def _render_step_two(review_input, anfrage, matches) -> None:
-    """Step 2 — Kundendaten prüfen.
-
-    Layout:
-        [ Original-Anfrage ]   |   [ Kundendaten / Header / Firma ]
-                               ↓
-                        ✓ Kundendaten bestätigen
-    """
-    from quoting.ui.review_ui.document_view import (
-        render_mail_body_pane,
-        render_original_request,
-    )
+    """Step 2 — Kundendaten prüfen."""
+    from quoting.ui.review_ui.document_view import render_input_panel
     from quoting.ui.review_ui.editor import render_customer_editor
     from quoting.ui.review_ui.nav import render_step_nav
     from quoting.ui.review_ui.quotation_flow import maybe_auto_refresh
@@ -329,53 +316,36 @@ def _render_step_two(review_input, anfrage, matches) -> None:
 
     with col_review:
         render_customer_editor(anfrage)
-
-    maybe_auto_refresh(
-        anfrage=anfrage,
-        matches=matches,
-        content_hash=review_input.content_hash,
-    )
+        maybe_auto_refresh(
+            anfrage=anfrage,
+            matches=matches,
+            content_hash=review_input.content_hash,
+        )
 
     with col_doc:
-        if _is_mail_body_only(review_input):
-            render_mail_body_pane(
-                body=_load_mail_body(review_input.input_path),
-                subject=anfrage.kunde_firma or review_input.input_path.name,
-                sender=anfrage.kunde_email or "",
-            )
-        else:
-            render_original_request(
-                review_input.input_path,
-                review_input.payload,
-                show_draft_toggle=False,
-            )
+        render_input_panel(review_input)
 
     st.markdown("---")
     render_step_nav(
         can_advance=True,
-        forward_label="✓ Kundendaten bestätigen",
+        forward_label="Kundendaten bestätigen",
     )
 
 
 def _render_step_three(review_input, anfrage, matches) -> None:
     """Step 3 — Angebot vergleichen & freigeben.
 
-    Layout:
-        [ Zusammenfassung / KPIs ]
-        ─────────────────────────────────────────────
-        Tabs: ↔️ Vergleich | 📄 Original | ✨ Entwurf
-        ─────────────────────────────────────────────
-        [ Freigabe-Workflow ]
-        [ Agent-Chat (collapsed) ]
-        ─────────────────────────────────────────────
-        ← Zurück  |  ✓ Workflow abschließen
+    Layout adapts to whether there's a real attachment to compare:
+
+    - With attachment: side-by-side tabs (Vergleich · Original · Entwurf).
+    - Mail-only: side-by-side Original mail body and draft.
     """
     from quoting.ui.review_ui.agent_chat import render_agent_chat
     from quoting.ui.review_ui.approval_panel import render_approval_panel
     from quoting.ui.review_ui.document_view import (
+        has_real_attachment,
         render_draft_pdf_pane,
-        render_mail_body_pane,
-        render_original_request,
+        render_input_panel,
     )
     from quoting.ui.review_ui.nav import render_step_nav
     from quoting.ui.review_ui.quotation_flow import (
@@ -385,20 +355,16 @@ def _render_step_three(review_input, anfrage, matches) -> None:
     )
     from quoting.ui.review_ui.review_overview import render_review_overview
 
-    # Make sure the draft is up to date before we show it.
     maybe_auto_refresh(
         anfrage=anfrage,
         matches=matches,
         content_hash=review_input.content_hash,
     )
 
-    # If there's no draft yet, surface the generate button as the first
-    # thing the user sees and gate progression.
     if not st.session_state.get("quotation"):
         st.warning(
             "Es wurde noch kein Angebotsentwurf erzeugt. "
             "Klicke unten auf „Entwurf-Angebot erstellen“, um ihn zu generieren.",
-            icon="⚠️",
         )
         render_generate_button(
             anfrage=anfrage,
@@ -410,7 +376,6 @@ def _render_step_three(review_input, anfrage, matches) -> None:
         render_step_nav(can_advance=False)
         return
 
-    # ----- KPI strip -------------------------------------------------------
     render_review_overview(
         review_id=review_input.review_id,
         input_path=review_input.input_path,
@@ -420,55 +385,70 @@ def _render_step_three(review_input, anfrage, matches) -> None:
 
     st.markdown("&nbsp;", unsafe_allow_html=True)
 
-    # ----- comparison view -------------------------------------------------
+    has_attachment = has_real_attachment(review_input)
+
     st.markdown(
         '<div class="ek-section-label">Originaleingang ↔ Angebotsentwurf</div>',
         unsafe_allow_html=True,
     )
     st.caption(
-        "Wechsle zwischen Side-by-side-Vergleich und Vollansicht. "
+        "Der Vergleich öffnet Original und Angebotsentwurf gemeinsam. "
         "Bei Fehlern → zurück zu Schritt 1 (Positionen) oder Schritt 2 (Kunde)."
     )
 
-    tab_split, tab_orig, tab_draft = st.tabs([
-        "↔️ Vergleich (beide)",
-        "📄 Original",
-        "✨ Angebotsentwurf",
-    ])
+    if has_attachment:
+        tab_split, tab_orig, tab_draft = st.tabs([
+            "Vergleich (beide)",
+            "Original",
+            "Angebotsentwurf",
+        ])
 
-    def _draw_original():
-        if _is_mail_body_only(review_input):
-            render_mail_body_pane(
-                body=_load_mail_body(review_input.input_path),
-                subject=anfrage.kunde_firma or review_input.input_path.name,
-                sender=anfrage.kunde_email or "",
-            )
-        else:
-            render_original_request(
-                review_input.input_path,
-                review_input.payload,
-                show_draft_toggle=False,
-            )
+        with tab_split:
+            with _viewer_expander("Original und Angebotsentwurf", expanded=True):
+                with _comparison_viewer_pair():
+                    col_orig, col_draft = st.columns(2, gap="large")
+                    with col_orig:
+                        st.markdown(
+                            '<div class="ek-compare-pane-label">Original</div>',
+                            unsafe_allow_html=True,
+                        )
+                        render_input_panel(review_input, allow_mail_body_tab=False)
+                    with col_draft:
+                        st.markdown(
+                            '<div class="ek-compare-pane-label">Angebotsentwurf</div>',
+                            unsafe_allow_html=True,
+                        )
+                        render_draft_pdf_pane()
 
-    with tab_split:
-        col_orig, col_draft = st.columns(2, gap="large")
-        with col_orig:
-            _draw_original()
-        with col_draft:
-            render_draft_pdf_pane()
+        with tab_orig:
+            with _viewer_expander("Original", expanded=True):
+                render_input_panel(review_input)
 
-    with tab_orig:
-        _draw_original()
-
-    with tab_draft:
-        render_draft_pdf_pane()
+        with tab_draft:
+            with _viewer_expander("Angebotsentwurf", expanded=True):
+                render_draft_pdf_pane()
+    else:
+        with _viewer_expander("Original und Angebotsentwurf", expanded=True):
+            with _comparison_viewer_pair():
+                col_orig, col_draft = st.columns(2, gap="large")
+                with col_orig:
+                    st.markdown(
+                        '<div class="ek-compare-pane-label">Original · E-Mail-Inhalt</div>',
+                        unsafe_allow_html=True,
+                    )
+                    render_input_panel(review_input)
+                with col_draft:
+                    st.markdown(
+                        '<div class="ek-compare-pane-label">Angebotsentwurf</div>',
+                        unsafe_allow_html=True,
+                    )
+                    render_draft_pdf_pane()
 
     st.markdown("---")
 
-    # ----- approval workflow -----------------------------------------------
     if review_input.review_dir is not None:
         st.markdown(
-            '<div class="ek-section-label">Freigabe-Workflow</div>',
+            '<div class="ek-section-label">Freigabe</div>',
             unsafe_allow_html=True,
         )
         render_approval_panel(
@@ -481,8 +461,7 @@ def _render_step_three(review_input, anfrage, matches) -> None:
         )
         st.markdown("---")
 
-    # ----- optional agent chat (collapsed) ---------------------------------
-    with st.expander("💬 Letzte Anpassungen am Preis (Agent-Chat)", expanded=False):
+    with st.expander("Letzte Anpassungen am Preis (Agent-Chat)", expanded=False):
         render_agent_chat(
             anfrage=anfrage,
             matches=matches,
@@ -492,52 +471,39 @@ def _render_step_three(review_input, anfrage, matches) -> None:
     st.markdown("---")
     render_step_nav(
         on_finish=_on_finish,
-        finish_label="✓ Workflow abschließen",
+        finish_label="Fertig — zurück zu Outlook",
     )
 
 
 def _on_finish() -> None:
-    """Final action when the user clicks 'Workflow abschließen'."""
-    st.success(
-        "Review abgeschlossen. Das PDF kann jetzt aus Outlook versendet werden.",
-        icon="✅",
+    """Try to close the tab (Outlook flow) or redirect to dashboard."""
+    import streamlit.components.v1 as components
+
+    components.html(
+        """
+        <script>
+          (function () {
+            try { window.close(); } catch (e) {}
+            setTimeout(function () {
+              if (!window.closed) {
+                window.location.href = window.location.pathname;
+              }
+            }, 250);
+          })();
+        </script>
+        """,
+        height=0,
     )
-    if st.button("Zur Übersicht"):
-        st.query_params.clear()
-        st.rerun()
+    st.success(
+        "Workflow abgeschlossen. Falls dieses Fenster nicht automatisch "
+        "schließt, kannst du es jetzt schließen und zu Outlook zurückkehren.",
+    )
 
 
 # ----------------------------------------------------------- helpers
 
-def _is_mail_body_only(review_input) -> bool:
-    """True if the review input is a mail with no real attachment payload."""
-    suffix = review_input.input_path.suffix.lower()
-    if suffix not in {".eml", ".msg"}:
-        return False
-    try:
-        from quoting.ingestion import parse_mail
-        mail = parse_mail(review_input.input_path)
-        return not mail.attachments
-    except Exception:
-        return False
-
-
-def _load_mail_body(input_path: Path) -> str:
-    try:
-        from quoting.ingestion import parse_mail
-        return parse_mail(input_path).body or ""
-    except Exception:
-        return ""
-
-
 def _reset_pipeline(review_dir: Path, review_id: str) -> None:
-    """Locally reset a review and re-run the pipeline.
-
-    Mirrors what the API endpoint does — used for in-process resets
-    triggered from the Streamlit UI without a round-trip through the
-    HTTP layer. Keeps mail.json + listed attachments, wipes everything
-    else, then re-runs in the foreground (it's fast enough).
-    """
+    """Locally reset a review and re-run the pipeline."""
     from quoting.api.approval_store import reset_approval
     from quoting.api.progress_store import init_progress
     from quoting.ingestion import Mail
@@ -549,7 +515,6 @@ def _reset_pipeline(review_dir: Path, review_id: str) -> None:
         st.error("Review-Verzeichnis nicht mehr verfügbar.")
         return
 
-    # Identify mail.json + saved attachments to preserve
     mail_json_path = review_dir / "mail.json"
     keep_files: set[Path] = set()
     if mail_json_path.exists():
@@ -564,7 +529,6 @@ def _reset_pipeline(review_dir: Path, review_id: str) -> None:
         except Exception:
             pass
 
-    # Wipe everything else
     for entry in review_dir.iterdir():
         if entry in keep_files:
             continue
@@ -580,7 +544,6 @@ def _reset_pipeline(review_dir: Path, review_id: str) -> None:
     reset_approval(review_dir)
     reset_review_state()
 
-    # Re-run pipeline using the saved mail
     try:
         meta = json.loads(mail_json_path.read_text(encoding="utf-8")) \
             if mail_json_path.exists() else {}
@@ -590,7 +553,6 @@ def _reset_pipeline(review_dir: Path, review_id: str) -> None:
                 p = review_dir / att["name"]
                 if p.exists():
                     attachments.append(p)
-
         mail = Mail(
             subject=meta.get("subject", ""),
             sender=meta.get("from") or meta.get("sender", ""),
@@ -606,7 +568,7 @@ def _reset_pipeline(review_dir: Path, review_id: str) -> None:
         st.error(f"Pipeline-Reset fehlgeschlagen: {exc}")
         return
 
-    st.success("Pipeline wurde neu ausgeführt.", icon="🔄")
+    st.success("Pipeline wurde neu ausgeführt.")
     st.rerun()
 
 

@@ -5,16 +5,22 @@
  * -------------
  * One card. Always. Whatever the current state — new, pipeline running,
  * review ready, sent — the user sees a single card with the relevant
- * action front and centre. Pipeline progress no longer lives in a
- * separate box; it folds into this card with a slim progress bar and a
- * collapsible step list for users who want the detail.
+ * action front and centre. Pipeline progress folds into this card with
+ * a slim progress bar and a collapsible step list for users who want
+ * the detail.
+ *
+ * Visual states map onto the 3-step stepper as:
+ *   new            → step 01 Anfrage
+ *   review_running → step 02 Pipeline
+ *   review_created
+ *   review_opened
+ *   quote_sent     → step 03 Review (quote_sent shows a "done" check)
  */
 import type { MailSnapshot, PipelineProgress } from "../types";
 import type {
   MailWorkflow,
   MailWorkflowState,
 } from "../mailWorkflowStorage";
-
 import {
   AlertIcon,
   CheckIcon,
@@ -56,11 +62,11 @@ function deriveState(workflow: MailWorkflow | null): MailWorkflowState {
 
 function StatusPill({ state }: { state: MailWorkflowState }) {
   const meta: Record<MailWorkflowState, { label: string; cls: string }> = {
-    new: { label: "Neue Anfrage", cls: "pill pill-neutral" },
-    review_running: { label: "Pipeline läuft", cls: "pill pill-info" },
-    review_created: { label: "Review bereit", cls: "pill pill-info" },
-    review_opened: { label: "In Bearbeitung", cls: "pill pill-info" },
-    quote_sent: { label: "Angebot versendet", cls: "pill pill-success" },
+    new:             { label: "Neue Anfrage",       cls: "pill pill-neutral" },
+    review_running:  { label: "Pipeline läuft",     cls: "pill pill-info" },
+    review_created:  { label: "Review bereit",      cls: "pill pill-info" },
+    review_opened:   { label: "In Bearbeitung",     cls: "pill pill-info" },
+    quote_sent:      { label: "Angebot versendet",  cls: "pill pill-success" },
   };
   const { label, cls } = meta[state];
   return (
@@ -107,10 +113,10 @@ export function WorkflowCard({
     state === "quote_sent"
       ? "card card-success"
       : state === "review_running" ||
-          state === "review_created" ||
-          state === "review_opened"
-        ? "card card-info"
-        : "card";
+        state === "review_created" ||
+        state === "review_opened"
+      ? "card card-info"
+      : "card";
 
   const showProgress =
     state === "review_running" && pipelineProgress &&
@@ -155,7 +161,7 @@ export function WorkflowCard({
             )}
             {workflow?.quoteSentAt && (
               <div className="meta-cell">
-                <span className="meta-label">Versendet</span>
+                <span className="meta-label">Mail erstellt</span>
                 <span className="meta-value">
                   {formatDate(workflow.quoteSentAt)}
                 </span>
@@ -205,7 +211,7 @@ export function WorkflowCard({
                 onClick={onOpenReview}
               >
                 <ExternalIcon className="btn-icon" />
-                Review-UI öffnen
+                Review öffnen
               </button>
               <button
                 className="btn btn-ghost"
@@ -234,7 +240,7 @@ export function WorkflowCard({
                 onClick={onOpenReview}
               >
                 <ExternalIcon className="btn-icon" />
-                Review nochmal öffnen
+                Review erneut öffnen
               </button>
             </>
           )}
@@ -247,7 +253,7 @@ export function WorkflowCard({
                 onClick={onCreateDraftMail}
               >
                 <SendIcon className="btn-icon" />
-                Erneut versenden
+                Mail erneut erstellen
               </button>
               <button
                 className="btn btn-ghost"

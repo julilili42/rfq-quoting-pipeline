@@ -1,4 +1,5 @@
 """Central configuration loaded from environment variables."""
+
 from __future__ import annotations
 
 import os
@@ -11,9 +12,8 @@ from dotenv import load_dotenv
 Provider = Literal["gemini", "azure"]
 
 # Project root = three levels up from this file:
-# src/quoting/core/config.py -> core -> quoting -> src -> <root>
+#   src/quoting/core/config.py -> core -> quoting -> src -> <root>
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
 load_dotenv(_PROJECT_ROOT / ".env")
 
 
@@ -48,7 +48,20 @@ class Settings:
 
     @property
     def stammdaten_path(self) -> Path:
-        return self.data_dir / "stammdaten_test.csv"
+        """Canonical master-data CSV.
+
+        Built from raw exports by
+        :mod:`quoting.data.prep.build_stammdaten`. Falls back to
+        ``stammdaten_test.csv`` if the canonical file is missing so old
+        prototype workspaces keep functioning.
+        """
+        canonical = self.data_dir / "stammdaten.csv"
+        if canonical.exists():
+            return canonical
+        legacy = self.data_dir / "stammdaten_test.csv"
+        if legacy.exists():
+            return legacy
+        return canonical
 
     @property
     def preise_path(self) -> Path:

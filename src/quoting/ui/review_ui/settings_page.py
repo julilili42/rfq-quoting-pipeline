@@ -1,6 +1,7 @@
 """Settings page for the review UI.
 
 Owns persistent preferences that the rest of the app reads:
+
 - Company profile (used for PDF generation, quick-fill in editor)
 - Matching preferences (fuzzy threshold)
 - Workflow preferences (auto-refresh, confirmations)
@@ -37,32 +38,32 @@ def render_settings_page() -> None:
     )
 
     st.markdown("---")
-
     col_save, _ = st.columns([1, 4])
     with col_save:
         if st.button(
-            "💾 Speichern",
+            "Speichern",
             type="primary",
             use_container_width=True,
             key="settings_save",
         ):
             save_settings(new_settings)
-            st.success("Einstellungen gespeichert.", icon="✅")
-            st.toast("Einstellungen gespeichert", icon="✅")
+            st.success("Einstellungen gespeichert.")
+            st.toast("Einstellungen gespeichert")
 
 
 def _render_hero() -> None:
     st.markdown(
         """
         <div class="ek-title-block">
-          <h1 class="ek-title">
-            Einstellungen<span class="ek-accent-dot">.</span>
-          </h1>
-          <p class="ek-subtitle">
-            Hinterlege Firmendaten, Kontaktinformationen und
-            allgemeine Angebotsstandards. Diese Werte werden automatisch
-            in jedes Angebots-PDF übernommen.
-          </p>
+            <h1 class="ek-title">
+                Einstellungen<span class="ek-accent-dot">.</span>
+            </h1>
+            <p class="ek-subtitle">
+                Hinterlege Firmendaten, Kontaktinformationen und
+                allgemeine Angebotsstandards. Diese Werte werden automatisch
+                in jedes Angebots-PDF übernommen und können pro Anfrage
+                in Schritt 2 individuell angepasst werden.
+            </p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -71,7 +72,7 @@ def _render_hero() -> None:
 
 def _render_company_block(profile: CompanyProfile) -> CompanyProfile:
     st.markdown(
-        '<div class="ek-section-label">🏢 Firmendaten (Absender)</div>',
+        '<div class="ek-section-label">Firmendaten (Absender)</div>',
         unsafe_allow_html=True,
     )
 
@@ -100,7 +101,11 @@ def _render_company_block(profile: CompanyProfile) -> CompanyProfile:
             )
 
         st.markdown("&nbsp;", unsafe_allow_html=True)
-        st.markdown('<div class="ek-section-label">Kontaktperson für Angebote</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="ek-section-label">Kontaktperson für Angebote</div>',
+            unsafe_allow_html=True,
+        )
+
         c3, c4 = st.columns(2)
         with c3:
             contact_person = st.text_input(
@@ -117,7 +122,11 @@ def _render_company_block(profile: CompanyProfile) -> CompanyProfile:
             )
 
         st.markdown("&nbsp;", unsafe_allow_html=True)
-        st.markdown('<div class="ek-section-label">Kommerzielle Standardwerte</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="ek-section-label">Kommerzielle Standardwerte</div>',
+            unsafe_allow_html=True,
+        )
+
         c5, c6 = st.columns(2)
         with c5:
             delivery_term = st.text_input(
@@ -154,7 +163,7 @@ def _render_company_block(profile: CompanyProfile) -> CompanyProfile:
 def _render_matching_block(prefs: MatchingPreferences) -> MatchingPreferences:
     st.markdown(
         '<div class="ek-section-label" style="margin-top: 18px;">'
-        "🎯 Matching-Verhalten</div>",
+        "Matching-Verhalten</div>",
         unsafe_allow_html=True,
     )
 
@@ -164,6 +173,7 @@ def _render_matching_block(prefs: MatchingPreferences) -> MatchingPreferences:
             "aus der Anfrage gegen die Stammdaten matcht. Höher = strenger. "
             "Bei OCR-Anfragen mit Tippfehlern lohnt sich ein niedrigerer Wert."
         )
+
         c1, c2 = st.columns(2)
         with c1:
             fuzzy_threshold = st.slider(
@@ -189,7 +199,7 @@ def _render_matching_block(prefs: MatchingPreferences) -> MatchingPreferences:
 def _render_workflow_block(prefs: WorkflowPreferences) -> WorkflowPreferences:
     st.markdown(
         '<div class="ek-section-label" style="margin-top: 18px;">'
-        "⚙️ Workflow</div>",
+        "Workflow</div>",
         unsafe_allow_html=True,
     )
 
