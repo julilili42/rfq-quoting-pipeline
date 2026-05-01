@@ -1,8 +1,17 @@
-"""Persistent user settings.
+"""Persistent user / app settings.
 
 Lives in a single JSON file under ``data/settings.json`` so it survives
 restarts and can be edited by hand if needed. The Streamlit settings
 page is the canonical UI; this module is the storage layer.
+
+Naming
+------
+The preferred public functions are :func:`load_user_settings` and
+:func:`save_user_settings`. ``load_settings`` / ``save_settings``
+are kept as aliases for back-compatibility — new code should use the
+explicit names to disambiguate from
+:func:`quoting.core.config.load_runtime_settings`, which loads
+*environment-driven runtime* configuration.
 
 Design notes
 ------------
@@ -18,6 +27,7 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SETTINGS_PATH = PROJECT_ROOT / "data" / "settings.json"
 
@@ -29,9 +39,11 @@ class CompanyProfile:
     company_address: str = ""
     company_zip_city: str = ""
     company_country: str = "Deutschland"
+
     contact_person: str = ""
     contact_phone: str = ""
     contact_email: str = ""
+
     delivery_term: str = "EXW Werk"
     payment_term: str = "30 Tage netto"
     validity_days: int = 28
@@ -78,8 +90,8 @@ def _dataclass_from_dict(cls, data: dict[str, Any]):
     return cls(**filtered)
 
 
-def load_settings() -> AppSettings:
-    """Read settings from disk, falling back to defaults."""
+def load_user_settings() -> AppSettings:
+    """Read user settings from disk, falling back to defaults."""
     if not SETTINGS_PATH.exists():
         return AppSettings()
     try:
@@ -89,8 +101,8 @@ def load_settings() -> AppSettings:
         return AppSettings()
 
 
-def save_settings(settings: AppSettings) -> None:
-    """Atomically persist settings."""
+def save_user_settings(settings: AppSettings) -> None:
+    """Atomically persist user settings."""
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = SETTINGS_PATH.with_suffix(".tmp")
     tmp.write_text(
@@ -98,3 +110,8 @@ def save_settings(settings: AppSettings) -> None:
         encoding="utf-8",
     )
     tmp.replace(SETTINGS_PATH)
+
+
+# Back-compat aliases. Prefer the explicit names above in new code.
+load_settings = load_user_settings
+save_settings = save_user_settings

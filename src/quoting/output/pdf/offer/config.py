@@ -92,7 +92,7 @@ class OfferPdfConfig:
         is dropped entirely instead of leaving the placeholder visible
         in the PDF.
         """
-        lines = self.closing_lines if self.is_final else self.closing_lines_draft
+        lines = self.closing_lines
         signature_name = (self.contact_person or "").strip()
         is_placeholder_name = (
             not signature_name

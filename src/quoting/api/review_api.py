@@ -32,28 +32,23 @@ from quoting.api.settings_store import (
 )
 from quoting.ingestion import Mail
 from quoting.pipeline import QuotingPipeline, StepProgress
+from quoting.reviews import (
+    api_base_url,
+    find_current_pdf,
+    find_draft_pdf,
+    find_final_pdf,
+    reset_review_artifacts,
+    saved_attachment_paths,
+)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 REVIEW_DIR = PROJECT_ROOT / "data" / "reviews"
-TUNNEL_FILE = PROJECT_ROOT / ".tunnel_url"
 
 STREAMLIT_BASE_URL = os.getenv("STREAMLIT_BASE_URL", "http://localhost:8501")
 
 
-def _api_base_url() -> str:
-    """Resolve the public base URL the add-in should hit."""
-    try:
-        if TUNNEL_FILE.exists():
-            url = TUNNEL_FILE.read_text(encoding="utf-8").strip()
-            if url:
-                return url.rstrip("/")
-    except Exception:
-        pass
-    return os.getenv("API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
-
-
 app = FastAPI(title="Quoting Pipeline API")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -76,7 +71,6 @@ class MailAttachment(BaseModel):
 
 class MailReviewRequest(BaseModel):
     model_config = {"populate_by_name": True}
-
     subject: str
     sender: str = Field(alias="from")
     body: str
@@ -95,7 +89,7 @@ class ApprovalTransitionRequest(BaseModel):
 def health():
     return {
         "ok": True,
-        "api_base_url": _api_base_url(),
+        "api_base_url": api_base_url(),
         "streamlit_base_url": STREAMLIT_BASE_URL,
     }
 
@@ -146,16 +140,7 @@ def create_review(
         mail,
     )
 
-    api_base = _api_base_url()
-    return {
-        "review_id": review_id,
-        "review_url": f"{STREAMLIT_BASE_URL}?review_id={review_id}",
-        "draft_pdf_url": f"{api_base}/api/reviews/{review_id}/pdf",
-        "draft_pdf_filename": f"Angebot_Draft_{review_id}.pdf",
-        "status_url": f"{api_base}/api/reviews/{review_id}/status",
-        "approval_url": f"{api_base}/api/reviews/{review_id}/approval",
-        "status": "running",
-    }
+    return _build_review_response(review_id, status="running")
 
 
 @app.get("/api/reviews/{review_id}/status")
@@ -163,11 +148,9 @@ def get_review_status(review_id: str):
     folder = REVIEW_DIR / review_id
     if not folder.exists():
         raise HTTPException(404, f"Review {review_id} not found")
-
     progress = read_progress(folder)
     if progress is None:
         raise HTTPException(404, f"Progress for review {review_id} not found")
-
     return progress
 
 
@@ -184,10 +167,8 @@ def post_approval(review_id: str, payload: ApprovalTransitionRequest):
     folder = REVIEW_DIR / review_id
     if not folder.exists():
         raise HTTPException(404, f"Review {review_id} not found")
-
     if payload.target not in {"draft_generated", "reviewed", "approved", "ready_to_send"}:
         raise HTTPException(400, f"Unknown target state: {payload.target}")
-
     record = transition(
         folder,
         target=payload.target,  # type: ignore[arg-type]
@@ -205,27 +186,7 @@ def reset_review(review_id: str, background_tasks: BackgroundTasks):
     if not folder.exists():
         raise HTTPException(404, f"Review {review_id} not found")
 
-    # Wipe pipeline outputs + manual edits but keep the original mail
-    # (mail.json + attachments).
-    keep = {"mail.json"}
-    keep_files = {f for f in folder.iterdir() if f.name in keep}
-    saved_attachments = _collect_saved_attachments(folder)
-
-    for entry in folder.iterdir():
-        if entry in keep_files:
-            continue
-        if entry in saved_attachments:
-            continue
-        try:
-            if entry.is_file():
-                entry.unlink()
-            elif entry.is_dir():
-                shutil.rmtree(entry)
-        except Exception:
-            pass
-
-    init_progress(folder, review_id)
-    reset_approval(folder)
+    reset_review_artifacts(folder, review_id)
 
     mail = _rehydrate_mail_from_disk(folder)
     background_tasks.add_task(
@@ -235,42 +196,79 @@ def reset_review(review_id: str, background_tasks: BackgroundTasks):
         mail,
     )
 
-    api_base = _api_base_url()
+    base = api_base_url()
     return {
         "review_id": review_id,
         "status": "running",
-        "status_url": f"{api_base}/api/reviews/{review_id}/status",
+        "status_url": f"{base}/api/reviews/{review_id}/status",
     }
 
 
+# --------------------------------------------------------------- PDF endpoints
+#
+# Three explicit endpoints so the Streamlit UI's iframe sees three distinct
+# URLs depending on what it wants to display. Previously a single endpoint
+# served both draft and final, which combined with base64 data-URL embedding
+# in the UI confused the browser into reusing the same iframe content for
+# both tabs.
 @app.get("/api/reviews/{review_id}/pdf")
 def get_review_pdf(review_id: str):
+    """Return the most appropriate PDF — final if approved, else draft."""
     folder = REVIEW_DIR / review_id
     if not folder.exists():
         raise HTTPException(404, f"Review {review_id} not found")
 
-    # Prefer final PDF if approval has produced one.
-    approval = load_approval(folder)
-    if approval.final_pdf_path:
-        final_pdf = folder / approval.final_pdf_path
-        if final_pdf.exists():
-            return _pdf_response(final_pdf, review_id)
+    pdf, _ = find_current_pdf(folder, review_id)
+    if pdf is None:
+        raise HTTPException(404, "PDF not generated for this review")
+    return _pdf_response(pdf, review_id)
 
-    preferred = [
-        folder / f"Angebot_Draft_{review_id}.pdf",
-        folder / "draft_angebot.pdf",
-    ]
-    for pdf in preferred:
-        if pdf.exists():
-            return _pdf_response(pdf, review_id)
 
-    candidates = list(folder.rglob("*_ANGEBOT_DRAFT.pdf"))
-    if not candidates:
+@app.get("/api/reviews/{review_id}/pdf/draft")
+def get_review_draft_pdf(review_id: str):
+    """Always return the draft PDF (with the red AI warning banner)."""
+    folder = REVIEW_DIR / review_id
+    if not folder.exists():
+        raise HTTPException(404, f"Review {review_id} not found")
+
+    pdf = find_draft_pdf(folder, review_id)
+    if pdf is None:
         raise HTTPException(404, "Draft PDF not generated for this review")
-    return _pdf_response(candidates[0], review_id)
+    return _pdf_response(pdf, review_id, suffix="draft")
+
+
+@app.get("/api/reviews/{review_id}/pdf/final")
+def get_review_final_pdf(review_id: str):
+    """Return the final PDF — only available after the user approves."""
+    folder = REVIEW_DIR / review_id
+    if not folder.exists():
+        raise HTTPException(404, f"Review {review_id} not found")
+
+    pdf = find_final_pdf(folder, review_id)
+    if pdf is None:
+        raise HTTPException(
+            404,
+            "Final PDF not yet produced — approve the review first",
+        )
+    return _pdf_response(pdf, review_id, suffix="final")
 
 
 # --------------------------------------------------------- internals
+def _build_review_response(review_id: str, *, status: str) -> dict:
+    base = api_base_url()
+    return {
+        "review_id": review_id,
+        "review_url": f"{STREAMLIT_BASE_URL}?review_id={review_id}",
+        "draft_pdf_url": f"{base}/api/reviews/{review_id}/pdf/draft",
+        "draft_pdf_filename": f"Angebot_Draft_{review_id}.pdf",
+        "final_pdf_url": f"{base}/api/reviews/{review_id}/pdf/final",
+        "final_pdf_filename": f"Angebot_{review_id}_FINAL.pdf",
+        "status_url": f"{base}/api/reviews/{review_id}/status",
+        "approval_url": f"{base}/api/reviews/{review_id}/approval",
+        "status": status,
+    }
+
+
 def _prepare_mail_payload(payload: MailReviewRequest, folder: Path) -> Mail:
     meta = payload.model_dump(by_alias=True, exclude={"attachments"})
     meta["attachments"] = [
@@ -307,13 +305,11 @@ def _prepare_mail_payload(payload: MailReviewRequest, folder: Path) -> Mail:
         body=payload.body,
         attachments=saved_paths,
     )
-
     if not mail.has_content:
         raise HTTPException(
             status_code=400,
             detail="Mail has neither body text nor attachments — nothing to extract.",
         )
-
     return mail
 
 
@@ -352,24 +348,6 @@ def _rehydrate_mail_from_disk(folder: Path) -> Mail:
     return mail
 
 
-def _collect_saved_attachments(folder: Path) -> set[Path]:
-    """Return the attachment files that should survive a reset."""
-    meta_path = folder / "mail.json"
-    if not meta_path.exists():
-        return set()
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    except Exception:
-        return set()
-    out: set[Path] = set()
-    for entry in meta.get("attachments") or []:
-        name = entry.get("name") if isinstance(entry, dict) else None
-        if not name:
-            continue
-        out.add(folder / Path(name).name)
-    return out
-
-
 def _run_review_pipeline(
     review_id: str,
     folder: Path,
@@ -393,28 +371,24 @@ def _run_review_pipeline(
             progress=on_progress,
             is_final=False,
         )
-
-        api_base = _api_base_url()
-        response = {
-            "review_id": review_id,
-            "review_url": f"{STREAMLIT_BASE_URL}?review_id={review_id}",
-            "draft_pdf_url": f"{api_base}/api/reviews/{review_id}/pdf",
-            "draft_pdf_filename": f"Angebot_Draft_{review_id}.pdf",
-            "status_url": f"{api_base}/api/reviews/{review_id}/status",
-            "approval_url": f"{api_base}/api/reviews/{review_id}/approval",
-            "status": "completed",
-            "summary": result.summary(),
-        }
+        response = _build_review_response(review_id, status="completed")
+        response["summary"] = result.summary()
         complete_progress(folder, response)
     except Exception as exc:
         fail_progress(folder, str(exc))
 
 
-def _pdf_response(pdf: Path, review_id: str) -> FileResponse:
+def _pdf_response(pdf: Path, review_id: str, *, suffix: str | None = None) -> FileResponse:
+    if suffix:
+        filename = f"Angebot_{review_id}_{suffix.upper()}.pdf"
+    else:
+        filename = f"Angebot_{review_id}.pdf"
+
     return FileResponse(
         pdf,
         media_type="application/pdf",
-        filename=f"Angebot_{review_id}.pdf",
+        filename=filename,
+        content_disposition_type="inline",
         headers={
             "Cache-Control": "no-store",
             "Access-Control-Allow-Origin": "*",

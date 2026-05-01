@@ -23,6 +23,8 @@ import streamlit as st
 
 from quoting.core import Anfrage
 from quoting.matching import MatchResult
+from quoting.ui.review_agent import upsert_override
+
 
 
 _CONFIDENCE_LABEL = {
@@ -401,6 +403,8 @@ def _position_block(
                     field_path=f"positionen[{i}].einheit",
                     key=f"eh_{i}",
                 )
+
+                _render_position_price_field(pos, i)
             with c2:
                 pos.liefertermin = _input_with_tracking(
                     kind="text", label="Liefertermin",
@@ -572,3 +576,100 @@ def _changes_indicator() -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def _render_position_price_field(pos, index: int) -> None:
+    """Inline price override inside the existing position expander."""
+    quotation = st.session_state.get("quotation")
+    if not quotation:
+        st.caption("Preis wird angezeigt, sobald ein Angebotsentwurf berechnet wurde.")
+        return
+
+    item = _quotation_item_for_pos(quotation, pos.pos_nr)
+    if item is None:
+        st.caption("Noch kein Preis für diese Position vorhanden.")
+        return
+
+    current_price = _current_manual_unit_price(
+        pos_nr=pos.pos_nr,
+        fallback=float(item.einzelpreis),
+    )
+
+    new_price = st.number_input(
+        "Stückpreis EUR",
+        min_value=0.0,
+        value=float(current_price),
+        step=0.01,
+        format="%.2f",
+        key=f"price_unit_{index}",
+        help="Überschreibt den berechneten Stückpreis für diese Position.",
+    )
+
+    if abs(float(new_price) - float(current_price)) < 0.005:
+        return
+
+    overrides = list(st.session_state.get("manual_discount_overrides") or [])
+    st.session_state["manual_discount_overrides"] = upsert_override(
+        overrides,
+        {
+            "target": "pos",
+            "pos_nr": int(pos.pos_nr),
+            "mode": "unit_price_eur",
+            "unit_price_eur": round(float(new_price), 2),
+        },
+    )
+
+    _track_change(f"positionen[{index}].einzelpreis")
+    st.session_state.pop("editor_state_hash", None)
+    _invalidate_approval_after_price_change()
+    st.rerun()
+
+
+def _quotation_item_for_pos(quotation, pos_nr: int):
+    for item in getattr(quotation, "items", []) or []:
+        if int(item.pos_nr) == int(pos_nr):
+            return item
+    return None
+
+
+def _current_manual_unit_price(
+    *,
+    pos_nr: int,
+    fallback: float,
+) -> float:
+    overrides = st.session_state.get("manual_discount_overrides") or []
+
+    for override in reversed(overrides):
+        if (
+            override.get("target") == "pos"
+            and int(override.get("pos_nr", -1)) == int(pos_nr)
+            and override.get("mode") == "unit_price_eur"
+        ):
+            return float(override.get("unit_price_eur", fallback))
+
+    return fallback
+
+
+def _invalidate_approval_after_price_change() -> None:
+    """Price changes make an existing approval stale."""
+    review_dir_raw = st.session_state.get("review_dir")
+    if not review_dir_raw:
+        return
+
+    try:
+        from pathlib import Path
+        from quoting.api.approval_store import load_approval, transition
+
+        review_dir = Path(review_dir_raw)
+        record = load_approval(review_dir)
+
+        if record.state in {"approved", "ready_to_send"}:
+            transition(
+                review_dir,
+                target="reviewed",
+                actor=record.approved_by,
+                changed_fields=sorted(st.session_state.get("changed_fields") or []),
+            )
+    except Exception:
+        return
+    

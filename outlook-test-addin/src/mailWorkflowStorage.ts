@@ -20,9 +20,18 @@
  *    ▼
  *   review_opened
  *    │
+ *    │ [User klickt "Freigeben" in der Review-UI]
+ *    │ [Plugin pollt /approval-Endpoint]
+ *    ▼
+ *   approved
+ *    │
  *    │ [Angebotsmail erstellen]
  *    ▼
  *   quote_sent
+ *
+ * Vor dem `approved`-Schritt darf der "Angebotsmail erstellen"-Button
+ * nicht klickbar sein — sonst landet ein Draft mit rotem KI-Warnhinweis
+ * beim Kunden.
  */
 
 import type { CreateReviewResponse, MailSnapshot } from "./types";
@@ -32,6 +41,7 @@ export type MailWorkflowState =
   | "review_running"
   | "review_created"
   | "review_opened"
+  | "approved"
   | "quote_sent";
 
 export type MailWorkflow = {
@@ -42,12 +52,15 @@ export type MailWorkflow = {
   review?: CreateReviewResponse;
   reviewCreatedAt?: string;
   reviewOpenedAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  finalPdfFilename?: string;
   quoteSentAt?: string;
   updatedAt: string;
 };
 
-const STORAGE_KEY = "quoting.mailWorkflows.v2";
-const LEGACY_KEY = "quoting.pendingReview.v1";
+const STORAGE_KEY = "quoting.mailWorkflows.v3";
+const LEGACY_KEYS = ["quoting.mailWorkflows.v2", "quoting.pendingReview.v1"];
 
 type Store = Record<string, MailWorkflow>;
 
@@ -64,27 +77,20 @@ function writeStore(store: Store): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   } catch {
-    /*
-     * Quota exceeded or storage disabled.
-     * The user can still finish the current action.
-     */
+    /* Quota exceeded or storage disabled — current action still works. */
   }
 }
 
 export function deriveMailId(item: any, snapshot: MailSnapshot): string {
   if (item?.itemId) return String(item.itemId);
-
   const seed = `${snapshot.subject}|${snapshot.from}|${snapshot.attachments
     .map((a) => `${a.name}:${a.size}`)
     .join(",")}`;
-
   let hash = 0;
-
   for (let i = 0; i < seed.length; i++) {
     hash = (hash << 5) - hash + seed.charCodeAt(i);
     hash |= 0;
   }
-
   return `local_${Math.abs(hash).toString(36)}`;
 }
 
@@ -104,7 +110,6 @@ export function upsertWorkflow(
 ): MailWorkflow {
   const store = readStore();
   const now = new Date().toISOString();
-
   const existing: MailWorkflow = store[mailId] ?? {
     mailId,
     subject: "",
@@ -112,17 +117,14 @@ export function upsertWorkflow(
     state: "new",
     updatedAt: now,
   };
-
   const merged: MailWorkflow = {
     ...existing,
     ...patch,
     mailId,
     updatedAt: now,
   };
-
   store[mailId] = merged;
   writeStore(store);
-
   return merged;
 }
 
@@ -133,17 +135,26 @@ export function deleteWorkflow(mailId: string): void {
 }
 
 export function maybeMigrateLegacy(currentMailId: string): void {
+  // v2 → v3: same shape, just bump the key. Older clients used "v2"
+  // without an `approved` state; the data is still valid, we just copy
+  // it forward and let the polling logic upgrade workflows as needed.
   try {
-    const raw = window.localStorage.getItem(LEGACY_KEY);
+    const v2 = window.localStorage.getItem("quoting.mailWorkflows.v2");
+    if (v2 && !window.localStorage.getItem(STORAGE_KEY)) {
+      window.localStorage.setItem(STORAGE_KEY, v2);
+    }
+  } catch {
+    /* ignore */
+  }
 
+  // legacy v1 (single pending review)
+  try {
+    const raw = window.localStorage.getItem("quoting.pendingReview.v1");
     if (!raw) return;
-
     const legacy = JSON.parse(raw);
     const review: CreateReviewResponse | undefined = legacy?.review;
-
     if (review?.review_id) {
       const store = readStore();
-
       if (!store[currentMailId]) {
         store[currentMailId] = {
           mailId: currentMailId,
@@ -154,15 +165,19 @@ export function maybeMigrateLegacy(currentMailId: string): void {
           reviewCreatedAt: legacy.createdAt ?? new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-
         writeStore(store);
       }
     }
-
-    window.localStorage.removeItem(LEGACY_KEY);
   } catch {
-    /*
-     * Ignore malformed legacy state.
-     */
+    /* Ignore malformed legacy state. */
+  }
+
+  // Sweep all old keys so we don't keep re-importing them.
+  for (const key of LEGACY_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
   }
 }

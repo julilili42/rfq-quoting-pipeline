@@ -2,6 +2,7 @@
 
 States
 ------
+
 - ``draft_generated`` — pipeline produced a first PDF (initial state)
 - ``reviewed``        — user has viewed and adjusted at least one field
 - ``approved``        — user explicitly clicked "Approve". PDF is rebuilt
@@ -16,11 +17,13 @@ and Outlook plugin can read it without any in-memory coupling.
 """
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
+
+from quoting.reviews import read_json, write_json
+
 
 ApprovalState = Literal[
     "draft_generated",
@@ -29,11 +32,12 @@ ApprovalState = Literal[
     "ready_to_send",
 ]
 
+
 VALID_TRANSITIONS: dict[ApprovalState, set[ApprovalState]] = {
     "draft_generated": {"reviewed", "approved"},
-    "reviewed": {"approved", "draft_generated"},
-    "approved": {"ready_to_send", "reviewed"},
-    "ready_to_send": {"approved"},
+    "reviewed":        {"approved", "draft_generated"},
+    "approved":        {"ready_to_send", "reviewed"},
+    "ready_to_send":   {"approved"},
 }
 
 
@@ -76,26 +80,12 @@ def _now_iso() -> str:
 
 
 def load_approval(review_dir: Path) -> ApprovalRecord:
-    path = approval_path(review_dir)
-    if not path.exists():
-        return ApprovalRecord()
-    try:
-        return ApprovalRecord.from_dict(
-            json.loads(path.read_text(encoding="utf-8"))
-        )
-    except Exception:
-        return ApprovalRecord()
+    return ApprovalRecord.from_dict(read_json(approval_path(review_dir)))
 
 
 def save_approval(review_dir: Path, record: ApprovalRecord) -> None:
     review_dir.mkdir(parents=True, exist_ok=True)
-    path = approval_path(review_dir)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(
-        json.dumps(record.to_dict(), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    tmp.replace(path)
+    write_json(approval_path(review_dir), record.to_dict())
 
 
 def transition(
@@ -128,7 +118,6 @@ def transition(
         })
 
     record.state = target
-
     if target == "approved":
         record.approved_by = actor
         record.approved_at = _now_iso()
@@ -157,4 +146,4 @@ def mark_field_changed(review_dir: Path, field_path: str) -> None:
     record = load_approval(review_dir)
     if field_path not in record.changed_fields:
         record.changed_fields.append(field_path)
-    save_approval(review_dir, record)
+        save_approval(review_dir, record)

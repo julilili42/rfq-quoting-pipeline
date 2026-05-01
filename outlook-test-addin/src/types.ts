@@ -44,13 +44,19 @@ export type PipelineProgress = {
 export type CreateReviewResponse = {
   review_id: string;
   review_url: string;
+
   draft_pdf_url: string;
   draft_pdf_filename: string;
+
+  final_pdf_url?: string;
+  final_pdf_filename?: string;
+
   status_url?: string;
   status?: PipelineProgressStatus;
   summary?: Record<string, unknown>;
   progress?: PipelineProgress;
 };
+
 
 export type PendingReview = {
   review: CreateReviewResponse;

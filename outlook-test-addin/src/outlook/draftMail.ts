@@ -24,6 +24,12 @@ export async function createDraftMail(
     <p>Mit freundlichen Grüßen<br/>ElringKlinger Kunststofftechnik</p>
   `;
 
+  const finalPdfUrl =
+  result.final_pdf_url ?? result.draft_pdf_url.replace("/pdf/draft", "/pdf/final");
+
+  const finalPdfFilename =
+    result.final_pdf_filename ?? result.draft_pdf_filename.replace("Draft_", "").replace("_DRAFT", "_FINAL");
+
   Office.context.mailbox.displayNewMessageForm({
     toRecipients: [],
     subject,
@@ -31,8 +37,8 @@ export async function createDraftMail(
     attachments: [
       {
         type: "file",
-        name: result.draft_pdf_filename,
-        url: withCacheBust(result.draft_pdf_url),
+        name: finalPdfFilename,
+        url: withCacheBust(finalPdfUrl),
       },
     ],
   });

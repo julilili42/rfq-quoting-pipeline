@@ -41,14 +41,12 @@ export async function startReview(
   });
 
   const text = await response.text();
-
   console.log("Review API status:", response.status);
   console.log("Review API raw response:", text);
 
   if (!response.ok) {
     throw new Error(`Review API failed (${response.status}): ${text}`);
   }
-
   return JSON.parse(text) as CreateReviewResponse;
 }
 
@@ -57,18 +55,50 @@ export async function getReviewStatus(
 ): Promise<PipelineProgress> {
   const statusUrl =
     review.status_url ?? `${REVIEW_API_URL}/${review.review_id}/status`;
-
   const response = await fetch(withCacheBust(statusUrl), {
     method: "GET",
   });
-
   const text = await response.text();
-
   if (!response.ok) {
     throw new Error(`Status check failed (${response.status}): ${text}`);
   }
-
   return JSON.parse(text) as PipelineProgress;
+}
+
+/**
+ * Approval record returned by the API.
+ *
+ * `state` follows the backend's approval state machine:
+ *   draft_generated → reviewed → approved → ready_to_send
+ *
+ * We only care about `approved` / `ready_to_send` for unlocking the
+ * "Angebotsmail erstellen" action in the plugin.
+ */
+export type ApprovalRecord = {
+  state:
+    | "draft_generated"
+    | "reviewed"
+    | "approved"
+    | "ready_to_send";
+  approved_by?: string | null;
+  approved_at?: string | null;
+  final_pdf_path?: string | null;
+};
+
+export async function getApprovalState(
+  reviewId: string,
+): Promise<ApprovalRecord> {
+  const url = `${REVIEW_API_URL}/${reviewId}/approval`;
+  const response = await fetch(withCacheBust(url), { method: "GET" });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Approval check failed (${response.status}): ${text}`);
+  }
+  return JSON.parse(text) as ApprovalRecord;
+}
+
+export function isApproved(record: ApprovalRecord): boolean {
+  return record.state === "approved" || record.state === "ready_to_send";
 }
 
 export async function pollReviewUntilComplete(
@@ -99,9 +129,7 @@ export async function pollReviewUntilComplete(
 
     if (progress.status === "completed") {
       const completed = progress.result ?? review;
-
       await checkPdfUrl(completed);
-
       return {
         ...review,
         ...completed,
@@ -127,19 +155,16 @@ async function checkPdfUrl(result: CreateReviewResponse): Promise<void> {
     const pdfCheck = await fetch(withCacheBust(result.draft_pdf_url), {
       method: "GET",
     });
-
     console.log("PDF check status:", pdfCheck.status);
     console.log(
       "PDF check content-type:",
       pdfCheck.headers.get("content-type"),
     );
-
     if (!pdfCheck.ok) {
       throw new Error(`PDF URL check failed with status ${pdfCheck.status}`);
     }
   } catch (error) {
     console.error("PDF URL check failed:", error);
-
     throw new Error(
       `Review wurde erstellt, aber PDF-URL ist aus dem Add-in nicht erreichbar: ${String(error)}`,
     );

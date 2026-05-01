@@ -14,11 +14,12 @@ Status detection
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
+
+from quoting.reviews import find_draft_pdf, read_json
 
 
 ReviewStatus = Literal["abgeschlossen", "pdf_bereit", "in_arbeit"]
@@ -67,8 +68,6 @@ class ReviewSummary:
 
 
 # --------------------------------------------------------------------- public
-
-
 def scan_reviews(reviews_root: Path) -> list[ReviewSummary]:
     """Return all review summaries on disk, newest first.
 
@@ -92,32 +91,30 @@ def scan_reviews(reviews_root: Path) -> list[ReviewSummary]:
 
 
 # --------------------------------------------------------------------- internal
-
-
 def _summarize(folder: Path) -> ReviewSummary:
     review_id = folder.name
 
-    mail = _read_json(folder / "mail.json") or {}
+    mail = read_json(folder / "mail.json") or {}
     extraction = _read_json_first(folder, ("anfrage_reviewed.json",
-                                            "01_extracted.json")) or {}
+                                           "01_extracted.json")) or {}
     quotation = _read_json_first(folder, ("quotation_reviewed.json",
-                                           "03_quotation.json")) or {}
-    state = _read_json(folder / "review_state.json")
-    overrides = _read_json(folder / "manual_overrides.json") or []
+                                          "03_quotation.json")) or {}
+    state = read_json(folder / "review_state.json")
+    overrides = read_json(folder / "manual_overrides.json") or []
 
     positions = extraction.get("positionen") or []
     if not isinstance(positions, list):
         positions = []
 
     matches = _read_json_first(folder, ("matches_reviewed.json",
-                                         "02_matches.json")) or []
+                                        "02_matches.json")) or []
 
     confidence_counts = _count_by_key(positions, "confidence", ("high", "medium", "low"))
     match_counts = _count_by_key(
         matches, "status", ("exact", "fuzzy", "semantic", "no_match")
     )
 
-    pdf_path = _find_pdf(folder, review_id)
+    pdf_path = find_draft_pdf(folder, review_id)
 
     if state and "review_id" in state:
         status: ReviewStatus = "abgeschlossen"
@@ -159,30 +156,23 @@ def _summarize(folder: Path) -> ReviewSummary:
     )
 
 
-def _read_json(path: Path) -> Any:
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-
-
 def _read_json_first(folder: Path, names: tuple[str, ...]) -> Any:
     """Try ``folder/name`` for each name, then rglob as last resort."""
     for name in names:
-        data = _read_json(folder / name)
+        data = read_json(folder / name)
         if data is not None:
             return data
         # also accept nested under pipeline/
-        data = _read_json(folder / "pipeline" / name)
+        data = read_json(folder / "pipeline" / name)
         if data is not None:
             return data
+
     for name in names:
         for path in folder.rglob(name):
-            data = _read_json(path)
+            data = read_json(path)
             if data is not None:
                 return data
+
     return None
 
 
@@ -195,20 +185,6 @@ def _count_by_key(items: list, key: str, expected: tuple[str, ...]) -> dict[str,
         if value in counts:
             counts[value] += 1
     return counts
-
-
-def _find_pdf(folder: Path, review_id: str) -> Path | None:
-    candidates = [
-        folder / f"Angebot_Draft_{review_id}.pdf",
-        folder / "draft_angebot.pdf",
-    ]
-    for p in candidates:
-        if p.exists() and p.is_file():
-            return p
-    for p in folder.rglob("*_ANGEBOT_DRAFT.pdf"):
-        if p.is_file():
-            return p
-    return None
 
 
 def _safe_mtime(path: Path | None) -> datetime:

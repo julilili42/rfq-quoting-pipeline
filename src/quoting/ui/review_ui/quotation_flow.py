@@ -13,16 +13,21 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import tempfile
-from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any
+import tempfile
 
 import streamlit as st
 
 from quoting.core import Anfrage
 from quoting.pipeline import StepContext
 from quoting.pricing import Quotation, QuotationItem
+from quoting.reviews import (
+    draft_pdf_filename,
+    final_pdf_filename,
+    find_draft_pdf,
+    read_json,
+    write_json,
+)
 from quoting.ui.review_agent import apply_manual_overrides, build_agent_summary
 from quoting.ui.review_ui.resources import get_pipeline, make_streamlit_progress
 from quoting.ui.review_ui.state import safe_file_stub
@@ -38,23 +43,19 @@ def _resolve_company_profile():
     """
     try:
         from quoting.ui.review_ui.editor import get_effective_company_profile
-
         return get_effective_company_profile()
     except Exception:
-        from quoting.api.settings_store import load_settings as load_app_settings
-
-        return load_app_settings().company
+        from quoting.api.settings_store import load_user_settings
+        return load_user_settings().company
 
 
 # ---------- state hydration -----------------------------------------------
-
 def hydrate_existing_review_state(content_hash: str, matches) -> None:
     """Reload a previously-saved quotation/PDF from disk into session state."""
     review_dir_raw = st.session_state.get("review_dir")
     review_id = st.session_state.get("review_id")
     if not review_dir_raw:
         return
-
     if (
         st.session_state.get("quotation_hash") == content_hash
         and st.session_state.get("quotation")
@@ -63,7 +64,7 @@ def hydrate_existing_review_state(content_hash: str, matches) -> None:
 
     review_dir = Path(review_dir_raw)
 
-    overrides = _load_json(review_dir / "manual_overrides.json")
+    overrides = read_json(review_dir / "manual_overrides.json")
     if isinstance(overrides, list):
         st.session_state["manual_discount_overrides"] = overrides
     else:
@@ -76,11 +77,10 @@ def hydrate_existing_review_state(content_hash: str, matches) -> None:
         st.session_state["pdf_file_name"] = (
             f"Angebot_Draft_{review_id or content_hash}.pdf"
         )
-
-    pdf_path = _find_current_pdf(review_dir, review_id)
-    if pdf_path and pdf_path.exists():
-        st.session_state["generated_pdf_path"] = str(pdf_path)
-        st.session_state["pdf_bytes"] = pdf_path.read_bytes()
+        pdf_path = find_draft_pdf(review_dir, review_id)
+        if pdf_path and pdf_path.exists():
+            st.session_state["generated_pdf_path"] = str(pdf_path)
+            st.session_state["pdf_bytes"] = pdf_path.read_bytes()
 
     if not st.session_state.get("agent_messages"):
         agent_lang = st.session_state.get("agent_lang", "de")
@@ -96,10 +96,15 @@ def hydrate_existing_review_state(content_hash: str, matches) -> None:
 
 
 # ---------- core flow ------------------------------------------------------
-
 def pdf_output_path(content_hash: str, *, final: bool = False) -> Path:
     review_dir = st.session_state.get("review_dir")
-    base = "final_angebot.pdf" if final else "draft_angebot.pdf"
+    review_id = st.session_state.get("review_id") or content_hash
+
+    if final:
+        base = final_pdf_filename(review_id)
+    else:
+        base = draft_pdf_filename(review_id)
+
     if review_dir:
         path = Path(review_dir)
         path.mkdir(parents=True, exist_ok=True)
@@ -108,7 +113,6 @@ def pdf_output_path(content_hash: str, *, final: bool = False) -> Path:
     upload_dir = Path(tempfile.gettempdir()) / "quoting_uploads" / content_hash
     upload_dir.mkdir(parents=True, exist_ok=True)
     return upload_dir / base
-
 
 def rebuild_quotation_pdf(
     anfrage: Anfrage,
@@ -183,9 +187,8 @@ def rebuild_quotation_pdf(
 
 def maybe_auto_refresh(anfrage: Anfrage, matches, content_hash: str) -> None:
     """Auto-regenerate the PDF when the editor data has changed."""
-    from quoting.api.settings_store import load_settings as load_app_settings
-
-    if not load_app_settings().workflow.auto_refresh_pdf:
+    from quoting.api.settings_store import load_user_settings
+    if not load_user_settings().workflow.auto_refresh_pdf:
         return
 
     current = _editor_state_hash(anfrage)
@@ -220,6 +223,7 @@ def render_generate_button(
     uploaded_name: str,
 ) -> None:
     is_review_mode = bool(st.session_state.get("review_dir"))
+
     button_label = (
         "Änderungen übernehmen & PDF aktualisieren"
         if is_review_mode
@@ -243,16 +247,16 @@ def render_generate_button(
                 f"ElringKlinger_Angebot_{safe_file_stub(uploaded_name)}_"
                 f"{content_hash}.pdf"
             )
-            st.session_state["agent_messages"] = [
-                {
-                    "role": "assistant",
-                    "content": build_agent_summary(
-                        quotation, matches,
-                        applied_items=applied_items, lang=agent_lang,
-                    ),
-                }
-            ]
-            st.session_state["editor_state_hash"] = _editor_state_hash(anfrage)
+        st.session_state["agent_messages"] = [
+            {
+                "role": "assistant",
+                "content": build_agent_summary(
+                    quotation, matches,
+                    applied_items=applied_items, lang=agent_lang,
+                ),
+            }
+        ]
+        st.session_state["editor_state_hash"] = _editor_state_hash(anfrage)
     except Exception as e:
         st.error(f"Fehler bei der Angebotserstellung: {e}")
         st.stop()
@@ -262,7 +266,6 @@ def render_generate_button(
             st.success("Review aktualisiert. Das neue PDF wurde gespeichert.")
         else:
             st.success("Angebot erfolgreich erstellt.")
-
         st.download_button(
             label="PDF herunterladen",
             data=st.session_state.get("pdf_bytes", b""),
@@ -281,29 +284,19 @@ def render_generate_button(
 
 
 def finalize_pdf(anfrage: Anfrage, matches, content_hash: str) -> str:
-    """Render the final PDF (no AI warning) and return its filename."""
+    """Render the final PDF without AI warning and return its filename."""
     agent_lang = st.session_state.get("agent_lang", "de")
     _, _, pdf_out = rebuild_quotation_pdf(
-        anfrage=anfrage, matches=matches,
-        content_hash=content_hash, agent_lang=agent_lang,
+        anfrage=anfrage,
+        matches=matches,
+        content_hash=content_hash,
+        agent_lang=agent_lang,
         is_final=True,
     )
-
-    review_dir_raw = st.session_state.get("review_dir")
-    if review_dir_raw:
-        review_id = st.session_state.get("review_id") or content_hash
-        review_dir = Path(review_dir_raw)
-        named = review_dir / f"Angebot_{review_id}_FINAL.pdf"
-        try:
-            shutil.copyfile(pdf_out, named)
-            return named.name
-        except Exception:
-            pass
     return pdf_out.name
 
 
 # ----------------------------------------------------------------- internal
-
 def _editor_state_hash(anfrage: Anfrage) -> str:
     """Stable hash of all editor-visible Anfrage data."""
     payload = anfrage.model_dump(mode="json")
@@ -324,6 +317,7 @@ def _persist_review_outputs(
     """Mirror the final review-state to ``data/reviews/{review_id}``."""
     review_dir_raw = st.session_state.get("review_dir")
     review_id = st.session_state.get("review_id")
+
     if not review_dir_raw:
         return
 
@@ -331,19 +325,18 @@ def _persist_review_outputs(
     review_dir.mkdir(parents=True, exist_ok=True)
 
     if not is_final:
-        _write_json(review_dir / "anfrage_reviewed.json", anfrage)
-        _write_json(review_dir / "matches_reviewed.json", matches)
-        _write_json(review_dir / "quotation_reviewed.json", quotation)
-        _write_json(review_dir / "manual_overrides.json", overrides)
-
-        _write_json(
+        write_json(review_dir / "anfrage_reviewed.json", anfrage)
+        write_json(review_dir / "matches_reviewed.json", matches)
+        write_json(review_dir / "quotation_reviewed.json", quotation)
+        write_json(review_dir / "manual_overrides.json", overrides)
+        write_json(
             review_dir / "review_state.json",
             {
                 "review_id": review_id,
-                "anfrage": _to_jsonable(anfrage),
-                "matches": _to_jsonable(matches),
-                "quotation": _to_jsonable(quotation),
-                "manual_overrides": _to_jsonable(overrides),
+                "anfrage": anfrage,
+                "matches": matches,
+                "quotation": quotation,
+                "manual_overrides": overrides,
                 "pdf": str(pdf_out.name),
             },
         )
@@ -351,15 +344,15 @@ def _persist_review_outputs(
     if not review_id or not pdf_out.exists():
         return
 
-    for stale_pdf in review_dir.glob("Angebot_Draft_*.pdf"):
-        try:
-            stale_pdf.unlink()
-        except Exception:
-            pass
-
-    named_pdf = review_dir / f"Angebot_Draft_{review_id}.pdf"
-    if named_pdf.resolve() != pdf_out.resolve():
-        shutil.copyfile(pdf_out, named_pdf)
+    if not is_final:
+        for stale_pdf in review_dir.glob("Angebot_Draft_*.pdf"):
+            try:
+                stale_pdf.unlink()
+            except Exception:
+                pass
+        named_pdf = review_dir / draft_pdf_filename(review_id)
+        if named_pdf.resolve() != pdf_out.resolve():
+            shutil.copyfile(pdf_out, named_pdf)
 
 
 def _load_saved_quotation(review_dir: Path) -> Quotation | None:
@@ -369,14 +362,13 @@ def _load_saved_quotation(review_dir: Path) -> Quotation | None:
         review_dir / "pipeline" / "03_quotation.json",
     ]
     candidates.extend(sorted(review_dir.rglob("03_quotation.json")))
-
     seen: set[Path] = set()
     for path in candidates:
         path = path.resolve()
         if path in seen:
             continue
         seen.add(path)
-        data = _load_json(path)
+        data = read_json(path)
         if isinstance(data, dict):
             try:
                 return _quotation_from_dict(data)
@@ -414,46 +406,3 @@ def _quotation_from_dict(data: dict) -> Quotation:
         waehrung=str(data.get("waehrung", "EUR")),
         warnungen=list(data.get("warnungen", [])),
     )
-
-
-def _find_current_pdf(review_dir: Path, review_id: str | None) -> Path | None:
-    candidates: list[Path] = []
-    if review_id:
-        candidates.append(review_dir / f"Angebot_Draft_{review_id}.pdf")
-    candidates.append(review_dir / "draft_angebot.pdf")
-    candidates.extend(sorted(review_dir.rglob("*_ANGEBOT_DRAFT.pdf")))
-
-    for path in candidates:
-        if path.exists() and path.is_file():
-            return path
-    return None
-
-
-def _load_json(path: Path) -> Any:
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-
-
-def _write_json(path: Path, value: Any) -> None:
-    path.write_text(
-        json.dumps(_to_jsonable(value), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-
-def _to_jsonable(value: Any):
-    if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json")
-    if hasattr(value, "to_dict"):
-        return value.to_dict()
-    if is_dataclass(value):
-        return asdict(value)
-    if isinstance(value, list):
-        return [_to_jsonable(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _to_jsonable(item) for key, item in value.items()}
-    return value

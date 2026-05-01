@@ -16,6 +16,7 @@ EDITOR_KEY_PREFIXES = (
     "art_", "mng_", "eh_", "lt_", "ws_", "zn_", "bez_",
     "abm_", "gew_", "cert_", "zert_", "wsa_",
     "incoterms_", "zahl_",
+    "price_",
 )
 
 

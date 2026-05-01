@@ -23,7 +23,6 @@ from quoting.pipeline import (
 
 
 # ---------- cached singletons ---------------------------------------------
-
 @st.cache_resource
 def settings():
     return load_settings()
@@ -42,7 +41,6 @@ def stammdaten():
 
 
 # ---------- input helpers --------------------------------------------------
-
 def build_mail(input_path: Path) -> Mail:
     typ = detect_file_type(input_path)
     if typ in ("eml", "msg"):
@@ -85,7 +83,6 @@ def mail_body_cached(file_path: str) -> str:
 
 
 # ---------- progress reporting --------------------------------------------
-
 def make_streamlit_progress(status: Any) -> ProgressCallback:
     """Bridge pipeline ``StepProgress`` events into a ``st.status`` widget.
 
@@ -109,4 +106,5 @@ def make_streamlit_progress(status: Any) -> ProgressCallback:
                 label=f"✗ {p.step_name}: {p.detail or 'Fehler'}",
                 state="error",
             )
+
     return callback

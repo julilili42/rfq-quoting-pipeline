@@ -5,21 +5,35 @@
  *
  *   Steps indicator
  *   WorkflowCard          ← single source of truth (state + progress in one)
- *   StatusCard            ← thin one-liner status
+ *   StatusCard            ← only shown when workflow card doesn't cover it
+ *                           (initial load, errors, mail-loading)
  *   Quoting-Übersicht link ← prominent, with arrow
  *
- * The previous separate PipelineProgressCard and AdvancedDetails sections
- * have been folded into the WorkflowCard. Less visual noise, one clear
- * action per state.
+ * The StatusCard used to render under every state, which produced two
+ * "Pipeline läuft" / "Extraktion" labels at once — once inside the
+ * WorkflowCard, once below it. We now hide the StatusCard whenever
+ * the WorkflowCard already names the state (review_running through
+ * quote_sent) and only surface it for the truly informational stages:
+ * initial load, errors, and the new state.
+ *
+ * Approval polling
+ * ----------------
+ * After the user opens the Review-UI we poll the backend's
+ * `/api/reviews/{id}/approval` endpoint. Once the state flips to
+ * `approved` (or `ready_to_send`) we move the workflow into the
+ * `approved` state, which unlocks the "Angebotsmail erstellen"
+ * button in the WorkflowCard.
  */
+
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import {
+  getApprovalState,
+  isApproved,
   pollReviewUntilComplete,
   startReview,
 } from "./api/reviewApi";
-
 import { ExternalIcon } from "./components/Icons";
 import { StatusCard } from "./components/StatusCard";
 import { Steps } from "./components/Steps";
@@ -28,6 +42,7 @@ import { createDraftMail, openUrl } from "./outlook/draftMail";
 import { readMailSnapshot } from "./outlook/mailbox";
 import {
   type MailWorkflow,
+  type MailWorkflowState,
   deleteWorkflow,
   deriveMailId,
   getWorkflow,
@@ -45,6 +60,25 @@ import "./style.css";
 declare const Office: any;
 
 const REVIEW_OVERVIEW_URL = "http://localhost:8501";
+
+// Workflow states whose UI is fully described by the WorkflowCard.
+// During these states the StatusCard would just repeat what's already
+// visible, so we hide it.
+const STATES_WITH_OWN_STATUS: MailWorkflowState[] = [
+  "review_running",
+  "review_created",
+  "review_opened",
+  "approved",
+  "quote_sent",
+];
+
+// Workflow states where polling the approval endpoint is meaningful.
+const STATES_TO_POLL_APPROVAL: MailWorkflowState[] = [
+  "review_created",
+  "review_opened",
+];
+
+const APPROVAL_POLL_INTERVAL_MS = 4000;
 
 function formatProgressStatus(progress: PipelineProgress): string {
   if (progress.status === "failed") {
@@ -69,6 +103,7 @@ function App() {
   const [loading, setLoading] = useState(false);
 
   const pollingReviewIdRef = useRef<string | null>(null);
+  const approvalPollTimerRef = useRef<number | null>(null);
 
   async function loadMail() {
     setLoading(true);
@@ -76,10 +111,8 @@ function App() {
     try {
       const mail = await readMailSnapshot();
       const id = deriveMailId(Office.context?.mailbox?.item, mail);
-
       maybeMigrateLegacy(id);
       const existingWorkflow = getWorkflow(id);
-
       setMailId(id);
       setSnapshot(mail);
       setWorkflow(existingWorkflow);
@@ -120,7 +153,6 @@ function App() {
       setWorkflow(updated);
       setPipelineProgress(completed.progress ?? null);
       setStatus(`Review erstellt: ${completed.review_id}.`);
-
       if (openWhenReady) {
         handleOpenReview(updated);
       }
@@ -132,14 +164,12 @@ function App() {
 
   async function handleCreateReview() {
     if (!mailId) return;
-
     setLoading(true);
     setPipelineProgress(null);
     setStatus("Review wird gestartet…");
     try {
       const mail = snapshot ?? (await readMailSnapshot());
       setSnapshot(mail);
-
       const started = await startReview(mail);
       const runningWorkflow = upsertWorkflow(mailId, {
         subject: mail.subject,
@@ -150,7 +180,6 @@ function App() {
       });
       setWorkflow(runningWorkflow);
       setStatus(`Pipeline gestartet: ${started.review_id}.`);
-
       await awaitReviewCompletion(started, mailId, true);
     } catch (error) {
       setStatus(`Fehler beim Erstellen des Reviews: ${String(error)}`);
@@ -164,8 +193,11 @@ function App() {
       return;
     }
     openUrl(wf.review.review_url);
-    const nextState =
+
+    // Once opened, transition forward but never backwards.
+    const nextState: MailWorkflowState =
       wf.state === "review_created" ? "review_opened" : wf.state;
+
     const updated = upsertWorkflow(mailId, {
       state: nextState,
       reviewOpenedAt: wf.reviewOpenedAt ?? new Date().toISOString(),
@@ -179,8 +211,14 @@ function App() {
       setStatus("Kein Review zur Mail vorhanden.");
       return;
     }
+    if (workflow.state !== "approved" && workflow.state !== "quote_sent") {
+      setStatus(
+        "Bitte zuerst die Freigabe in der Review-UI erteilen.",
+      );
+      return;
+    }
     setLoading(true);
-    setStatus("Öffne Angebotsmail mit aktueller PDF…");
+    setStatus("Öffne Angebotsmail mit finaler PDF…");
     try {
       await createDraftMail(
         workflow.review,
@@ -207,6 +245,9 @@ function App() {
     setStatus("Workflow zurückgesetzt. Neue Anfrage bereit.");
   }
 
+  // ------------------------------------------------------------------
+  // Office init.
+  // ------------------------------------------------------------------
   useEffect(() => {
     Office.onReady((info: any) => {
       if (info.host !== Office.HostType.Outlook) {
@@ -222,6 +263,9 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ------------------------------------------------------------------
+  // Resume pipeline polling on reload while pipeline is still running.
+  // ------------------------------------------------------------------
   useEffect(() => {
     if (!mailId) return;
     if (!workflow?.review) return;
@@ -229,7 +273,6 @@ function App() {
 
     const currentMailId = mailId;
     const currentReview = workflow.review;
-
     if (pollingReviewIdRef.current === currentReview.review_id) {
       return;
     }
@@ -249,18 +292,86 @@ function App() {
         }
       }
     }
-
     void resumePolling();
-
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mailId, workflow?.state, workflow?.review?.review_id]);
 
+  // ------------------------------------------------------------------
+  // Approval polling. Runs while we're in a state where the user might
+  // be approving in the Streamlit UI; flips workflow into `approved`
+  // once the backend confirms approval.
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    if (approvalPollTimerRef.current !== null) {
+      window.clearInterval(approvalPollTimerRef.current);
+      approvalPollTimerRef.current = null;
+    }
+
+    if (!mailId || !workflow?.review?.review_id) return;
+    if (!STATES_TO_POLL_APPROVAL.includes(workflow.state)) return;
+
+    let cancelled = false;
+    const reviewId = workflow.review.review_id;
+    const currentMailId = mailId;
+
+    async function checkOnce() {
+      if (cancelled) return;
+      try {
+        const record = await getApprovalState(reviewId);
+        if (cancelled) return;
+        if (isApproved(record)) {
+          const updated = upsertWorkflow(currentMailId, {
+            state: "approved",
+            approvedAt: record.approved_at ?? new Date().toISOString(),
+            approvedBy: record.approved_by ?? undefined,
+            finalPdfFilename: record.final_pdf_path ?? undefined,
+          });
+          setWorkflow(updated);
+          setStatus(
+            `Freigabe erkannt${
+              record.approved_by ? ` (${record.approved_by})` : ""
+            } — Angebotsmail kann jetzt erstellt werden.`,
+          );
+        }
+      } catch {
+        /*
+         * Approval endpoint failures are non-fatal — keep polling.
+         * Errors only matter if the user is actively trying to
+         * proceed, in which case the next manual action will surface
+         * the issue.
+         */
+      }
+    }
+
+    // Fire once immediately so transitions feel snappy, then on interval.
+    void checkOnce();
+    approvalPollTimerRef.current = window.setInterval(
+      checkOnce,
+      APPROVAL_POLL_INTERVAL_MS,
+    );
+
+    return () => {
+      cancelled = true;
+      if (approvalPollTimerRef.current !== null) {
+        window.clearInterval(approvalPollTimerRef.current);
+        approvalPollTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mailId, workflow?.state, workflow?.review?.review_id]);
+
+  // ------------------------------------------------------------------
+  // Render.
+  // ------------------------------------------------------------------
+  const workflowState = workflow?.state ?? "new";
+  const showStatusCard = !STATES_WITH_OWN_STATUS.includes(workflowState);
+
   return (
     <div className="panel">
-      <Steps workflowState={workflow?.state ?? "new"} />
+      <Steps workflowState={workflowState} />
 
       <WorkflowCard
         workflow={workflow}
@@ -275,7 +386,7 @@ function App() {
         onReloadMail={loadMail}
       />
 
-      <StatusCard status={status} loading={loading} />
+      {showStatusCard && <StatusCard status={status} loading={loading} />}
 
       <button
         className="overview-link"

@@ -1,6 +1,18 @@
-"""Turn attachments (PDF/XLSX/CSV/images) into prompt sections + images."""
+"""Turn attachments (PDF/XLSX/CSV/images) into prompt sections + images.
+
+Performance notes
+-----------------
+PDF rasterization for vision input is the per-attachment hot path. For
+multi-page RFQs (drawings + specs in one file) we now render pages in
+parallel via a thread pool — PyMuPDF (fitz) releases the GIL during
+``get_pixmap`` and ``tobytes`` so threading actually helps. For single-
+page PDFs we skip the pool to avoid scheduling overhead.
+"""
+
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -8,10 +20,14 @@ from ..core import get_logger
 
 log = get_logger()
 
+# Cap concurrency at a reasonable bound: most RFQs are <10 pages so we
+# don't need more, and we don't want to swamp small machines.
+_PDF_RENDER_MAX_WORKERS = min(8, max(2, (os.cpu_count() or 2)))
+
 
 def load_attachments(
     attachments: list[Path],
-    dpi: int = 200,
+    dpi: int = 150,
 ) -> tuple[list[str], list[dict[str, Any]]]:
     """Return (text_sections, image_parts) for prompt assembly."""
     sections: list[str] = []
@@ -41,15 +57,35 @@ def load_attachments(
 
 
 def _pdf_to_images(pdf_path: Path, dpi: int) -> list[dict[str, Any]]:
-    """Render each PDF page to PNG bytes (vision input)."""
+    """Render each PDF page to PNG bytes (vision input).
+
+    Multi-page PDFs render pages in parallel via a thread pool. fitz
+    releases the GIL during ``get_pixmap`` and ``tobytes`` so threading
+    delivers real wall-clock wins on multi-core hardware.
+    """
     import fitz  # PyMuPDF
 
-    parts: list[dict[str, Any]] = []
     with fitz.open(pdf_path) as doc:
-        for page in doc:
+        page_count = doc.page_count
+        if page_count <= 1:
+            # Single page: don't bother with the pool.
+            page = doc[0]
             pix = page.get_pixmap(dpi=dpi)
-            parts.append({"mime_type": "image/png", "data": pix.tobytes("png")})
-    return parts
+            return [{"mime_type": "image/png", "data": pix.tobytes("png")}]
+
+        # Pre-bind references that the worker captures. We need to avoid
+        # passing the page across threads (fitz pages are tied to the
+        # document handle), so each worker fetches its own page from the
+        # shared document. The shared document is safe to read from
+        # multiple threads as long as we don't mutate it.
+        def _render(page_index: int) -> dict[str, Any]:
+            page = doc[page_index]
+            pix = page.get_pixmap(dpi=dpi)
+            return {"mime_type": "image/png", "data": pix.tobytes("png")}
+
+        workers = min(_PDF_RENDER_MAX_WORKERS, page_count)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            return list(pool.map(_render, range(page_count)))
 
 
 def _image_to_part(img_path: Path) -> dict[str, Any]:

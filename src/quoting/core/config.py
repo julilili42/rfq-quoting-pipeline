@@ -1,5 +1,14 @@
-"""Central configuration loaded from environment variables."""
+"""Central runtime configuration loaded from environment variables.
 
+Naming
+------
+This module owns *runtime* / *environment* settings — LLM provider keys,
+data directories, thresholds, etc. The prefered public name is
+:func:`load_runtime_settings`. ``load_settings`` is kept as an alias
+for back-compatibility; new code should use the explicit name to
+disambiguate from :func:`quoting.api.settings_store.load_user_settings`,
+which deals with persisted UI preferences.
+"""
 from __future__ import annotations
 
 import os
@@ -44,17 +53,17 @@ class Settings:
     semantic_threshold: int = 70
 
     # PDF rendering
-    pdf_render_dpi: int = 200
+    #
+    # The DPI is what the LLM "sees" for vision-based extraction. 200 DPI
+    # was overkill for typical RFQs — most are clean digital PDFs where
+    # 150 DPI is plenty for the model to read every digit and matrix
+    # correctly, while shrinking the upload payload by ~44 %. Faster
+    # network round trip and faster vision processing on the provider
+    # side. For scans the user can override via PDF_RENDER_DPI in .env.
+    pdf_render_dpi: int = 150
 
     @property
     def stammdaten_path(self) -> Path:
-        """Canonical master-data CSV.
-
-        Built from raw exports by
-        :mod:`quoting.data.prep.build_stammdaten`. Falls back to
-        ``stammdaten_test.csv`` if the canonical file is missing so old
-        prototype workspaces keep functioning.
-        """
         canonical = self.data_dir / "stammdaten.csv"
         if canonical.exists():
             return canonical
@@ -68,9 +77,11 @@ class Settings:
         return self.data_dir / "preise.csv"
 
 
-def load_settings() -> Settings:
-    """Build Settings from environment. No side effects."""
+def load_runtime_settings() -> Settings:
+    """Build :class:`Settings` from environment. No side effects.
 
+    This is the canonical name for runtime/env-driven configuration.
+    """
     def _int(key: str, default: int) -> int:
         try:
             return int(os.getenv(key, default))
@@ -83,8 +94,8 @@ def load_settings() -> Settings:
 
     output = os.getenv("OUTPUT_DIR")
     data = os.getenv("DATA_DIR")
-    base = Settings()
 
+    base = Settings()
     return Settings(
         llm_provider=provider,  # type: ignore[arg-type]
         llm_max_retries=_int("LLM_MAX_RETRIES", 3),
@@ -99,5 +110,9 @@ def load_settings() -> Settings:
         data_dir=Path(data) if data else base.data_dir,
         fuzzy_threshold=_int("FUZZY_THRESHOLD", 85),
         semantic_threshold=_int("SEMANTIC_THRESHOLD", 70),
-        pdf_render_dpi=_int("PDF_RENDER_DPI", 200),
+        pdf_render_dpi=_int("PDF_RENDER_DPI", base.pdf_render_dpi),
     )
+
+
+# Back-compat alias. Prefer :func:`load_runtime_settings` in new code.
+load_settings = load_runtime_settings
