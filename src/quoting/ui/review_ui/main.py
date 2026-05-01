@@ -1,17 +1,20 @@
 """Streamlit entry point for the quoting review UI.
 
 Three top-level pages, selected by query params:
-
 - **Settings** (``?settings=1``)
 - **Review-Detail** (``?review_id=…``)
   Three human-task steps:
     1. Positionen prüfen
     2. Kundendaten prüfen
     3. Angebot vergleichen & freigeben
+  Step 3 has an optional Vollbild toggle (``&focus=1``) that hides the
+  sidebar, breadcrumb, step indicator, KPI strip and agent chat so the
+  reviewer can focus on the side-by-side comparison and approval.
 - **Dashboard** (no params, default)
 
 Step labels are shared with the Outlook plugin via :mod:`nav`.
 """
+
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -34,10 +37,11 @@ def _ensure_project_path() -> None:
             sys.path.remove(path)
         sys.path.insert(0, path)
 
-    if __name__ == "__main__":
-        for name in list(sys.modules):
-            if name == "quoting" or name.startswith("quoting."):
-                del sys.modules[name]
+
+if __name__ == "__main__":
+    for name in list(sys.modules):
+        if name == "quoting" or name.startswith("quoting."):
+            del sys.modules[name]
 
 
 def _configure_page() -> None:
@@ -58,6 +62,7 @@ def _viewer_expander(label: str, *, expanded: bool = True):
     """
     key = "_review_viewer_expander_active"
     previous = st.session_state.get(key, None)
+
     with st.expander(label, expanded=expanded):
         st.session_state[key] = True
         try:
@@ -84,6 +89,27 @@ def _comparison_viewer_pair():
             st.session_state[key] = previous
 
 
+# ----------------------------------------------------------- focus mode
+
+def _is_focus_mode() -> bool:
+    """True when the user opened step 3 in fullscreen comparison view."""
+    value = st.query_params.get("focus")
+    if isinstance(value, list):
+        value = value[0] if value else None
+    return str(value or "").strip() in {"1", "true", "yes", "on"}
+
+
+def _enter_focus_mode() -> None:
+    st.query_params["focus"] = "1"
+    st.rerun()
+
+
+def _exit_focus_mode() -> None:
+    if "focus" in st.query_params:
+        del st.query_params["focus"]
+    st.rerun()
+
+
 # --------------------------------------------------------------------- run
 
 def run() -> None:
@@ -92,6 +118,7 @@ def run() -> None:
 
     from quoting.ui.review_ui.dashboard import render_dashboard
     from quoting.ui.review_ui.layout import (
+        apply_focus_style,
         apply_style,
         render_sidebar_dashboard,
         render_sidebar_settings,
@@ -141,6 +168,10 @@ def run() -> None:
             st.rerun()
         render_dashboard(REVIEWS_ROOT)
         return
+
+    # Focus mode applies global CSS that collapses sidebar / chrome.
+    if _is_focus_mode():
+        apply_focus_style()
 
     _render_review_detail(review_id)
 
@@ -193,6 +224,9 @@ def _render_review_detail(review_id: str) -> None:
         reset_step()
         reset_review_state()
         st.session_state["_active_review_id"] = review_id
+        # Switching reviews always exits focus mode — fresh start.
+        if "focus" in st.query_params:
+            del st.query_params["focus"]
 
     review_input: ReviewInput | None = None
     try:
@@ -224,18 +258,24 @@ def _render_review_detail(review_id: str) -> None:
             )
 
     store_review_context(review_input)
+
+    focus = _is_focus_mode()
+
+    # Sidebar is always rendered — focus mode hides it via CSS so the
+    # widget tree (and Streamlit's state) stays intact when toggling.
     render_sidebar_review(action_renderer=sidebar_actions)
 
     progress = read_review_progress(review_input.work_dir)
     if is_review_processing(progress) or is_review_failed(progress):
-        render_review_title(review_input.review_id, review_input.input_path)
+        if not focus:
+            render_review_title(review_input.review_id, review_input.input_path)
         render_pipeline_progress(progress)
         return
 
-    render_review_title(review_input.review_id, review_input.input_path)
-    render_step_indicator()
-
-    st.markdown("&nbsp;", unsafe_allow_html=True)
+    if not focus:
+        render_review_title(review_input.review_id, review_input.input_path)
+        render_step_indicator()
+        st.markdown("&nbsp;", unsafe_allow_html=True)
 
     try:
         anfrage = load_anfrage_once(
@@ -259,6 +299,7 @@ def _render_review_detail(review_id: str) -> None:
         ),
         stammdaten=pipeline.stammdaten,
     )
+
     review_input.work_dir.mkdir(parents=True, exist_ok=True)
     ctx = StepContext(work_dir=review_input.work_dir)
     matches = matching_step.run(anfrage, ctx)
@@ -268,6 +309,17 @@ def _render_review_detail(review_id: str) -> None:
     )
 
     active = get_step()
+
+    # Focus mode is only meaningful on step 3. If the user is on a
+    # different step somehow, drop them back into the normal layout.
+    if focus and active != 3:
+        _exit_focus_mode()
+        return
+
+    if focus:
+        _render_step_three_focus(review_input, anfrage, matches)
+        return
+
     if active == 1:
         _render_step_one(review_input, anfrage, matches)
     elif active == 2:
@@ -286,7 +338,6 @@ def _render_step_one(review_input, anfrage, matches) -> None:
     from quoting.ui.review_ui.quotation_flow import maybe_auto_refresh
 
     col_doc, col_review = st.columns([1, 1], gap="large")
-
     with col_review:
         render_positions_editor(anfrage, matches)
         maybe_auto_refresh(
@@ -294,7 +345,6 @@ def _render_step_one(review_input, anfrage, matches) -> None:
             matches=matches,
             content_hash=review_input.content_hash,
         )
-
     with col_doc:
         render_input_panel(review_input)
 
@@ -313,7 +363,6 @@ def _render_step_two(review_input, anfrage, matches) -> None:
     from quoting.ui.review_ui.quotation_flow import maybe_auto_refresh
 
     col_doc, col_review = st.columns([1, 1], gap="large")
-
     with col_review:
         render_customer_editor(anfrage)
         maybe_auto_refresh(
@@ -321,7 +370,6 @@ def _render_step_two(review_input, anfrage, matches) -> None:
             matches=matches,
             content_hash=review_input.content_hash,
         )
-
     with col_doc:
         render_input_panel(review_input)
 
@@ -336,7 +384,6 @@ def _render_step_three(review_input, anfrage, matches) -> None:
     """Step 3 — Angebot vergleichen & freigeben.
 
     Layout adapts to whether there's a real attachment to compare:
-
     - With attachment: side-by-side tabs (Vergleich · Original · Entwurf).
     - Mail-only: side-by-side Original mail body and draft.
     """
@@ -387,10 +434,24 @@ def _render_step_three(review_input, anfrage, matches) -> None:
 
     has_attachment = has_real_attachment(review_input)
 
-    st.markdown(
-        '<div class="ek-section-label">Originaleingang ↔ Angebotsentwurf</div>',
-        unsafe_allow_html=True,
-    )
+    # Section header with inline fullscreen toggle.
+    col_label, col_btn = st.columns([6, 1], vertical_alignment="center")
+    with col_label:
+        st.markdown(
+            '<div class="ek-section-label" style="margin-bottom:0;">'
+            "Originaleingang ↔ Angebotsentwurf"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    with col_btn:
+        if st.button(
+            "⛶  Vollbild",
+            key="enter_focus",
+            help="Original und Angebotsentwurf im Vollbild vergleichen",
+            use_container_width=True,
+        ):
+            _enter_focus_mode()
+
     st.caption(
         "Der Vergleich öffnet Original und Angebotsentwurf gemeinsam. "
         "Bei Fehlern → zurück zu Schritt 1 (Positionen) oder Schritt 2 (Kunde)."
@@ -402,7 +463,6 @@ def _render_step_three(review_input, anfrage, matches) -> None:
             "Original",
             "Angebotsentwurf",
         ])
-
         with tab_split:
             with _viewer_expander("Original und Angebotsentwurf", expanded=True):
                 with _comparison_viewer_pair():
@@ -419,11 +479,9 @@ def _render_step_three(review_input, anfrage, matches) -> None:
                             unsafe_allow_html=True,
                         )
                         render_draft_pdf_pane()
-
         with tab_orig:
             with _viewer_expander("Original", expanded=True):
                 render_input_panel(review_input)
-
         with tab_draft:
             with _viewer_expander("Angebotsentwurf", expanded=True):
                 render_draft_pdf_pane()
@@ -472,6 +530,122 @@ def _render_step_three(review_input, anfrage, matches) -> None:
     render_step_nav(
         on_finish=_on_finish,
         finish_label="Fertig — zurück zu Outlook",
+    )
+
+
+def _render_step_three_focus(review_input, anfrage, matches) -> None:
+    """Step 3 in Vollbild — comparison + approval, nothing else.
+
+    Sidebar, breadcrumb, step indicator, KPI strip and the agent chat
+    are all hidden so the reviewer can concentrate on comparing the
+    original input with the generated draft and signing it off.
+    """
+    from quoting.ui.review_ui.approval_panel import render_approval_panel
+    from quoting.ui.review_ui.document_view import (
+        has_real_attachment,
+        render_draft_pdf_pane,
+        render_input_panel,
+    )
+    from quoting.ui.review_ui.quotation_flow import (
+        finalize_pdf,
+        maybe_auto_refresh,
+        render_generate_button,
+    )
+
+    maybe_auto_refresh(
+        anfrage=anfrage,
+        matches=matches,
+        content_hash=review_input.content_hash,
+    )
+
+    # If no draft yet, the comparison has nothing to show — fall back
+    # to the normal step 3 generate-button flow.
+    if not st.session_state.get("quotation"):
+        _render_focus_toolbar(review_input)
+        st.warning(
+            "Es wurde noch kein Angebotsentwurf erzeugt. "
+            "Klicke unten auf „Entwurf-Angebot erstellen“, um ihn zu generieren.",
+        )
+        render_generate_button(
+            anfrage=anfrage,
+            matches=matches,
+            content_hash=review_input.content_hash,
+            uploaded_name=review_input.uploaded_name,
+        )
+        return
+
+    _render_focus_toolbar(review_input)
+
+    has_attachment = has_real_attachment(review_input)
+
+    with _comparison_viewer_pair():
+        col_orig, col_draft = st.columns(2, gap="large")
+        with col_orig:
+            st.markdown(
+                '<div class="ek-compare-pane-label">Original</div>',
+                unsafe_allow_html=True,
+            )
+            render_input_panel(review_input, allow_mail_body_tab=not has_attachment)
+        with col_draft:
+            st.markdown(
+                '<div class="ek-compare-pane-label">Angebotsentwurf</div>',
+                unsafe_allow_html=True,
+            )
+            render_draft_pdf_pane()
+
+    st.markdown("---")
+
+    if review_input.review_dir is not None:
+        st.markdown(
+            '<div class="ek-section-label">Freigabe</div>',
+            unsafe_allow_html=True,
+        )
+        render_approval_panel(
+            review_dir=review_input.review_dir,
+            on_finalize_pdf=lambda: finalize_pdf(
+                anfrage=anfrage,
+                matches=matches,
+                content_hash=review_input.content_hash,
+            ),
+        )
+
+
+def _render_focus_toolbar(review_input) -> None:
+    """Slim header inside Vollbild: review-id chip + exit button."""
+    review_id = review_input.review_id or review_input.content_hash
+    file_name = review_input.input_path.name if review_input.input_path else ""
+
+    col_label, col_exit = st.columns([6, 1], vertical_alignment="center")
+    with col_label:
+        chip_html = (
+            f'<div class="ek-focus-bar">'
+            f'  <span class="ek-focus-bar-title">Vergleich · Vollbild</span>'
+            f'  <span class="ek-focus-bar-id">{_safe_html(review_id)}</span>'
+            + (
+                f'  <span class="ek-focus-bar-file">{_safe_html(file_name)}</span>'
+                if file_name
+                else ""
+            )
+            + "</div>"
+        )
+        st.markdown(chip_html, unsafe_allow_html=True)
+    with col_exit:
+        if st.button(
+            "Vollbild verlassen",
+            key="exit_focus",
+            use_container_width=True,
+            help="Zurück zur normalen Ansicht",
+        ):
+            _exit_focus_mode()
+
+
+def _safe_html(s: str) -> str:
+    return (
+        (s or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
     )
 
 
