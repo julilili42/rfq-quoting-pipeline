@@ -177,6 +177,7 @@ def get_review_original(review_id: str) -> FileResponse:
         candidate,
         media_type=_guess_media_type(candidate),
         filename=candidate.name,
+        content_disposition_type="inline",
         headers={
             "Cache-Control": "no-store",
             "Access-Control-Allow-Origin": "*",
