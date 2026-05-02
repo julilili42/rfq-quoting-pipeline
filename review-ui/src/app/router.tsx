@@ -3,7 +3,10 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppShell } from "@/shared/components/layout/AppShell";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { StammdatenPage } from "@/features/stammdaten/StammdatenPage";
 import { ReviewDetailPage } from "@/features/review/ReviewDetailPage";
+
+import { LegacyQueryRedirect } from "./LegacyQueryRedirect";
 
 /**
  * App routes.
@@ -16,7 +19,16 @@ export const router = createBrowserRouter([
   {
     element: <AppShell />,
     children: [
-      { path: "/", element: <DashboardPage /> },
+      {
+        path: "/",
+        element: (
+          <>
+            <LegacyQueryRedirect />
+            <DashboardPage />
+          </>
+        ),
+      },
+      { path: "/stammdaten", element: <StammdatenPage /> },
       { path: "/settings", element: <SettingsPage /> },
       {
         path: "/reviews/:reviewId",

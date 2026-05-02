@@ -1,6 +1,8 @@
 import * as Accordion from "@radix-ui/react-accordion";
-import { useMemo } from "react";
+import { Plus } from "lucide-react";
+import { useCallback, useMemo, useRef } from "react";
 
+import { Button } from "@/shared/components/ui/button";
 import { useReviewUiStore } from "@/features/review/stores/reviewUiStore";
 import type { Anfrage, Position } from "@/shared/schemas/anfrage";
 import type { MatchResult } from "@/shared/schemas/matchResult";
@@ -25,19 +27,30 @@ interface PositionsEditorProps {
 }
 
 /**
- * The Step-1 editor.
+ * Step-1 editor.
  *
- * Strategy
- * --------
- * - Anfrage and overrides are passed in from the parent (they originate
- *   in `useReview`'s cache).
- * - Edits commit field-by-field via `saveAndRegenerate`, which writes
- *   the updated Anfrage / overrides and rebuilds the draft PDF in one
- *   round-trip. The draft PDF is therefore always in sync with what
- *   the user just typed — exactly the "Änderungen müssen bereits in
- *   der Draft-PDF sichtbar sein" requirement.
- * - Field-level change tracking lives in the Zustand store so the
- *   approval step can read the change-set later.
+ * CRUD operations are intentionally narrow:
+ *
+ * - **Edit**: per-field commits via `useSaveAndRegenerate`. The draft
+ *   PDF rebuilds in the same round-trip, so what the user types is
+ *   what they see in the iframe (eventually — there's a brief network
+ *   round-trip).
+ * - **Manual re-match**: handled inside `StammdatenSearchDialog`,
+ *   which lives on the `PositionCard`. Editor doesn't need to wire
+ *   anything up.
+ * - **Add position**: appends a new `Position` with the next free
+ *   `pos_nr`. The new card is auto-opened so the user can fill it in
+ *   immediately.
+ * - **Delete position**: filters the position out and pushes the new
+ *   Anfrage to the backend, which re-runs pricing. Manual overrides
+ *   targeting the deleted `pos_nr` are dropped at the same time so
+ *   they don't linger as orphans.
+ *
+ * Pos numbers are **never renumbered** on delete. The backend's
+ * matches and overrides are keyed on `pos_nr`; renumbering would mean
+ * silently rewiring relationships that the user expects to stay
+ * stable. If a user deletes pos 3 of 5, the remaining positions stay
+ * 1, 2, 4, 5.
  */
 export function PositionsEditor({
   reviewId,
@@ -48,6 +61,10 @@ export function PositionsEditor({
 }: PositionsEditorProps) {
   const trackChange = useReviewUiStore((s) => s.trackChange);
   const saveAndRegenerate = useSaveAndRegenerate(reviewId);
+
+  // Track which pos_nrs were just added in this session, so we can
+  // auto-expand them and visually distinguish them.
+  const newlyAddedRef = useRef<Set<number>>(new Set());
 
   const matchesByPos = useMemo(() => {
     const map = new Map<number, MatchResult>();
@@ -71,22 +88,97 @@ export function PositionsEditor({
     return map;
   }, [overrides]);
 
-  const handlePositionChange = (next: Position, original: Position) => {
-    if (JSON.stringify(next) === JSON.stringify(original)) return;
-    const updated: Anfrage = {
-      ...anfrage,
-      positionen: anfrage.positionen.map((p) =>
-        p.pos_nr === next.pos_nr ? next : p,
-      ),
-    };
-    saveAndRegenerate.mutate({ anfrage: updated });
-  };
+  const handlePositionChange = useCallback(
+    (next: Position, original: Position) => {
+      if (JSON.stringify(next) === JSON.stringify(original)) return;
+      const updated: Anfrage = {
+        ...anfrage,
+        positionen: anfrage.positionen.map((p) =>
+          p.pos_nr === next.pos_nr ? next : p,
+        ),
+      };
+      saveAndRegenerate.mutate({ anfrage: updated });
+    },
+    [anfrage, saveAndRegenerate],
+  );
 
-  const handleUnitPriceChange = (override: ManualOverride | null) => {
-    if (!override) return;
-    const updated = upsertOverride(overrides, override);
-    saveAndRegenerate.mutate({ overrides: updated });
-  };
+  const handleUnitPriceChange = useCallback(
+    (override: ManualOverride | null) => {
+      if (!override) return;
+      const updated = upsertOverride(overrides, override);
+      saveAndRegenerate.mutate({ overrides: updated });
+    },
+    [overrides, saveAndRegenerate],
+  );
+
+  const handleDeletePosition = useCallback(
+    (posNr: number) => {
+      const updatedAnfrage: Anfrage = {
+        ...anfrage,
+        positionen: anfrage.positionen.filter((p) => p.pos_nr !== posNr),
+      };
+
+      // Drop any overrides that targeted this position — they would
+      // otherwise resurface if the user accidentally re-adds the same
+      // pos_nr later, which is confusing.
+      const updatedOverrides = overrides.filter(
+        (o) => !(o.target === "pos" && o.pos_nr === posNr),
+      );
+
+      trackChange(`positionen[delete:${posNr}]`);
+      saveAndRegenerate.mutate({
+        anfrage: updatedAnfrage,
+        overrides:
+          updatedOverrides.length !== overrides.length ? updatedOverrides : undefined,
+      });
+    },
+    [anfrage, overrides, saveAndRegenerate, trackChange],
+  );
+
+  const handleAddPosition = useCallback(() => {
+    // Pick the next free pos_nr — max + 1, ensuring uniqueness even
+    // after deletes (so we never accidentally collide with the pos_nr
+    // of a row the user deleted earlier).
+    const used = new Set(anfrage.positionen.map((p) => p.pos_nr));
+    let nextPosNr = anfrage.positionen.length + 1;
+    while (used.has(nextPosNr)) nextPosNr += 1;
+
+    const blank: Position = {
+      pos_nr: nextPosNr,
+      artikelnummer: "",
+      bezeichnung: "",
+      menge: 1,
+      einheit: "Stk",
+      liefertermin: null,
+      lieferzeit: null,
+      lieferwerk: null,
+      werkstoff: null,
+      werkstoff_alternativen: [],
+      zeichnungsnummer: null,
+      abmessungen: null,
+      gewicht_stueck_kg: null,
+      ist_zertifikat: false,
+      confidence: "low",
+      source_quote: "",
+    };
+
+    newlyAddedRef.current.add(nextPosNr);
+    trackChange(`positionen[add:${nextPosNr}]`);
+
+    saveAndRegenerate.mutate({
+      anfrage: { ...anfrage, positionen: [...anfrage.positionen, blank] },
+    });
+  }, [anfrage, saveAndRegenerate, trackChange]);
+
+  // Open all newly-added positions by default. Existing positions stay
+  // collapsed (matching the historical Streamlit behaviour).
+  const defaultOpenValues = useMemo(
+    () =>
+      anfrage.positionen
+        .filter((p) => newlyAddedRef.current.has(p.pos_nr))
+        .map((p) => `pos-${p.pos_nr}`),
+    [anfrage.positionen],
+  );
 
   return (
     <section aria-labelledby="positions-heading" className="space-y-4">
@@ -111,21 +203,40 @@ export function PositionsEditor({
         )}
       </header>
 
-      <Accordion.Root type="multiple" className="space-y-2">
+      <Accordion.Root
+        type="multiple"
+        defaultValue={defaultOpenValues}
+        className="space-y-2"
+      >
         {anfrage.positionen.map((position, index) => (
           <PositionCard
             key={position.pos_nr}
+            reviewId={reviewId}
             index={index}
             position={position}
             match={matchesByPos.get(position.pos_nr)}
             quotationItem={quotationByPos.get(position.pos_nr)}
             unitPriceOverride={unitPriceOverrideByPos.get(position.pos_nr)}
+            defaultOpen={newlyAddedRef.current.has(position.pos_nr)}
             onPositionChange={(next) => handlePositionChange(next, position)}
             onUnitPriceChange={handleUnitPriceChange}
             onFieldEdit={trackChange}
+            onDelete={() => handleDeletePosition(position.pos_nr)}
           />
         ))}
       </Accordion.Root>
+
+      <div className="flex justify-center pt-2">
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={handleAddPosition}
+          disabled={saveAndRegenerate.isPending}
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          Neue Position hinzufügen
+        </Button>
+      </div>
     </section>
   );
 }

@@ -1,7 +1,8 @@
 import * as Accordion from "@radix-ui/react-accordion";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Replace, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
 import { cn } from "@/shared/lib/cn";
@@ -10,15 +11,20 @@ import type { MatchResult } from "@/shared/schemas/matchResult";
 import type { ManualOverride, QuotationItem } from "@/shared/schemas/quotation";
 
 import { MatchChip } from "./MatchChip";
+import { StammdatenSearchDialog } from "./StammdatenSearchDialog";
 
 interface PositionCardProps {
+  reviewId: string;
   position: Position;
   match?: MatchResult;
   quotationItem?: QuotationItem;
   unitPriceOverride?: number;
+  /** Auto-open the accordion on mount — used right after "add position". */
+  defaultOpen?: boolean;
   onPositionChange: (next: Position) => void;
   onUnitPriceChange: (override: ManualOverride | null) => void;
   onFieldEdit: (fieldPath: string) => void;
+  onDelete: () => void;
   index: number;
 }
 
@@ -31,19 +37,31 @@ const CONFIDENCE_LABEL: Record<string, string> = {
 /**
  * Editable position panel.
  *
- * Internal state is debounced — we keep a local mirror of the field
- * values so React Hook Form-style "onBlur commits" feel snappy. The
- * commit (`onPositionChange`) is triggered on blur to avoid one mutation
- * per keystroke.
+ * The card keeps its own draft state for every text field so React's
+ * controlled-input model doesn't fight the user's typing. We commit on
+ * `onBlur` to keep PDF rebuilds from firing per keystroke.
+ *
+ * Two destructive actions live on this card:
+ *
+ * - **Anderen Artikel zuordnen** opens the Stammdaten search dialog,
+ *   which writes a manual match server-side. The card itself doesn't
+ *   know about the mutation — the dialog handles it.
+ * - **Position löschen** uses inline two-step confirmation. We never
+ *   delete on a single click, but we also don't pop a modal — the
+ *   confirmation lives in the same row, identical pattern to the
+ *   "Pipeline reset" sidebar action.
  */
 export function PositionCard({
+  reviewId,
   position,
   match,
   quotationItem,
   unitPriceOverride,
+  defaultOpen = false,
   onPositionChange,
   onUnitPriceChange,
   onFieldEdit,
+  onDelete,
   index,
 }: PositionCardProps) {
   const [draft, setDraft] = useState<Position>(position);
@@ -76,6 +94,8 @@ export function PositionCard({
     onFieldEdit(`positionen[${index}].einzelpreis`);
   };
 
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
   const label = `Pos ${position.pos_nr} · ${
     position.artikelnummer || "Unbekannt"
   } · ${Math.round(position.menge)} ${position.einheit}`;
@@ -100,12 +120,23 @@ export function PositionCard({
         </Accordion.Trigger>
       </Accordion.Header>
 
-      <Accordion.Content className="px-4 pb-4 pt-3 data-[state=closed]:hidden">
-        {match && (
-          <div className="mb-2">
-            <MatchChip match={match} />
-          </div>
-        )}
+      <Accordion.Content
+        className="px-4 pb-4 pt-3 data-[state=closed]:hidden"
+        forceMount={defaultOpen ? true : undefined}
+      >
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          {match ? <MatchChip match={match} /> : <span />}
+          <StammdatenSearchDialog
+            reviewId={reviewId}
+            posNr={position.pos_nr}
+            initialQuery={position.artikelnummer || position.bezeichnung}
+          >
+            <Button type="button" size="sm" variant="ghost" className="border border-border">
+              <Replace className="h-3.5 w-3.5" aria-hidden="true" />
+              Anderen Artikel zuordnen
+            </Button>
+          </StammdatenSearchDialog>
+        </div>
 
         <div className="mb-3 text-xs text-muted-foreground">
           KI-Sicherheit:{" "}
@@ -220,13 +251,10 @@ export function PositionCard({
             type="checkbox"
             checked={draft.ist_zertifikat}
             onChange={(e) => {
-              updateField("ist_zertifikat", e.target.checked);
-              commit(`positionen[${index}].ist_zertifikat`);
-              // Force a commit on the next tick — checkbox commits eagerly.
-              setTimeout(
-                () => onPositionChange({ ...draft, ist_zertifikat: e.target.checked }),
-                0,
-              );
+              const next = { ...draft, ist_zertifikat: e.target.checked };
+              setDraft(next);
+              onFieldEdit(`positionen[${index}].ist_zertifikat`);
+              onPositionChange(next);
             }}
             className="h-4 w-4 rounded border-input"
           />
@@ -239,10 +267,53 @@ export function PositionCard({
         {position.source_quote && (
           <p className="mt-3 text-xs text-muted-foreground">
             <span className="font-semibold">Quelle aus der Anfrage:</span>{" "}
-            <em>"{position.source_quote.slice(0, 160)}
-              {position.source_quote.length > 160 && "…"}"</em>
+            <em>
+              "{position.source_quote.slice(0, 160)}
+              {position.source_quote.length > 160 && "…"}"
+            </em>
           </p>
         )}
+
+        {/* ---- Destructive actions ---- */}
+        <div className="mt-4 flex justify-end border-t border-border pt-3">
+          {confirmingDelete ? (
+            <div className="flex items-center gap-2 rounded-md border border-danger/30 bg-danger-soft px-3 py-2">
+              <span className="text-xs font-semibold text-danger">
+                Position {position.pos_nr} wirklich löschen?
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="danger"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  onDelete();
+                }}
+              >
+                Bestätigen
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setConfirmingDelete(false)}
+              >
+                Abbrechen
+              </Button>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="text-danger hover:bg-danger-soft hover:text-danger"
+              onClick={() => setConfirmingDelete(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Position löschen
+            </Button>
+          )}
+        </div>
       </Accordion.Content>
     </Accordion.Item>
   );
@@ -261,7 +332,9 @@ function Field({
     <div className="space-y-1.5">
       <Label className="text-xs">
         {label}
-        {hint && <span className="ml-1 font-normal text-muted-foreground">· {hint}</span>}
+        {hint && (
+          <span className="ml-1 font-normal text-muted-foreground">· {hint}</span>
+        )}
       </Label>
       {children}
     </div>

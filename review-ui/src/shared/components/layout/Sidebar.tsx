@@ -1,9 +1,10 @@
-import { LayoutDashboard, Settings as SettingsIcon } from "lucide-react";
+import { Database, LayoutDashboard, Settings as SettingsIcon } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/shared/lib/cn";
 
 const NAV = [
   { to: "/", label: "Übersicht", icon: LayoutDashboard, end: true },
+  { to: "/stammdaten", label: "Stammdaten", icon: Database, end: false },
   { to: "/settings", label: "Einstellungen", icon: SettingsIcon, end: false },
 ] as const;
 
@@ -16,13 +17,12 @@ export function Sidebar({ pageActions }: SidebarProps) {
   return (
     <aside className="hidden w-64 shrink-0 border-r border-border bg-surface lg:flex lg:flex-col">
       <div className="flex h-28 items-center px-6">
-        <img
-          src="/elringklinger-logo.png"
-          alt="ElringKlinger"
-          className="h-16 w-auto object-contain"
-        />
-      </div>
-
+            <img
+              src="/elringklinger-logo.png"
+              alt="ElringKlinger"
+              className="h-16 w-auto object-contain"
+            />
+          </div>
       <nav className="flex-1 space-y-1 px-3">
         <div className="section-label mb-2 px-3">Navigation</div>
         {NAV.map((item) => {

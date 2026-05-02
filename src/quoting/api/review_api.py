@@ -43,7 +43,6 @@ from quoting.reviews import (
 
 from quoting.api.frontend_router import router as frontend_router
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 REVIEW_DIR = PROJECT_ROOT / "data" / "reviews"
 

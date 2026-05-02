@@ -37,7 +37,7 @@ class OfferPdfConfig:
     validity_days: int = 28
 
     # Logo path relative to src/quoting/
-    logo_relative_path: Path = Path("output/assets/logo_elringklinger.png")
+    logo_relative_path: Path = Path("output/assets/elringklinger-logo.png")
 
     # Approval-aware rendering. When ``is_final`` is True, the red AI
     # warning banner is suppressed so the PDF can be sent to customers.

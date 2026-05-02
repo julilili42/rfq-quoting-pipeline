@@ -40,10 +40,16 @@ export function ReviewCard({ review }: ReviewCardProps) {
       />
 
       <div className="min-w-0">
-        <div className="mb-1 flex items-center gap-2">
+        <div className="mb-1 flex flex-wrap items-center gap-2">
           <Pill tone={STATUS_TONE[review.status]} withDot>
             {STATUS_LABEL[review.status]}
           </Pill>
+          {review.matches_no_match > 0 && review.status !== "abgeschlossen" && (
+            <Pill tone="danger" withDot>
+              {review.matches_no_match}{" "}
+              {review.matches_no_match === 1 ? "offen" : "offen"}
+            </Pill>
+          )}
           <code className="rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-[10.5px] text-muted-foreground">
             {review.review_id}
           </code>

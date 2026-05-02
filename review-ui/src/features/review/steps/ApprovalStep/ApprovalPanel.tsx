@@ -16,6 +16,12 @@ import { useFinalize } from "../../hooks/useReviewMutations";
 interface ApprovalPanelProps {
   reviewId: string;
   approval: ApprovalRecord | undefined;
+  /**
+   * Quality-gate verdict. When `false`, the approval button stays
+   * disabled regardless of the actor name. The gate panel above
+   * already explains *why* — we don't repeat that reasoning here.
+   */
+  gateAllowsApproval: boolean;
 }
 
 /**
@@ -28,8 +34,19 @@ interface ApprovalPanelProps {
  *                 server-side and flips approval state in one call.
  * - **Approved**: shows who approved when, plus a "Zurücknehmen"
  *                 button that flips state back to `reviewed`.
+ *
+ * The "Freigeben" button has two preconditions:
+ *
+ *  1. The actor's name has been entered.
+ *  2. The quality gate has cleared.
+ *
+ * Either failing keeps the button disabled.
  */
-export function ApprovalPanel({ reviewId, approval }: ApprovalPanelProps) {
+export function ApprovalPanel({
+  reviewId,
+  approval,
+  gateAllowsApproval,
+}: ApprovalPanelProps) {
   const actor = useReviewUiStore((s) => s.approvalActor);
   const setActor = useReviewUiStore((s) => s.setApprovalActor);
   const changedFields = useReviewUiStore((s) => s.changedFields);
@@ -80,7 +97,7 @@ export function ApprovalPanel({ reviewId, approval }: ApprovalPanelProps) {
     );
   }
 
-  const canApprove = actor.trim().length > 0;
+  const canApprove = actor.trim().length > 0 && gateAllowsApproval;
 
   return (
     <section className="rounded-lg border border-border bg-surface p-5 shadow-card">
@@ -105,6 +122,13 @@ export function ApprovalPanel({ reviewId, approval }: ApprovalPanelProps) {
         <Button
           variant="primary"
           disabled={!canApprove || finalize.isPending}
+          title={
+            !gateAllowsApproval
+              ? "Bitte zuerst die offenen Punkte oben klären."
+              : !actor.trim()
+                ? "Bitte Namen eintragen."
+                : undefined
+          }
           onClick={() =>
             finalize.mutate(actor.trim(), {
               onSuccess: () => {

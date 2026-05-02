@@ -1,7 +1,10 @@
+import { Download } from "lucide-react";
+
 import { env } from "@/shared/lib/env";
 import { cn } from "@/shared/lib/cn";
 
 import { MailBodyViewer } from "./MailBodyViewer";
+import { TabularPreview } from "./TabularPreview";
 import type { MailMeta } from "@/shared/api/reviews";
 
 interface OriginalDocumentViewerProps {
@@ -12,14 +15,23 @@ interface OriginalDocumentViewerProps {
   className?: string;
 }
 
+const INLINE_RENDERABLE = new Set(["pdf", "png", "jpg", "jpeg"]);
+const TABULAR = new Set(["csv", "tsv", "xlsx", "xls"]);
+
 /**
  * Decide-and-render adapter for the "original" pane.
  *
- * - PDF / images → iframe pointing at `/api/reviews/{id}/original`.
- * - Mail without attachment → `MailBodyViewer`.
- * - Other formats (CSV / XLSX) → server-streamed iframe; the browser
- *   either renders inline or offers download. A richer table preview
- *   can come later but isn't on the critical path.
+ * Renderer matrix:
+ *
+ *   ext              renderer
+ *   ──────────       ─────────────────────────────────────────
+ *   (no attachment)  MailBodyViewer
+ *   pdf/png/jpg      iframe → /api/reviews/{id}/original
+ *   csv/tsv/xlsx/xls TabularPreview (in-browser parse)
+ *   anything else    download-only fallback
+ *
+ * Tab labels and download links live on this layer so swapping
+ * renderers below is purely additive.
  */
 export function OriginalDocumentViewer({
   reviewId,
@@ -27,15 +39,13 @@ export function OriginalDocumentViewer({
   attachmentName,
   className,
 }: OriginalDocumentViewerProps) {
-  const hasAttachment = Boolean(attachmentName);
-  const suffix = (attachmentName ?? "").toLowerCase().split(".").pop();
-
-  if (!hasAttachment) {
+  if (!attachmentName) {
     return <MailBodyViewer mail={mail} className={className} />;
   }
 
-  const originalSrc = `${env.apiBaseUrl}/api/reviews/${encodeURIComponent(reviewId)}/original?v=${Date.now()}`;
-  const isInlineRenderable = suffix === "pdf" || suffix === "png" || suffix === "jpg" || suffix === "jpeg";
+  const suffix = (attachmentName ?? "").toLowerCase().split(".").pop() ?? "";
+  const downloadUrl = `${env.apiBaseUrl}/api/reviews/${encodeURIComponent(reviewId)}/original`;
+  const renderUrl = `${downloadUrl}?v=${Date.now()}`;
 
   return (
     <div
@@ -44,30 +54,34 @@ export function OriginalDocumentViewer({
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-4 py-2">
-        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+      <header className="flex items-center justify-between gap-2 border-b border-border bg-muted px-4 py-2">
+        <span className="truncate text-xs font-bold uppercase tracking-wider text-muted-foreground">
           Original · {attachmentName}
         </span>
         <a
-          href={originalSrc}
+          href={downloadUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs font-semibold text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
+          download={attachmentName}
         >
+          <Download className="h-3 w-3" aria-hidden="true" />
           Download
         </a>
-      </div>
+      </header>
 
-      {isInlineRenderable ? (
+      {INLINE_RENDERABLE.has(suffix) ? (
         <iframe
-          src={originalSrc}
+          src={renderUrl}
           title={`Original · ${attachmentName}`}
           className="block min-h-[700px] w-full flex-1 border-0 bg-surface"
           loading="lazy"
         />
+      ) : TABULAR.has(suffix) ? (
+        <TabularPreview reviewId={reviewId} fileName={attachmentName} />
       ) : (
         <div className="flex flex-1 items-center justify-center p-12 text-center text-sm text-muted-foreground">
-          Vorschau für <code className="mx-1">{suffix?.toUpperCase()}</code>{" "}
+          Vorschau für <code className="mx-1">{suffix.toUpperCase()}</code>{" "}
           nicht inline verfügbar — bitte herunterladen.
         </div>
       )}

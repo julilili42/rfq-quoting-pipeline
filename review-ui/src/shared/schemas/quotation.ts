@@ -51,30 +51,35 @@ export const manualOverrideSchema = z.union([
     mode: z.literal("unit_price_eur"),
     unit_price_eur: z.number(),
   }),
+
   z.object({
     target: z.literal("pos"),
     pos_nr: z.number().int(),
     mode: z.literal("total_price_eur"),
     total_price_eur: z.number(),
   }),
+
   z.object({
     target: z.literal("pos"),
     pos_nr: z.number().int(),
     mode: z.literal("discount_pct"),
     discount_pct: z.number(),
   }),
+
   z.object({
     target: z.literal("artikel"),
     artikel_nr: z.string(),
     mode: z.literal("unit_price_eur"),
     unit_price_eur: z.number(),
   }),
+
   z.object({
     target: z.literal("artikel"),
     artikel_nr: z.string(),
     mode: z.literal("total_price_eur"),
     total_price_eur: z.number(),
   }),
+
   z.object({
     target: z.literal("artikel"),
     artikel_nr: z.string(),
