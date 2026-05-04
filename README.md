@@ -19,7 +19,7 @@ Only the extraction step uses an LLM. Matching and pricing are deterministic and
 
 Cloudflare Tunnel is not required for testing the Review UI locally in the browser or upload files directly through the dashboard. For Outlook sideloading, a tunnel is required, since PDF attachments need a publicly reachable HTTPS URL.
 
-## 1. Installation
+## Installation
 
 ```bash
 git clone https://github.com/julilili42/Business-and-AI
@@ -126,7 +126,7 @@ Notes:
 - In some Outlook clients, it can take a short while until a newly sideloaded add-in appears.
 - If the add-in does not load, first check `manifest.xml`: `SourceLocation` must point to the running Outlook UI.
 
-## 8. Tests
+## Tests
 
 ```bash
 pytest
