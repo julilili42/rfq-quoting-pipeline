@@ -8,6 +8,15 @@ from pydantic import BaseModel, Field, field_validator
 Confidence = Literal["high", "medium", "low"]
 
 
+class Evidence(BaseModel):
+    """Source reference for a single extracted value."""
+
+    source_file: str | None = None
+    source_page: int | None = None
+    source_row: int | None = None
+    source_quote: str | None = None
+
+
 class Position(BaseModel):
     """One line item from an RFQ."""
 
@@ -27,6 +36,9 @@ class Position(BaseModel):
     ist_zertifikat: bool = False
     confidence: Confidence
     source_quote: str
+    source_file: str | None = None
+    source_page: int | None = None
+    source_row: int | None = None
 
     @field_validator("artikelnummer", mode="before")
     @classmethod
@@ -64,3 +76,4 @@ class Anfrage(BaseModel):
     zahlungsbedingungen: str | None = None
     positionen: list[Position]
     unsicherheiten: list[str] = Field(default_factory=list)
+    header_evidence: dict[str, Evidence] = Field(default_factory=dict)

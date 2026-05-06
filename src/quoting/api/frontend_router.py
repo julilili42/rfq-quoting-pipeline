@@ -151,6 +151,39 @@ def get_review_mail(review_id: str) -> dict:
 # Original input file
 # ============================================================================
 
+@router.get("/reviews/{review_id}/attachment/{filename}")
+def get_review_attachment(review_id: str, filename: str) -> FileResponse:
+    folder = _review_dir(review_id)
+
+    safe_name = Path(filename).name
+    if not safe_name or safe_name != filename:
+        raise HTTPException(400, "Invalid filename")
+
+    meta = load_mail_meta(folder) or {}
+    allowed = {
+        Path(a["name"]).name
+        for a in (meta.get("attachments") or [])
+        if isinstance(a, dict) and a.get("name")
+    }
+    if safe_name not in allowed:
+        raise HTTPException(404, f"Attachment '{safe_name}' not found")
+
+    candidate = folder / safe_name
+    if not candidate.is_file():
+        raise HTTPException(404, f"Attachment file '{safe_name}' missing on disk")
+
+    return FileResponse(
+        candidate,
+        media_type=_guess_media_type(candidate),
+        filename=candidate.name,
+        content_disposition_type="inline",
+        headers={
+            "Cache-Control": "no-store",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
 @router.get("/reviews/{review_id}/original")
 def get_review_original(review_id: str) -> FileResponse:
     folder = _review_dir(review_id)

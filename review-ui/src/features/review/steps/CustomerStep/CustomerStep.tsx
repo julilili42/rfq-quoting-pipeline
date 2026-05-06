@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 
 import { OriginalDocumentViewer } from "@/shared/components/viewers/OriginalDocumentViewer";
+import type { Evidence } from "@/shared/schemas/anfrage";
 
 import type { ReviewDetailContext } from "../../ReviewDetailPage";
 import { ChangedFieldsIndicator } from "../../components/ChangedFieldsIndicator";
@@ -10,10 +12,11 @@ import { CustomerForm } from "./CustomerForm";
 export function CustomerStep() {
   const { reviewId } = useParams<{ reviewId: string }>();
   const { detail } = useOutletContext<ReviewDetailContext>();
+  const [activeEvidence, setActiveEvidence] = useState<Evidence | null>(null);
 
   if (!reviewId) return null;
 
-  const firstAttachment = detail.mail.attachments[0]?.name;
+  const attachmentNames = detail.mail.attachments.map((a) => a.name);
 
   return (
     <>
@@ -24,13 +27,18 @@ export function CustomerStep() {
           <OriginalDocumentViewer
             reviewId={reviewId}
             mail={detail.mail}
-            attachmentName={firstAttachment}
+            attachmentNames={attachmentNames}
+            activeEvidence={activeEvidence}
             className="lg:sticky lg:top-6"
           />
         </div>
 
         <div className="order-1 lg:order-2">
-          <CustomerForm reviewId={reviewId} anfrage={detail.anfrage} />
+          <CustomerForm
+            reviewId={reviewId}
+            anfrage={detail.anfrage}
+            onEvidenceSelect={setActiveEvidence}
+          />
         </div>
       </div>
 

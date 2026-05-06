@@ -47,7 +47,7 @@ def load_attachments(
             sections.append(_excel_to_markdown(att))
         elif ext == "csv":
             sections.append(f"=== CSV: {att.name} ===")
-            sections.append(att.read_text(errors="replace"))
+            sections.append(_csv_to_markdown(att))
         elif ext in ("png", "jpg", "jpeg"):
             images.append(_image_to_part(att))
         else:
@@ -94,7 +94,7 @@ def _image_to_part(img_path: Path) -> dict[str, Any]:
 
 
 def _excel_to_markdown(xlsx_path: Path) -> str:
-    """Flatten every sheet to markdown tables."""
+    """Flatten every sheet to markdown tables with 0-based Row index."""
     try:
         import pandas as pd
     except ImportError:
@@ -105,5 +105,33 @@ def _excel_to_markdown(xlsx_path: Path) -> str:
     for sheet in xls.sheet_names:
         df = pd.read_excel(xls, sheet_name=sheet)
         out.append(f"\n--- Sheet: {sheet} ---\n")
-        out.append(df.to_markdown(index=False))
+        out.append(_df_to_indexed_markdown(df))
     return "\n".join(out)
+
+
+def _csv_to_markdown(csv_path: Path) -> str:
+    """Parse CSV and render as markdown table with 0-based Row index."""
+    try:
+        import pandas as pd
+    except ImportError:
+        return csv_path.read_text(errors="replace")
+
+    for sep in (";", ",", "\t", "|"):
+        for enc in ("utf-8-sig", "utf-8", "latin-1"):
+            try:
+                df = pd.read_csv(
+                    csv_path, sep=sep, encoding=enc,
+                    engine="python", on_bad_lines="skip",
+                )
+                if len(df.columns) > 1:
+                    return _df_to_indexed_markdown(df)
+            except Exception:
+                continue
+
+    return csv_path.read_text(errors="replace")
+
+
+def _df_to_indexed_markdown(df) -> str:
+    df_idx = df.reset_index(drop=True)
+    df_idx.index.name = "Row"
+    return df_idx.to_markdown(index=True)

@@ -3,10 +3,11 @@ import { cn } from "@/shared/lib/cn";
 
 interface MailBodyViewerProps {
   mail: MailMeta;
+  highlightQuote?: string | null;
   className?: string;
 }
 
-export function MailBodyViewer({ mail, className }: MailBodyViewerProps) {
+export function MailBodyViewer({ mail, highlightQuote, className }: MailBodyViewerProps) {
   return (
     <div
       className={cn(
@@ -30,9 +31,25 @@ export function MailBodyViewer({ mail, className }: MailBodyViewerProps) {
       </header>
 
       <pre className="whitespace-pre-wrap break-words p-5 font-sans text-sm leading-relaxed text-foreground/90">
-        {mail.body || "(leerer Body)"}
+        {highlightQuote
+          ? renderWithHighlight(mail.body || "(leerer Body)", highlightQuote)
+          : (mail.body || "(leerer Body)")}
       </pre>
     </div>
+  );
+}
+
+function renderWithHighlight(text: string, query: string) {
+  const idx = text.indexOf(query);
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="rounded bg-amber-200 px-0.5 text-foreground not-italic">
+        {text.slice(idx, idx + query.length)}
+      </mark>
+      {text.slice(idx + query.length)}
+    </>
   );
 }
 

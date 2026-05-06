@@ -12,6 +12,14 @@ import { z } from "zod";
 export const confidenceSchema = z.enum(["high", "medium", "low"]);
 export type Confidence = z.infer<typeof confidenceSchema>;
 
+export const evidenceSchema = z.object({
+  source_file: z.string().nullable().optional(),
+  source_page: z.number().int().nullable().optional(),
+  source_row: z.number().int().nullable().optional(),
+  source_quote: z.string().nullable().optional(),
+});
+export type Evidence = z.infer<typeof evidenceSchema>;
+
 export const positionSchema = z
   .object({
     pos_nr: z.number().int(),
@@ -30,6 +38,9 @@ export const positionSchema = z
     ist_zertifikat: z.boolean().default(false),
     confidence: confidenceSchema,
     source_quote: z.string().default(""),
+    source_file: z.string().nullable().optional(),
+    source_page: z.number().int().nullable().optional(),
+    source_row: z.number().int().nullable().optional(),
   })
   .passthrough();
 
@@ -48,6 +59,7 @@ export const anfrageSchema = z
     zahlungsbedingungen: z.string().nullable().optional(),
     positionen: z.array(positionSchema).default([]),
     unsicherheiten: z.array(z.string()).default([]),
+    header_evidence: z.record(evidenceSchema).default({}),
   })
   .passthrough();
 

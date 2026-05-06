@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 
 import { OriginalDocumentViewer } from "@/shared/components/viewers/OriginalDocumentViewer";
+import type { Evidence } from "@/shared/schemas/anfrage";
 
 import type { ReviewDetailContext } from "../../ReviewDetailPage";
 import { StepNavigation } from "../../components/StepNavigation";
@@ -9,10 +11,11 @@ import { PositionsEditor } from "./PositionsEditor";
 export function PositionsStep() {
   const { reviewId } = useParams<{ reviewId: string }>();
   const { detail } = useOutletContext<ReviewDetailContext>();
+  const [activeEvidence, setActiveEvidence] = useState<Evidence | null>(null);
 
   if (!reviewId) return null;
 
-  const firstAttachment = detail.mail.attachments[0]?.name;
+  const attachmentNames = detail.mail.attachments.map((a) => a.name);
 
   return (
     <>
@@ -21,7 +24,8 @@ export function PositionsStep() {
           <OriginalDocumentViewer
             reviewId={reviewId}
             mail={detail.mail}
-            attachmentName={firstAttachment}
+            attachmentNames={attachmentNames}
+            activeEvidence={activeEvidence}
             className="lg:sticky lg:top-6"
           />
         </div>
@@ -33,6 +37,7 @@ export function PositionsStep() {
             matches={detail.matches}
             quotation={detail.quotation}
             overrides={detail.manual_overrides}
+            onEvidenceSelect={setActiveEvidence}
           />
         </div>
       </div>

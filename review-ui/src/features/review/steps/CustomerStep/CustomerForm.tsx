@@ -4,8 +4,9 @@ import { useForm } from "react-hook-form";
 
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
+import { SourceBadge } from "@/shared/components/ui/SourceBadge";
 import { useReviewUiStore } from "@/features/review/stores/reviewUiStore";
-import type { Anfrage } from "@/shared/schemas/anfrage";
+import type { Anfrage, Evidence } from "@/shared/schemas/anfrage";
 import { Button } from "@/shared/components/ui/button";
 
 import { useSaveAndRegenerate } from "../../hooks/useReviewMutations";
@@ -14,6 +15,7 @@ import { customerFormSchema, type CustomerFormValues } from "./schemas";
 interface CustomerFormProps {
   reviewId: string;
   anfrage: Anfrage;
+  onEvidenceSelect?: (ev: Evidence) => void;
 }
 
 /**
@@ -25,7 +27,7 @@ interface CustomerFormProps {
  * controlled input wiring; the actual save delegates to the same
  * `saveAndRegenerate` mutation as the positions step.
  */
-export function CustomerForm({ reviewId, anfrage }: CustomerFormProps) {
+export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFormProps) {
   const trackChange = useReviewUiStore((s) => s.trackChange);
   const saveAndRegenerate = useSaveAndRegenerate(reviewId);
 
@@ -92,21 +94,21 @@ export function CustomerForm({ reviewId, anfrage }: CustomerFormProps) {
           Kunde &amp; Anfrage-Header
         </h3>
         <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
-          <Field label="Firma">
+          <Field label="Firma" evidence={anfrage.header_evidence?.kunde_firma} onNavigate={onEvidenceSelect}>
             <Input
               {...form.register("kunde_firma")}
               onBlur={() => commitField("kunde_firma")}
               placeholder="z. B. Musterfirma GmbH"
             />
           </Field>
-          <Field label="Ansprechpartner">
+          <Field label="Ansprechpartner" evidence={anfrage.header_evidence?.kunde_ansprechpartner} onNavigate={onEvidenceSelect}>
             <Input
               {...form.register("kunde_ansprechpartner")}
               onBlur={() => commitField("kunde_ansprechpartner")}
               placeholder="z. B. Frau Müller"
             />
           </Field>
-          <Field label="E-Mail">
+          <Field label="E-Mail" evidence={anfrage.header_evidence?.kunde_email} onNavigate={onEvidenceSelect}>
             <Input
               type="email"
               {...form.register("kunde_email")}
@@ -114,21 +116,21 @@ export function CustomerForm({ reviewId, anfrage }: CustomerFormProps) {
               placeholder="kontakt@firma.de"
             />
           </Field>
-          <Field label="Kunden-Nr.">
+          <Field label="Kunden-Nr." evidence={anfrage.header_evidence?.kundennummer} onNavigate={onEvidenceSelect}>
             <Input
               {...form.register("kundennummer")}
               onBlur={() => commitField("kundennummer")}
               placeholder="z. B. 1234"
             />
           </Field>
-          <Field label="Anfrage / Beleg-Nr.">
+          <Field label="Anfrage / Beleg-Nr." evidence={anfrage.header_evidence?.belegnummer} onNavigate={onEvidenceSelect}>
             <Input
               {...form.register("belegnummer")}
               onBlur={() => commitField("belegnummer")}
               placeholder="z. B. ANF-2024-001"
             />
           </Field>
-          <Field label="Datum">
+          <Field label="Datum" evidence={anfrage.header_evidence?.datum} onNavigate={onEvidenceSelect}>
             <div className="flex gap-2">
               <Input
                 {...form.register("datum")}
@@ -153,14 +155,14 @@ export function CustomerForm({ reviewId, anfrage }: CustomerFormProps) {
           Kommerzielle Bedingungen
         </h3>
         <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
-          <Field label="Lieferbedingung / Incoterms">
+          <Field label="Lieferbedingung / Incoterms" evidence={anfrage.header_evidence?.incoterms} onNavigate={onEvidenceSelect}>
             <Input
               {...form.register("incoterms")}
               onBlur={() => commitField("incoterms")}
               placeholder="z. B. EXW Werk"
             />
           </Field>
-          <Field label="Zahlungsbedingung">
+          <Field label="Zahlungsbedingung" evidence={anfrage.header_evidence?.zahlungsbedingungen} onNavigate={onEvidenceSelect}>
             <Input
               {...form.register("zahlungsbedingungen")}
               onBlur={() => commitField("zahlungsbedingungen")}
@@ -186,10 +188,25 @@ function pickCustomerFields(a: Anfrage): CustomerFormValues {
   };
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  evidence,
+  onNavigate,
+  children,
+}: {
+  label: string;
+  evidence?: Evidence;
+  onNavigate?: (ev: Evidence) => void;
+  children: React.ReactNode;
+}) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs">{label}</Label>
+      <div className="flex items-center gap-2">
+        <Label className="text-xs">{label}</Label>
+        {evidence && (
+          <SourceBadge evidence={evidence} onNavigate={onNavigate} />
+        )}
+      </div>
       {children}
     </div>
   );

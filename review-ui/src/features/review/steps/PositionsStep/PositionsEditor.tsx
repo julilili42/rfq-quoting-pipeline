@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef } from "react";
 
 import { Button } from "@/shared/components/ui/button";
 import { useReviewUiStore } from "@/features/review/stores/reviewUiStore";
-import type { Anfrage, Position } from "@/shared/schemas/anfrage";
+import type { Anfrage, Evidence, Position } from "@/shared/schemas/anfrage";
 import type { MatchResult } from "@/shared/schemas/matchResult";
 import type {
   ManualOverride,
@@ -24,6 +24,7 @@ interface PositionsEditorProps {
   matches: MatchResult[];
   quotation: Quotation | null;
   overrides: ManualOverride[];
+  onEvidenceSelect?: (ev: Evidence) => void;
 }
 
 /**
@@ -58,6 +59,7 @@ export function PositionsEditor({
   matches,
   quotation,
   overrides,
+  onEvidenceSelect,
 }: PositionsEditorProps) {
   const trackChange = useReviewUiStore((s) => s.trackChange);
   const saveAndRegenerate = useSaveAndRegenerate(reviewId);
@@ -222,6 +224,7 @@ export function PositionsEditor({
             onUnitPriceChange={handleUnitPriceChange}
             onFieldEdit={trackChange}
             onDelete={() => handleDeletePosition(position.pos_nr)}
+            onEvidenceSelect={onEvidenceSelect}
           />
         ))}
       </Accordion.Root>

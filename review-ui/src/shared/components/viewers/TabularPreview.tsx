@@ -4,7 +4,7 @@ import {
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { ErrorState } from "@/shared/components/feedback/ErrorState";
 import { LoadingState } from "@/shared/components/feedback/LoadingState";
@@ -14,20 +14,30 @@ import { useTabularPreview } from "./useTabularPreview";
 interface TabularPreviewProps {
   reviewId: string;
   fileName: string;
+  highlightRow?: number | null;
 }
 
 /**
  * In-browser CSV/TSV/XLSX preview.
  *
- * Replaces the old "kein Inline-Preview" dead-end with a real table.
  * Capped at the first 500 rows so multi-MB exports don't blow up the
  * DOM — the user can still download the file via the toolbar above.
+ * When `highlightRow` is set, that row gets an amber background and
+ * is scrolled into view.
  */
-export function TabularPreview({ reviewId, fileName }: TabularPreviewProps) {
+export function TabularPreview({ reviewId, fileName, highlightRow }: TabularPreviewProps) {
   const { data, isLoading, isError, error } = useTabularPreview(
     reviewId,
     fileName,
   );
+
+  const highlightRef = useRef<HTMLTableRowElement>(null);
+
+  useEffect(() => {
+    if (highlightRef.current) {
+      highlightRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [highlightRow]);
 
   const columns = useMemo<ColumnDef<Record<string, unknown>>[]>(
     () =>
@@ -101,21 +111,31 @@ export function TabularPreview({ reviewId, fileName }: TabularPreviewProps) {
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row, i) => (
-              <tr
-                key={row.id}
-                className={i % 2 === 0 ? "bg-surface" : "bg-muted/30"}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <td
-                    key={cell.id}
-                    className="whitespace-nowrap border-b border-border/40 px-3 py-1.5 text-foreground/90"
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {table.getRowModel().rows.map((row, i) => {
+              const isHighlighted = highlightRow != null && i === highlightRow;
+              return (
+                <tr
+                  key={row.id}
+                  ref={isHighlighted ? highlightRef : null}
+                  className={
+                    isHighlighted
+                      ? "bg-amber-100 ring-1 ring-amber-400"
+                      : i % 2 === 0
+                      ? "bg-surface"
+                      : "bg-muted/30"
+                  }
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td
+                      key={cell.id}
+                      className="whitespace-nowrap border-b border-border/40 px-3 py-1.5 text-foreground/90"
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

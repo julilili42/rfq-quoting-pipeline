@@ -1,7 +1,15 @@
+import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 
 import { env } from "@/shared/lib/env";
 import { cn } from "@/shared/lib/cn";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/shared/components/ui/tabs";
+import type { Evidence } from "@/shared/schemas/anfrage";
 
 import { MailBodyViewer } from "./MailBodyViewer";
 import { TabularPreview } from "./TabularPreview";
@@ -10,81 +18,121 @@ import type { MailMeta } from "@/shared/api/reviews";
 interface OriginalDocumentViewerProps {
   reviewId: string;
   mail: MailMeta;
-  /** First attachment filename, if any — drives the renderer choice. */
-  attachmentName?: string;
+  attachmentNames?: string[];
+  activeEvidence?: Evidence | null;
   className?: string;
 }
 
 const INLINE_RENDERABLE = new Set(["pdf", "png", "jpg", "jpeg"]);
 const TABULAR = new Set(["csv", "tsv", "xlsx", "xls"]);
 
-/**
- * Decide-and-render adapter for the "original" pane.
- *
- * Renderer matrix:
- *
- *   ext              renderer
- *   ──────────       ─────────────────────────────────────────
- *   (no attachment)  MailBodyViewer
- *   pdf/png/jpg      iframe → /api/reviews/{id}/original
- *   csv/tsv/xlsx/xls TabularPreview (in-browser parse)
- *   anything else    download-only fallback
- *
- * Tab labels and download links live on this layer so swapping
- * renderers below is purely additive.
- */
 export function OriginalDocumentViewer({
   reviewId,
   mail,
-  attachmentName,
+  attachmentNames = [],
+  activeEvidence,
   className,
 }: OriginalDocumentViewerProps) {
-  if (!attachmentName) {
-    return <MailBodyViewer mail={mail} className={className} />;
-  }
+  const defaultTab = attachmentNames.length > 0 ? attachmentNames[0] : "mail";
+  const [activeTab, setActiveTab] = useState(defaultTab);
 
-  const suffix = (attachmentName ?? "").toLowerCase().split(".").pop() ?? "";
-  const downloadUrl = `${env.apiBaseUrl}/api/reviews/${encodeURIComponent(reviewId)}/original`;
-  const renderUrl = `${downloadUrl}?v=${Date.now()}`;
+  // Switch tab when evidence points to a specific file.
+  useEffect(() => {
+    if (!activeEvidence) return;
+    const file = activeEvidence.source_file;
+    if (file === "mail" || !file) {
+      setActiveTab("mail");
+    } else if (attachmentNames.includes(file)) {
+      setActiveTab(file);
+    }
+  }, [activeEvidence, attachmentNames]);
 
   return (
-    <div
-      className={cn(
-        "flex flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-card",
-        className,
-      )}
-    >
-      <header className="flex items-center justify-between gap-2 border-b border-border bg-muted px-4 py-2">
-        <span className="truncate text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          Original · {attachmentName}
-        </span>
-        <a
-          href={downloadUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
-          download={attachmentName}
-        >
-          <Download className="h-3 w-3" aria-hidden="true" />
-          Download
-        </a>
-      </header>
+    <div className={cn("flex flex-col", className)}>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          {attachmentNames.map((name) => (
+            <TabsTrigger key={name} value={name}>
+              <span className="max-w-[160px] truncate">{name}</span>
+            </TabsTrigger>
+          ))}
+          <TabsTrigger value="mail">E-Mail</TabsTrigger>
+        </TabsList>
 
-      {INLINE_RENDERABLE.has(suffix) ? (
-        <iframe
-          src={renderUrl}
-          title={`Original · ${attachmentName}`}
-          className="block min-h-[700px] w-full flex-1 border-0 bg-surface"
-          loading="lazy"
-        />
-      ) : TABULAR.has(suffix) ? (
-        <TabularPreview reviewId={reviewId} fileName={attachmentName} />
-      ) : (
-        <div className="flex flex-1 items-center justify-center p-12 text-center text-sm text-muted-foreground">
-          Vorschau für <code className="mx-1">{suffix.toUpperCase()}</code>{" "}
-          nicht inline verfügbar — bitte herunterladen.
-        </div>
-      )}
+        {attachmentNames.map((name) => {
+          const suffix = name.toLowerCase().split(".").pop() ?? "";
+          const url = `${env.apiBaseUrl}/api/reviews/${encodeURIComponent(reviewId)}/attachment/${encodeURIComponent(name)}`;
+
+          const isActive = activeTab === name;
+          const evidenceForThisFile =
+            isActive && activeEvidence?.source_file === name
+              ? activeEvidence
+              : null;
+
+          // Include page fragment when evidence points to a specific page.
+          // Using a key that includes the page forces the iframe to reload
+          // and jump to that page.
+          const sourcePage = evidenceForThisFile?.source_page ?? null;
+          const renderUrl = `${url}?v=${Date.now()}${sourcePage ? `#page=${sourcePage}` : ""}`;
+          const iframeKey = `${name}-p${sourcePage ?? 0}`;
+
+          return (
+            <TabsContent key={name} value={name}>
+              <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-card">
+                <header className="flex items-center justify-between gap-2 border-b border-border bg-muted px-4 py-2">
+                  <span className="truncate text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Original · {name}
+                  </span>
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                    download={name}
+                  >
+                    <Download className="h-3 w-3" aria-hidden="true" />
+                    Download
+                  </a>
+                </header>
+
+                {INLINE_RENDERABLE.has(suffix) ? (
+                  <iframe
+                    key={iframeKey}
+                    src={renderUrl}
+                    title={`Original · ${name}`}
+                    className="block min-h-[700px] w-full flex-1 border-0 bg-surface"
+                    loading="lazy"
+                  />
+                ) : TABULAR.has(suffix) ? (
+                  <TabularPreview
+                    reviewId={reviewId}
+                    fileName={name}
+                    highlightRow={evidenceForThisFile?.source_row ?? null}
+                  />
+                ) : (
+                  <div className="flex flex-1 items-center justify-center p-12 text-center text-sm text-muted-foreground">
+                    Vorschau für{" "}
+                    <code className="mx-1">{suffix.toUpperCase()}</code> nicht
+                    inline verfügbar — bitte herunterladen.
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          );
+        })}
+
+        <TabsContent value="mail">
+          <MailBodyViewer
+            mail={mail}
+            highlightQuote={
+              activeEvidence?.source_file === "mail" ||
+              !activeEvidence?.source_file
+                ? (activeEvidence?.source_quote ?? null)
+                : null
+            }
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

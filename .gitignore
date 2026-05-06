@@ -88,3 +88,7 @@ Poppler/
 data/reviews/
 
 .tunnel_url
+
+# Claude
+.claude
+Claude.md

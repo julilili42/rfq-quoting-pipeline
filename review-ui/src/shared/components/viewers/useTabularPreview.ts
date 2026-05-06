@@ -24,7 +24,7 @@ const MAX_PREVIEW_ROWS = 500;
 const SEPARATORS = [";", ",", "\t", "|"];
 
 async function loadTabular(reviewId: string, fileName: string): Promise<TabularData> {
-  const url = `${env.apiBaseUrl}/api/reviews/${encodeURIComponent(reviewId)}/original`;
+  const url = `${env.apiBaseUrl}/api/reviews/${encodeURIComponent(reviewId)}/attachment/${encodeURIComponent(fileName)}`;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Original konnte nicht geladen werden (${response.status})`);

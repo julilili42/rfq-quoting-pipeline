@@ -5,8 +5,9 @@ import { useEffect, useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
+import { SourceBadge } from "@/shared/components/ui/SourceBadge";
 import { cn } from "@/shared/lib/cn";
-import type { Position } from "@/shared/schemas/anfrage";
+import type { Evidence, Position } from "@/shared/schemas/anfrage";
 import type { MatchResult } from "@/shared/schemas/matchResult";
 import type { ManualOverride, QuotationItem } from "@/shared/schemas/quotation";
 
@@ -25,6 +26,7 @@ interface PositionCardProps {
   onUnitPriceChange: (override: ManualOverride | null) => void;
   onFieldEdit: (fieldPath: string) => void;
   onDelete: () => void;
+  onEvidenceSelect?: (ev: Evidence) => void;
   index: number;
 }
 
@@ -62,6 +64,7 @@ export function PositionCard({
   onUnitPriceChange,
   onFieldEdit,
   onDelete,
+  onEvidenceSelect,
   index,
 }: PositionCardProps) {
   const [draft, setDraft] = useState<Position>(position);
@@ -264,14 +267,18 @@ export function PositionCard({
           </span>
         </label>
 
-        {position.source_quote && (
-          <p className="mt-3 text-xs text-muted-foreground">
-            <span className="font-semibold">Quelle aus der Anfrage:</span>{" "}
-            <em>
-              "{position.source_quote.slice(0, 160)}
-              {position.source_quote.length > 160 && "…"}"
-            </em>
-          </p>
+        {(position.source_quote || position.source_file) && (
+          <div className="mt-3">
+            <SourceBadge
+              evidence={{
+                source_file: position.source_file,
+                source_page: position.source_page,
+                source_row: position.source_row,
+                source_quote: position.source_quote || null,
+              }}
+              onNavigate={onEvidenceSelect}
+            />
+          </div>
         )}
 
         {/* ---- Destructive actions ---- */}

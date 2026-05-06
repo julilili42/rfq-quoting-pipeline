@@ -35,6 +35,15 @@ EXTRACTION RULES
 12. source_quote: literal snippet (<=120 chars) proving where you got the
     article number + quantity from. Required for audit.
 13. List anything suspicious in `unsicherheiten` (open questions for Sales).
+14. Evidence fields per position (fill when determinable, leave null otherwise):
+    - source_file: filename as shown in the section header (e.g. "Anfrage.pdf"),
+      or "mail" if the data came from the mail body.
+    - source_page: 1-indexed page number for PDF sources (use only when the PDF
+      has visible page numbers or you are certain of the page).
+    - source_row: 0-indexed data row from the "Row" column in Excel/CSV tables.
+15. header_evidence: for each extracted Anfrage header field (e.g. "kunde_firma",
+    "belegnummer", "datum"), provide an Evidence object with the same fields as
+    above. Only include fields where you found clear evidence; omit the rest.
 
 OUTPUT
 ======

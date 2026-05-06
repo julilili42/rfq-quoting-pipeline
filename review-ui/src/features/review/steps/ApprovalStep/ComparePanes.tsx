@@ -19,20 +19,15 @@ interface ComparePanesProps {
 /**
  * Side-by-side comparison view (step 3).
  *
- * Two parallel tab strips so the original and the generated angebot
- * stay vertically aligned:
- *
- * - Left  (Original):    Datei | Mail-Text
- * - Right (Angebot):     Entwurf | Final (only when approved)
+ * Two parallel panes — original (with per-attachment + mail-body tabs) and
+ * generated Angebot (Entwurf / Finales Angebot tabs).
  *
  * The PDF tabs hit distinct API URLs (`/pdf/draft` vs `/pdf/final`),
  * which sidesteps the long-standing browser data-URL conflation
  * problem from the Streamlit version.
  */
 export function ComparePanes({ reviewId, detail, isApproved }: ComparePanesProps) {
-  const firstAttachment = detail.mail.attachments[0]?.name;
-  const hasAttachment = Boolean(firstAttachment);
-  const hasMailBody = Boolean(detail.mail.body.trim());
+  const attachmentNames = detail.mail.attachments.map((a) => a.name);
 
   // Cache buster lives at the comparison level — when the parent
   // updates `detail` (i.e. after a regenerate or a finalize), both
@@ -42,36 +37,11 @@ export function ComparePanes({ reviewId, detail, isApproved }: ComparePanesProps
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
       <ComparePane label="Original">
-        <Tabs defaultValue={hasAttachment ? "file" : "mail"}>
-          <TabsList>
-            {hasAttachment && (
-              <TabsTrigger value="file">
-                {firstAttachment ?? "Datei"}
-              </TabsTrigger>
-            )}
-            {hasMailBody && <TabsTrigger value="mail">Mail-Text</TabsTrigger>}
-          </TabsList>
-
-          {hasAttachment && (
-            <TabsContent value="file">
-              <OriginalDocumentViewer
-                reviewId={reviewId}
-                mail={detail.mail}
-                attachmentName={firstAttachment}
-              />
-            </TabsContent>
-          )}
-
-          {hasMailBody && (
-            <TabsContent value="mail">
-              <OriginalDocumentViewer
-                reviewId={reviewId}
-                mail={detail.mail}
-                attachmentName={undefined}
-              />
-            </TabsContent>
-          )}
-        </Tabs>
+        <OriginalDocumentViewer
+          reviewId={reviewId}
+          mail={detail.mail}
+          attachmentNames={attachmentNames}
+        />
       </ComparePane>
 
       <ComparePane
