@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from ..core import Anfrage, Settings, get_logger, load_settings
 from .document_loader import load_attachments
 from .json_utils import extract_json_object
@@ -12,6 +14,10 @@ from .llm.base import TokenUsage
 from .prompts import build_prompt
 
 log = get_logger()
+
+
+class ExtractionError(RuntimeError):
+    """Raised when extraction fails with a human-readable reason."""
 
 
 def extract_anfrage(
@@ -30,14 +36,26 @@ def extract_anfrage(
     log.info("Calling LLM (%s) with %d image(s), prompt=%d chars",
              settings.llm_provider, len(images), len(prompt))
 
-    llm_response = with_retry(
-        llm.generate,
-        prompt=prompt,
-        images=images,
-        max_retries=settings.llm_max_retries,
-    )
-    raw_json = extract_json_object(llm_response.text)
-    anfrage = Anfrage.model_validate_json(raw_json)
+    try:
+        llm_response = with_retry(
+            llm.generate,
+            prompt=prompt,
+            images=images,
+            max_retries=settings.llm_max_retries,
+        )
+    except Exception as exc:
+        raise ExtractionError(f"LLM call failed: {exc}") from exc
+
+    try:
+        raw_json = extract_json_object(llm_response.text)
+    except ValueError as exc:
+        raise ExtractionError(f"LLM returned no parseable JSON: {exc}") from exc
+
+    try:
+        anfrage = Anfrage.model_validate_json(raw_json)
+    except ValidationError as exc:
+        raise ExtractionError(f"LLM output does not match Anfrage schema: {exc}") from exc
+
     if llm_response.usage:
         log.info("Extraction OK: %d position(s), tokens in=%d out=%d",
                  len(anfrage.positionen), llm_response.usage.input_tokens,
