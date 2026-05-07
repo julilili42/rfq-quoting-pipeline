@@ -63,6 +63,7 @@ export function ApprovalStep() {
         <ApprovalPanel
           reviewId={reviewId}
           approval={approval.data}
+          customerName={detail.anfrage.kunde_firma ?? ""}
           gateAllowsApproval={gate.canApprove}
         />
       </div>
@@ -74,9 +75,6 @@ export function ApprovalStep() {
       <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="section-label mb-1">Vergleich</h2>
-          <p className="text-xs text-muted-foreground">
-            Bei Fehlern → zurück zu Schritt 1 (Positionen) oder Schritt 2 (Kunde).
-          </p>
         </div>
         <Button variant="secondary" size="sm" onClick={enterFocus}>
           <Maximize2 className="h-4 w-4" aria-hidden="true" />
@@ -113,6 +111,7 @@ export function ApprovalStep() {
         <ApprovalPanel
           reviewId={reviewId}
           approval={approval.data}
+          customerName={detail.anfrage.kunde_firma ?? ""}
           gateAllowsApproval={gate.canApprove}
         />
       </div>

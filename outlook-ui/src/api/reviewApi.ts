@@ -1,4 +1,4 @@
-import { REVIEW_API_URL } from "../config";
+import { API_BASE_URL, REVIEW_API_URL } from "../config";
 import type {
   CreateReviewResponse,
   MailSnapshot,
@@ -84,6 +84,44 @@ export async function getApprovalState(
 
 export function isApproved(record: ApprovalRecord): boolean {
   return record.state === "approved" || record.state === "ready_to_send";
+}
+
+export type MailTemplateSettings = {
+  email_subject_template: string;
+  email_body_template: string;
+  company_name: string;
+};
+
+export async function getMailSettings(reviewId: string): Promise<{ kundenFirma: string | null; templates: MailTemplateSettings }> {
+  const [detailRes, settingsRes] = await Promise.all([
+    fetch(`${REVIEW_API_URL}/${reviewId}`, { method: "GET" }),
+    fetch(`${API_BASE_URL}/api/settings`, { method: "GET" }),
+  ]);
+
+  let kundenFirma: string | null = null;
+  if (detailRes.ok) {
+    try {
+      const detail = JSON.parse(await detailRes.text());
+      kundenFirma = detail?.anfrage?.kunde_firma ?? null;
+    } catch { /* ignore */ }
+  }
+
+  const defaults: MailTemplateSettings = {
+    email_subject_template: "Angebot zu Ihrer Anfrage: [Betreff]",
+    email_body_template: "<p>Sehr geehrte Damen und Herren,</p><p>vielen Dank für Ihre Anfrage. Anbei erhalten Sie unser Angebot.</p><p>Mit freundlichen Grüßen<br/>[Absender]</p>",
+    company_name: "",
+  };
+
+  if (settingsRes.ok) {
+    try {
+      const s = JSON.parse(await settingsRes.text());
+      defaults.email_subject_template = s?.workflow?.email_subject_template ?? defaults.email_subject_template;
+      defaults.email_body_template = s?.workflow?.email_body_template ?? defaults.email_body_template;
+      defaults.company_name = s?.company?.company_name ?? "";
+    } catch { /* ignore */ }
+  }
+
+  return { kundenFirma, templates: defaults };
 }
 
 export async function pollReviewUntilComplete(

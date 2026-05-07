@@ -55,6 +55,7 @@ export type MailWorkflow = {
   approvedAt?: string;
   approvedBy?: string;
   finalPdfFilename?: string;
+  kundenFirma?: string;
   quoteSentAt?: string;
   updatedAt: string;
 };

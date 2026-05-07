@@ -117,10 +117,11 @@ export const reviewsApi = {
   finalize: async (
     reviewId: string,
     actor: string,
+    filename?: string,
   ): Promise<{ final_pdf_path: string }> => {
     const data = await apiClient.post<unknown>(
       `/api/reviews/${encodeURIComponent(reviewId)}/finalize`,
-      { actor },
+      { actor, ...(filename ? { filename } : {}) },
     );
     return z.object({ final_pdf_path: z.string() }).parse(data);
   },

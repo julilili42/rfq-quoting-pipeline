@@ -20,7 +20,7 @@ build/
 dist/
 *.egg-info/
 .eggs/
-node_modules/
+
 
 # =========================
 # Logs & Cache
@@ -95,3 +95,6 @@ data/reviews/
 Claude.md
 
 .ruff_cache
+
+node_modules/
+rfq_examples/

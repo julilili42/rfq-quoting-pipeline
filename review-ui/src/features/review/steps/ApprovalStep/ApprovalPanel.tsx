@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
@@ -12,10 +13,12 @@ import {
   useApprovalTransition,
 } from "../../hooks/useApproval";
 import { useFinalize } from "../../hooks/useReviewMutations";
+import { useSettings } from "@/features/settings/hooks/useSettings";
 
 interface ApprovalPanelProps {
   reviewId: string;
   approval: ApprovalRecord | undefined;
+  customerName: string;
   /**
    * Quality-gate verdict. When `false`, the approval button stays
    * disabled regardless of the actor name. The gate panel above
@@ -24,27 +27,17 @@ interface ApprovalPanelProps {
   gateAllowsApproval: boolean;
 }
 
-/**
- * Approval workflow.
- *
- * Two states:
- *
- * - **Pending**:  name field + "Freigeben" button. Click triggers the
- *                 finalize mutation, which builds the final PDF
- *                 server-side and flips approval state in one call.
- * - **Approved**: shows who approved when, plus a "Zurücknehmen"
- *                 button that flips state back to `reviewed`.
- *
- * The "Freigeben" button has two preconditions:
- *
- *  1. The actor's name has been entered.
- *  2. The quality gate has cleared.
- *
- * Either failing keeps the button disabled.
- */
+function resolveFilenameTemplate(template: string, customerName: string): string {
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return template
+    .replace("[Kunde]", customerName || "Kunde")
+    .replace("[Datum]", today);
+}
+
 export function ApprovalPanel({
   reviewId,
   approval,
+  customerName,
   gateAllowsApproval,
 }: ApprovalPanelProps) {
   const actor = useReviewUiStore((s) => s.approvalActor);
@@ -53,6 +46,16 @@ export function ApprovalPanel({
 
   const finalize = useFinalize(reviewId);
   const transition = useApprovalTransition(reviewId);
+  const { data: settings } = useSettings();
+
+  const template = settings?.workflow?.final_pdf_filename_template ?? "Angebot_[Kunde].pdf";
+  const defaultFilename = resolveFilenameTemplate(template, customerName);
+
+  const [filename, setFilename] = useState(defaultFilename);
+
+  useEffect(() => {
+    setFilename(resolveFilenameTemplate(template, customerName));
+  }, [template, customerName]);
 
   const approved = isApproved(approval);
 
@@ -136,17 +139,10 @@ export function ApprovalPanel({
     );
   }
 
-  const canApprove = actor.trim().length > 0 && gateAllowsApproval;
+  const canApprove = actor.trim().length > 0 && filename.trim().length > 0 && gateAllowsApproval;
 
   return (
     <section className="rounded-lg border border-border bg-surface p-5 shadow-card">
-      <div className="mb-4">
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          Der Angebotsentwurf enthält noch den roten KI-Warnhinweis. Mit der
-          Freigabe wird das PDF ohne Warnhinweis neu erzeugt.
-        </p>
-      </div>
-
       <div className="space-y-3">
         <div className="space-y-1.5">
           <Label className="text-xs">Freigegeben durch</Label>
@@ -158,6 +154,15 @@ export function ApprovalPanel({
           />
         </div>
 
+        <div className="space-y-1.5">
+          <Label className="text-xs">Dateiname finale PDF</Label>
+          <Input
+            value={filename}
+            onChange={(e) => setFilename(e.target.value)}
+            placeholder="Angebot_Kunde.pdf"
+          />
+        </div>
+
         <Button
           variant="primary"
           disabled={!canApprove || finalize.isPending}
@@ -166,24 +171,26 @@ export function ApprovalPanel({
               ? "Bitte zuerst die offenen Punkte oben klären."
               : !actor.trim()
                 ? "Bitte Namen eintragen."
-                : undefined
+                : !filename.trim()
+                  ? "Bitte Dateinamen eintragen."
+                  : undefined
           }
           onClick={() =>
-            finalize.mutate(actor.trim(), {
-              onSuccess: () => {
-                // After finalize the backend has already transitioned to
-                // `approved`, but we still emit the changed-fields list
-                // in case downstream tooling (audit log) wants it.
-                if (changedFields.size > 0) {
-                  transition.mutate({
-                    target: "approved",
-                    actor: actor.trim(),
-                    changed_fields: Array.from(changedFields).sort(),
-                    warning_acknowledged: true,
-                  });
-                }
+            finalize.mutate(
+              { actor: actor.trim(), filename: filename.trim() },
+              {
+                onSuccess: () => {
+                  if (changedFields.size > 0) {
+                    transition.mutate({
+                      target: "approved",
+                      actor: actor.trim(),
+                      changed_fields: Array.from(changedFields).sort(),
+                      warning_acknowledged: true,
+                    });
+                  }
+                },
               },
-            })
+            )
           }
         >
           {finalize.isPending ? "Final-PDF wird erzeugt…" : "Freigeben"}

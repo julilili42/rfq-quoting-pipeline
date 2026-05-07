@@ -8,6 +8,8 @@ export const tokenUsageSchema = z
   })
   .nullable();
 
+export const extractionPathSchema = z.enum(["fast_path", "llm"]).nullable().optional();
+
 export const perReviewMetricSchema = z.object({
   review_id: z.string(),
   subject: z.string(),
@@ -18,6 +20,7 @@ export const perReviewMetricSchema = z.object({
   total_eur: z.number(),
   duration_s: z.number(),
   token_usage: tokenUsageSchema.optional(),
+  extraction_path: extractionPathSchema,
 });
 
 export const metricsSchema = z.object({
@@ -31,6 +34,8 @@ export const metricsSchema = z.object({
   total_output_tokens: z.number().int(),
   total_tokens: z.number().int(),
   reviews_with_token_data: z.number().int(),
+  fast_path_hits: z.number().int().default(0),
+  llm_calls: z.number().int().default(0),
   per_review: z.array(perReviewMetricSchema),
 });
 

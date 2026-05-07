@@ -27,7 +27,6 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SETTINGS_PATH = PROJECT_ROOT / "data" / "settings.json"
 
@@ -59,6 +58,13 @@ class MatchingPreferences:
 class WorkflowPreferences:
     auto_refresh_pdf: bool = True
     confirm_before_reset: bool = True
+    final_pdf_filename_template: str = "Angebot_[Kunde].pdf"
+    email_subject_template: str = "Angebot zu Ihrer Anfrage: [Betreff]"
+    email_body_template: str = (
+        "<p>Sehr geehrte Damen und Herren,</p>"
+        "<p>vielen Dank für Ihre Anfrage. Anbei erhalten Sie unser Angebot.</p>"
+        "<p>Mit freundlichen Grüßen<br/>[Absender]</p>"
+    )
 
 
 @dataclass
@@ -71,7 +77,7 @@ class AppSettings:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> "AppSettings":
+    def from_dict(cls, data: dict[str, Any] | None) -> AppSettings:
         if not isinstance(data, dict):
             return cls()
         return cls(

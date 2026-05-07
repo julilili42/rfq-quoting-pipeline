@@ -5,26 +5,29 @@
  * Review. The internal state machine has more granularity (review_created,
  * review_opened, approved, quote_sent) but they all collapse onto the
  * same visual step — the user sees one "Review" stage that turns
- * green once the angebotsmail has been sent.
+ * complete once the angebotsmail has been sent.
  */
 
 import type { MailWorkflowState } from "../mailWorkflowStorage";
 
 type StepDef = {
   key: MailWorkflowState[];
-  num: string;
   title: string;
 };
 
 const STEPS: StepDef[] = [
-  { key: ["new"],                                                  num: "01", title: "Anfrage" },
-  { key: ["review_running"],                                       num: "02", title: "Pipeline" },
-  {
-    key: ["review_created", "review_opened", "approved", "quote_sent"],
-    num: "03",
-    title: "Review",
-  },
+  { key: ["new"],                                                  title: "Anfrage" },
+  { key: ["review_running"],                                       title: "Pipeline" },
+  { key: ["review_created", "review_opened", "approved", "quote_sent"], title: "Review" },
 ];
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="1.5,6.5 4.5,9.5 10.5,2.5" />
+    </svg>
+  );
+}
 
 export function Steps({ workflowState }: { workflowState: MailWorkflowState }) {
   const activeIndex = STEPS.findIndex((s) => s.key.includes(workflowState));
@@ -33,19 +36,17 @@ export function Steps({ workflowState }: { workflowState: MailWorkflowState }) {
   return (
     <div className="steps">
       {STEPS.map((s, i) => {
-        // quote_sent treats step 3 as fully complete (checkmark instead of
-        // active pulsing). approved still shows as active because the
-        // user still needs to create the angebotsmail.
-        const isDone =
-          i < activeIndex || (isQuoteSent && i === activeIndex);
+        const isDone = i < activeIndex || (isQuoteSent && i === activeIndex);
         const isActive = i === activeIndex && !isQuoteSent;
 
         const cls = isDone ? "step done" : isActive ? "step active" : "step";
-        const marker = isDone ? "✓" : s.num;
 
         return (
-          <div key={s.num} className={cls}>
-            <div className="step-num">{marker}</div>
+          <div key={i} className={cls}>
+            {i > 0 && <div className="step-connector" />}
+            <div className="step-circle">
+              {isDone ? <CheckIcon /> : <span className="step-index">{i + 1}</span>}
+            </div>
             <div className="step-title">{s.title}</div>
           </div>
         );

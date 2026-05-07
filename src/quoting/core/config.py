@@ -36,6 +36,9 @@ class Settings:
     # Gemini
     google_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash"
+    # Thinking is wasted budget on structured-extraction tasks with a strict
+    # JSON schema + few-shot. 0 disables it; -1 = model default (dynamic).
+    gemini_thinking_budget: int = 0
 
     # Azure OpenAI / Nexus
     nexus_api_key: str | None = None
@@ -102,6 +105,7 @@ def load_runtime_settings() -> Settings:
         llm_timeout_s=_int("LLM_TIMEOUT_S", 120),
         google_api_key=os.getenv("GOOGLE_API_KEY"),
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        gemini_thinking_budget=_int("GEMINI_THINKING_BUDGET", base.gemini_thinking_budget),
         nexus_api_key=os.getenv("NEXUS_API_KEY"),
         azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", base.azure_endpoint),
         azure_api_version=os.getenv("AZURE_OPENAI_API_VERSION", base.azure_api_version),

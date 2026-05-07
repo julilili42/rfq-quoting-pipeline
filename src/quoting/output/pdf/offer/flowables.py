@@ -242,7 +242,7 @@ def items_table(
                 "", "", "", "",
             ])
 
-        if item.bemerkung:
+        if item.bemerkung and not config.is_final:
             data.append([
                 "",
                 Paragraph("Hinweis:", styles["table_small"]),

@@ -145,8 +145,7 @@ function evaluate(detail: ReviewDetail | undefined): QualityGateResult {
       severity: "warning",
       step: "positions",
       title: `Match-Quote nur ${Math.round(matchRate * 100)}%`,
-      description:
-        "Mehrere Positionen haben keinen Stammdaten-Treffer. Vor Versand prüfen.",
+      description: "",
     });
   }
 
@@ -159,20 +158,48 @@ function evaluate(detail: ReviewDetail | undefined): QualityGateResult {
       severity: "warning",
       step: "positions",
       title: `${lowConfidence} Position(en) mit geringer KI-Sicherheit`,
-      description:
-        "Bei niedriger Konfidenz lohnt sich ein Blick auf Mengen und Werkstoff.",
+      description: "",
     });
   }
 
-  if (detail && !(detail.anfrage.belegnummer ?? "").trim()) {
-    warnings.push({
-      id: "belegnummer-missing",
-      severity: "warning",
-      step: "customer",
-      title: "Belegnummer leer",
-      description:
-        "Ohne Belegnummer ist die Zuordnung im Backoffice mühsam.",
-    });
+  if (detail) {
+    const a = detail.anfrage;
+    if (!(a.belegnummer ?? "").trim()) {
+      warnings.push({
+        id: "belegnummer-missing",
+        severity: "warning",
+        step: "customer",
+        title: "Belegnummer leer",
+        description: "Ohne Belegnummer ist die Zuordnung im Backoffice mühsam.",
+      });
+    }
+    if (!(a.kundennummer ?? "").trim()) {
+      warnings.push({
+        id: "kundennummer-missing",
+        severity: "warning",
+        step: "customer",
+        title: "Kundennummer fehlt",
+        description: "",
+      });
+    }
+    if (!(a.vorgangsnummer ?? "").trim()) {
+      warnings.push({
+        id: "vorgangsnummer-missing",
+        severity: "warning",
+        step: "customer",
+        title: "Vorgangsnummer fehlt",
+        description: "",
+      });
+    }
+    if (!(a.datum ?? "").trim()) {
+      warnings.push({
+        id: "datum-missing",
+        severity: "warning",
+        step: "customer",
+        title: "Anfragedatum fehlt",
+        description: "",
+      });
+    }
   }
 
   return {

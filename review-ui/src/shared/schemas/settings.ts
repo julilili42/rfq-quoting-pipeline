@@ -29,6 +29,11 @@ export type MatchingPreferences = z.infer<typeof matchingPreferencesSchema>;
 export const workflowPreferencesSchema = z.object({
   auto_refresh_pdf: z.boolean().default(true),
   confirm_before_reset: z.boolean().default(true),
+  final_pdf_filename_template: z.string().default("Angebot_[Kunde].pdf"),
+  email_subject_template: z.string().default("Angebot zu Ihrer Anfrage: [Betreff]"),
+  email_body_template: z.string().default(
+    "<p>Sehr geehrte Damen und Herren,</p><p>vielen Dank für Ihre Anfrage. Anbei erhalten Sie unser Angebot.</p><p>Mit freundlichen Grüßen<br/>[Absender]</p>"
+  ),
 });
 
 export type WorkflowPreferences = z.infer<typeof workflowPreferencesSchema>;

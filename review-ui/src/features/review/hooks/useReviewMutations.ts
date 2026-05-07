@@ -46,9 +46,9 @@ export function useFinalize(reviewId: string | undefined) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (actor: string) => {
+    mutationFn: ({ actor, filename }: { actor: string; filename?: string }) => {
       if (!reviewId) throw new Error("reviewId is required");
-      return reviewsApi.finalize(reviewId, actor);
+      return reviewsApi.finalize(reviewId, actor, filename);
     },
     onSuccess: () => {
       if (!reviewId) return;

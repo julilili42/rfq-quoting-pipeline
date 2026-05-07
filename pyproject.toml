@@ -23,6 +23,8 @@ dependencies = [
     "tabulate>=0.9.0",
     # Matching
     "rapidfuzz>=3.5.0",
+    # Fast-path: deterministic Aho-Corasick scan over the article-nr lexicon
+    "pyahocorasick>=2.1.0",
     # Output
     "reportlab>=4.0.0",
     # UI

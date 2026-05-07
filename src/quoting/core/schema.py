@@ -61,6 +61,13 @@ class Position(BaseModel):
             v = v.replace(",", ".").strip()
         return float(v)
 
+    @field_validator("einheit", mode="before")
+    @classmethod
+    def _default_einheit(cls, v) -> str:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "Stk"
+        return str(v).strip()
+
 
 class Anfrage(BaseModel):
     """Complete parsed RFQ."""

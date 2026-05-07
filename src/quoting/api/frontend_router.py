@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import shutil
 import uuid
+from datetime import date as _date
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
@@ -36,7 +38,6 @@ from quoting.pipeline import QuotingPipeline
 from quoting.pricing import Quotation, build_quotation
 from quoting.reviews import (
     draft_pdf_filename,
-    final_pdf_filename,
     find_draft_pdf,
     find_final_pdf,
     load_mail_meta,
@@ -124,6 +125,7 @@ def get_metrics() -> dict:
         reviews_with_duration=0, reviews_with_match=0,
         total_input_tokens=0, total_output_tokens=0, total_tokens=0,
         reviews_with_token_data=0,
+        fast_path_hits=0, llm_calls=0,
     )
 
     if not REVIEW_DIR.exists():
@@ -162,6 +164,12 @@ def get_metrics() -> dict:
             agg["reviews_with_token_data"] += 1
             token_row = token_data
 
+        extraction_path = summary.get("extraction_path")
+        if extraction_path == "fast_path":
+            agg["fast_path_hits"] += 1
+        elif extraction_path == "llm":
+            agg["llm_calls"] += 1
+
         per_review.append({
             "review_id": folder.name,
             "subject": str(summary.get("subject") or ""),
@@ -172,6 +180,7 @@ def get_metrics() -> dict:
             "total_eur": total_eur,
             "duration_s": duration_s,
             "token_usage": token_row,
+            "extraction_path": extraction_path,
         })
 
     reviews_with_duration = agg.pop("reviews_with_duration") or 1
@@ -565,6 +574,32 @@ def regenerate_quotation(review_id: str) -> dict:
 
 class FinalizeRequest(BaseModel):
     actor: str = Field(min_length=1)
+    filename: str | None = None
+
+
+def _sanitize_pdf_filename(name: str) -> str:
+    name = re.sub(r'[/\\:*?"<>|]', '_', name.strip())
+    name = re.sub(r'_+', '_', name)
+    if not name.lower().endswith('.pdf'):
+        name += '.pdf'
+    return name[:200]
+
+
+def _resolve_filename_template(template: str, anfrage: Any, review_id: str) -> str:
+    def _field(name: str) -> str:
+        return (getattr(anfrage, name, '') or '').strip()
+
+    today = _date.today().strftime('%Y%m%d')
+    result = (
+        template
+        .replace('[Kunde]', _field('kunde_firma') or review_id)
+        .replace('[Belegnummer]', _field('belegnummer'))
+        .replace('[Kundennummer]', _field('kundennummer'))
+        .replace('[Vorgangsnummer]', _field('vorgangsnummer'))
+        .replace('[Ansprechpartner]', _field('kunde_ansprechpartner'))
+        .replace('[Datum]', today)
+    )
+    return _sanitize_pdf_filename(result)
 
 
 @router.post("/reviews/{review_id}/finalize")
@@ -573,12 +608,19 @@ def finalize_quotation(review_id: str, payload: FinalizeRequest) -> dict:
     pipeline = _get_pipeline()
 
     anfrage, matches, overrides = _load_review_data(folder, review_id, pipeline)
-    company_profile = load_user_settings().company
+    user_settings = load_user_settings()
+    company_profile = user_settings.company
     quotation = _build_quotation_with_overrides(
         anfrage, matches, overrides, pipeline.settings.preise_path, review_id
     )
 
-    final_path = folder / final_pdf_filename(review_id)
+    if payload.filename:
+        final_filename = _sanitize_pdf_filename(payload.filename)
+    else:
+        template = user_settings.workflow.final_pdf_filename_template or "Angebot_[Kunde].pdf"
+        final_filename = _resolve_filename_template(template, anfrage, review_id)
+
+    final_path = folder / final_filename
     try:
         build_draft_pdf(anfrage, quotation, final_path, is_final=True, company_profile=company_profile)
     except Exception as exc:
@@ -608,7 +650,7 @@ _ALLOWED_UPLOAD_TYPES = {"pdf", "xlsx", "csv", "eml", "msg"}
 
 
 @router.post("/reviews/upload")
-async def upload_review(file: UploadFile = File(...)) -> dict:
+async def upload_review(file: Annotated[UploadFile, File()]) -> dict:
     if not file.filename:
         raise HTTPException(400, "Uploaded file is missing a filename")
 

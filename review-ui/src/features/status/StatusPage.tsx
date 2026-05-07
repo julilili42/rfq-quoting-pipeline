@@ -32,9 +32,11 @@ function PipelineStats({ m }: { m: Metrics }) {
   const avgPositions = m.total_reviews > 0 ? m.total_positions / m.total_reviews : 0;
   const completedPct = m.total_reviews > 0 ? Math.round((m.completed_reviews / m.total_reviews) * 100) : 0;
   const hoursSaved = (m.total_reviews * MINUTES_PER_MANUAL_REVIEW) / 60;
+  const totalExtractions = m.fast_path_hits + m.llm_calls;
+  const fastPathRate = totalExtractions > 0 ? m.fast_path_hits / totalExtractions : 0;
 
   return (
-    <div className="mb-8 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3 lg:grid-cols-6">
+    <div className="mb-8 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3 lg:grid-cols-7">
       <StatCell
         label="Angebote"
         value={m.total_reviews}
@@ -58,6 +60,11 @@ function PipelineStats({ m }: { m: Metrics }) {
         label="Ø Dauer"
         value={`${m.avg_duration_s} s`}
         hint="pro Angebot"
+      />
+      <StatCell
+        label="Fast-Path"
+        value={totalExtractions > 0 ? fmtPct(fastPathRate) : "—"}
+        hint={totalExtractions > 0 ? `${m.fast_path_hits} ohne LLM, ${m.llm_calls} mit LLM` : "noch keine Daten"}
       />
       <StatCell
         label="Zeitersparnis"

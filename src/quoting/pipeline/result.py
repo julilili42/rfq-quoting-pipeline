@@ -24,6 +24,10 @@ class PipelineResult:
     pdf_path: Path
     duration_s: float
     token_usage: TokenUsage | None = field(default=None)
+    # "fast_path" = deterministic AC + quantity match, no LLM call.
+    # "llm"       = Gemini/Azure extraction.
+    # None        = unknown (older runs / non-standard pipelines).
+    extraction_path: str | None = field(default=None)
 
     def summary(self) -> dict:
         result: dict = {
@@ -45,4 +49,6 @@ class PipelineResult:
                 "output_tokens": self.token_usage.output_tokens,
                 "total_tokens": self.token_usage.total_tokens,
             }
+        if self.extraction_path is not None:
+            result["extraction_path"] = self.extraction_path
         return result

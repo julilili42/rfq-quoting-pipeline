@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Building2, FileText, Gauge, Save, Settings2, User } from "lucide-react";
+import { Building2, FileText, Gauge, Mail, Save, Settings2, User } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 
@@ -46,10 +46,6 @@ export function SettingsPage() {
         <h1 className="font-display text-4xl font-extrabold tracking-tight md:text-5xl">
           Einstellungen<span className="text-brand">.</span>
         </h1>
-        <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted-foreground">
-          Firmendaten, Kontaktinformationen und Angebotsstandards — werden
-          automatisch in jedes Angebots-PDF übernommen.
-        </p>
       </header>
 
       <SettingsForm
@@ -90,7 +86,6 @@ function SettingsForm({ initial, saving, saveSuccess, saveError, onSave }: Setti
       <SettingsCard
         icon={<Building2 className="h-4 w-4" />}
         title="Firmendaten"
-        description="Absenderinformationen die im Angebots-PDF erscheinen"
       >
         <Grid>
           <Field label="Firmenname">
@@ -112,7 +107,6 @@ function SettingsForm({ initial, saving, saveSuccess, saveError, onSave }: Setti
       <SettingsCard
         icon={<User className="h-4 w-4" />}
         title="Kontaktperson"
-        description="Ansprechpartner der im Angebot als Unterzeichner gedruckt wird"
       >
         <Grid>
           <Field label="Name">
@@ -143,7 +137,6 @@ function SettingsForm({ initial, saving, saveSuccess, saveError, onSave }: Setti
       <SettingsCard
         icon={<FileText className="h-4 w-4" />}
         title="Kommerzielle Standards"
-        description="Standardkonditionen die in neue Angebote übernommen werden"
       >
         <Grid>
           <Field label="Lieferbedingung">
@@ -155,11 +148,37 @@ function SettingsForm({ initial, saving, saveSuccess, saveError, onSave }: Setti
         </Grid>
       </SettingsCard>
 
+      {/* E-Mail Vorlage */}
+      <SettingsCard
+        icon={<Mail className="h-4 w-4" />}
+        title="E-Mail Vorlage"
+        description="Betreff und Text der Angebotsmail in Outlook"
+      >
+        <div className="space-y-4">
+          <Field label="Betreff">
+            <Input
+              placeholder="Angebot zu Ihrer Anfrage: [Betreff]"
+              {...form.register("workflow.email_subject_template")}
+            />
+          </Field>
+          <Field label="Nachrichtentext (HTML)">
+            <textarea
+              rows={5}
+              placeholder="<p>Sehr geehrte Damen und Herren,</p>…"
+              className="flex w-full rounded-md border border-input bg-surface px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y min-h-[100px]"
+              {...form.register("workflow.email_body_template")}
+            />
+          </Field>
+          <p className="text-[11px] text-muted-foreground">
+            Platzhalter: <code className="rounded bg-foreground/5 px-1 font-mono">[Betreff]</code> · <code className="rounded bg-foreground/5 px-1 font-mono">[Firma]</code> · <code className="rounded bg-foreground/5 px-1 font-mono">[Absender]</code> · <code className="rounded bg-foreground/5 px-1 font-mono">[Datum]</code>
+          </p>
+        </div>
+      </SettingsCard>
+
       {/* Matching */}
       <SettingsCard
         icon={<Gauge className="h-4 w-4" />}
         title="Matching"
-        description="Schwellenwerte für das automatische Positions-Matching gegen den Stammdatenbestand"
       >
         <Grid>
           <Field label="Fuzzy-Schwelle" hint="50 – 100">
@@ -169,9 +188,6 @@ function SettingsForm({ initial, saving, saveSuccess, saveError, onSave }: Setti
               max={100}
               {...form.register("matching.fuzzy_threshold", { valueAsNumber: true })}
             />
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Mindestähnlichkeit für Text-basiertes Matching
-            </p>
           </Field>
           <Field label="Semantische Schwelle" hint="40 – 100">
             <Input
@@ -180,9 +196,6 @@ function SettingsForm({ initial, saving, saveSuccess, saveError, onSave }: Setti
               max={100}
               {...form.register("matching.semantic_threshold", { valueAsNumber: true })}
             />
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Mindestähnlichkeit für Embedding-basiertes Matching
-            </p>
           </Field>
         </Grid>
       </SettingsCard>
@@ -190,22 +203,30 @@ function SettingsForm({ initial, saving, saveSuccess, saveError, onSave }: Setti
       {/* Workflow */}
       <SettingsCard
         icon={<Settings2 className="h-4 w-4" />}
-        title="Workflow"
-        description="Verhalten der Review-Oberfläche"
+        title="Workflow &amp; PDF"
       >
         <div className="divide-y divide-border">
           <Toggle
             label="PDF automatisch neu generieren"
-            description="PDF wird nach jeder Änderung im Hintergrund neu berechnet"
             checked={form.watch("workflow.auto_refresh_pdf")}
             onCheckedChange={(v) => form.setValue("workflow.auto_refresh_pdf", v, { shouldDirty: true })}
           />
           <Toggle
             label="Reset bestätigen"
-            description="Vor dem Pipeline-Reset wird ein Bestätigungsdialog gezeigt"
             checked={form.watch("workflow.confirm_before_reset")}
             onCheckedChange={(v) => form.setValue("workflow.confirm_before_reset", v, { shouldDirty: true })}
           />
+          <div className="py-4">
+            <Field label="Standard-Dateiname finale PDF">
+              <Input
+                placeholder="Angebot_[Kunde].pdf"
+                {...form.register("workflow.final_pdf_filename_template")}
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Platzhalter: <code className="rounded bg-foreground/5 px-1 font-mono">[Kunde]</code> · <code className="rounded bg-foreground/5 px-1 font-mono">[Belegnummer]</code> · <code className="rounded bg-foreground/5 px-1 font-mono">[Kundennummer]</code> · <code className="rounded bg-foreground/5 px-1 font-mono">[Vorgangsnummer]</code> · <code className="rounded bg-foreground/5 px-1 font-mono">[Datum]</code>
+              </p>
+            </Field>
+          </div>
         </div>
       </SettingsCard>
 
@@ -241,7 +262,7 @@ function SettingsCard({
 }: {
   icon: ReactNode;
   title: string;
-  description: string;
+  description?: string;
   children: ReactNode;
 }) {
   return (
@@ -253,7 +274,7 @@ function SettingsCard({
           </span>
           <div>
             <CardTitle className="text-sm">{title}</CardTitle>
-            <CardDescription className="mt-0.5 text-[11px]">{description}</CardDescription>
+            {description && <CardDescription className="mt-0.5 text-[11px]">{description}</CardDescription>}
           </div>
         </div>
       </CardHeader>

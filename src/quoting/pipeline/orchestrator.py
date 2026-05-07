@@ -36,6 +36,7 @@ from typing import Any
 
 from ..core import Anfrage, Settings, add_file_handler, get_logger, load_settings
 from ..data import StammdatenRepository, build_repository
+from ..extraction.fast_path import FastPathExtractor
 from ..ingestion import Mail
 from ..matching import MatchResult
 from ..pricing import Quotation
@@ -72,6 +73,7 @@ class QuotingPipeline:
         self._matching = matching_step
         self._pricing = pricing_step or PricingStep(self.settings.preise_path)
         self._render = render_step or RenderStep()
+        self._fast_path: FastPathExtractor | None = None
 
     # ---------- shared resources ----------------------------------------
 
@@ -90,6 +92,13 @@ class QuotingPipeline:
         callers should prefer :attr:`stammdaten_repo`.
         """
         return self.stammdaten_repo.as_rows()
+
+    @property
+    def fast_path(self) -> FastPathExtractor:
+        """Deterministic Aho-Corasick extractor over the article-nr lexicon."""
+        if self._fast_path is None:
+            self._fast_path = FastPathExtractor(self.stammdaten_repo)
+        return self._fast_path
 
     @property
     def matching(self) -> MatchingStep:
@@ -155,11 +164,33 @@ class QuotingPipeline:
             pdf_path=pdf_path,
             duration_s=duration,
             token_usage=ctx.extra.get("token_usage"),
+            extraction_path=ctx.extra.get("extraction_path"),
         )
 
     # ---------- individual steps ----------------------------------------
 
     def extract(self, mail: Mail, ctx: StepContext) -> Anfrage:
+        # Try the deterministic fast-path first. It returns None whenever
+        # the input isn't unambiguously trivial (no article-nr hit, no
+        # quantity in window, multi-article without per-article quantity)
+        # so the LLM fallback handles the messy cases.
+        anfrage = self.fast_path.try_extract(mail)
+        if anfrage is not None:
+            ctx.report(
+                self._extraction.name,
+                "completed",
+                f"{len(anfrage.positionen)} Positionen (Fast-Path)",
+            )
+            ctx.extra["extraction_path"] = "fast_path"
+            ctx.persist("01_extracted.json", anfrage.model_dump(mode="json"))
+            for pos in anfrage.positionen:
+                log.info(
+                    "  Pos %d [%s]: %s x%s - %s",
+                    pos.pos_nr, pos.confidence, pos.artikelnummer,
+                    pos.menge, pos.bezeichnung[:50],
+                )
+            return anfrage
+        ctx.extra["extraction_path"] = "llm"
         return self._extraction.run(mail, ctx)
 
     def match(self, anfrage: Anfrage, ctx: StepContext) -> list[MatchResult]:

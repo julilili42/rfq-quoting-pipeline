@@ -74,51 +74,81 @@ html, body {
     margin: 0 auto;
 }
 
-/* ---------------- Steps indicator (3 columns) -------------------------- */
+/* ---------------- Steps indicator (linear stepper) --------------------- */
 .steps {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
+    display: flex;
+    align-items: flex-start;
+    padding: 4px 0;
 }
 
 .step {
-    background: var(--ek-surface);
-    border: 1px solid var(--ek-border);
-    border-radius: 10px;
-    padding: 10px 8px 11px;
-    text-align: center;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     position: relative;
-    overflow: hidden;
-    box-shadow: var(--ek-shadow-1);
-    transition: border-color 0.18s ease;
 }
-.step::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 2px;
-    background: var(--ek-border);
-}
-.step.active::before { background: var(--ek-brand); }
-.step.done::before   { background: var(--ek-success); }
 
-.step-num {
-    font-family: "Inter Tight", sans-serif;
-    font-weight: 700;
-    font-size: 11px;
-    color: var(--ek-faint);
-    letter-spacing: 0.04em;
-    margin-bottom: 3px;
+/* Connecting line between steps */
+.step-connector {
+    position: absolute;
+    top: 12px;
+    right: 50%;
+    left: -50%;
+    height: 1px;
+    background: var(--ek-border);
+    transition: background 0.2s ease;
 }
-.step.active .step-num { color: var(--ek-brand); }
-.step.done   .step-num { color: var(--ek-success); }
+.step.done  .step-connector,
+.step.active .step-connector { background: var(--ek-success); }
+
+/* Circle badge */
+.step-circle {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1.5px solid var(--ek-border);
+    background: var(--ek-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+    transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+.step.active .step-circle {
+    border-color: var(--ek-brand);
+    color: var(--ek-brand);
+}
+.step.done .step-circle {
+    border-color: var(--ek-success);
+    background: var(--ek-success);
+    color: #fff;
+}
+
+.step-index {
+    font-family: "Inter Tight", sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--ek-faint);
+    line-height: 1;
+}
+.step.active .step-index { color: var(--ek-brand); }
 
 .step-title {
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--ek-faint);
+    margin-top: 5px;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+}
+.step.active .step-title {
     color: var(--ek-text);
-    letter-spacing: -0.005em;
-    line-height: 1.25;
+    font-weight: 600;
+}
+.step.done .step-title {
+    color: var(--ek-text-2);
 }
 
 /* ---------------- Card (the workhorse element) ------------------------- */
@@ -585,26 +615,18 @@ html, body {
     --outlook-blue-border: #cfe2f3;
 }
 
-.step.active::before,
-.step.done::before {
+.step.active .step-circle {
+    border-color: var(--outlook-blue);
+}
+.step.active .step-index { color: var(--outlook-blue); }
+.step.done .step-circle {
+    border-color: var(--outlook-blue);
     background: var(--outlook-blue);
 }
-.step.active .step-num,
-.step.done .step-num {
-    color: var(--outlook-blue);
-}
-.step.active {
-    border-color: var(--outlook-blue-border);
-    background: linear-gradient(180deg, var(--outlook-blue-soft) 0%, white 70%);
-}
-.step.done {
-    border-color: var(--outlook-blue-border);
-    background: linear-gradient(180deg, var(--outlook-blue-soft) 0%, white 70%);
-}
-.step.active .step-title,
-.step.done .step-title {
-    color: var(--outlook-blue-hover);
-}
+.step.done .step-connector,
+.step.active .step-connector { background: var(--outlook-blue); }
+.step.active .step-title { color: var(--outlook-blue-hover); }
+.step.done .step-title   { color: var(--outlook-blue-hover); }
 
 .pipeline-progress-fill {
     background: linear-gradient(

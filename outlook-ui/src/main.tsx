@@ -30,6 +30,7 @@ import { createRoot } from "react-dom/client";
 
 import {
   getApprovalState,
+  getMailSettings,
   isApproved,
   pollReviewUntilComplete,
   startReview,
@@ -225,10 +226,18 @@ function App() {
     setLoading(true);
     setStatus("Öffne Angebotsmail mit finaler PDF…");
     try {
+      const { templates } = await getMailSettings(workflow.review.review_id).catch(
+        () => ({ kundenFirma: null, templates: undefined }),
+      );
       await createDraftMail(
         workflow.review,
-        { subject: workflow.subject || snapshot?.subject || "" },
+        {
+          subject: workflow.subject || snapshot?.subject || "",
+          kundenFirma: workflow.kundenFirma,
+          overrideFilename: workflow.finalPdfFilename,
+        },
         setStatus,
+        templates,
       );
       const updated = upsertWorkflow(mailId, {
         state: "quote_sent",
@@ -328,11 +337,18 @@ function App() {
         const record = await getApprovalState(reviewId);
         if (cancelled) return;
         if (isApproved(record)) {
+          let kundenFirma: string | undefined;
+          try {
+            const { kundenFirma: kf } = await getMailSettings(reviewId);
+            kundenFirma = kf ?? undefined;
+          } catch { /* non-fatal */ }
+
           const updated = upsertWorkflow(currentMailId, {
             state: "approved",
             approvedAt: record.approved_at ?? new Date().toISOString(),
             approvedBy: record.approved_by ?? undefined,
             finalPdfFilename: record.final_pdf_path ?? undefined,
+            kundenFirma,
           });
           setWorkflow(updated);
           setStatus(

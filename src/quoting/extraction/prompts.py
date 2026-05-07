@@ -92,15 +92,32 @@ Expected JSON (abbreviated):
 """
 
 
-def build_prompt(schema_json: str, mail_body: str, doc_sections: list[str]) -> str:
-    """Assemble the full prompt sent to the LLM."""
-    parts: list[str] = [SYSTEM_PROMPT, "", FEW_SHOT_EXAMPLE, ""]
-    if mail_body.strip():
-        parts += ["=== MAIL BODY ===", mail_body, ""]
-    parts += doc_sections
-    parts += [
+def build_prompt_parts(
+    schema_json: str, mail_body: str, doc_sections: list[str]
+) -> tuple[str, str]:
+    """Split the prompt into a stable (cacheable) prefix and a variable suffix.
+
+    The stable part — system rules + few-shot example + schema — is identical
+    across every extraction call within a process. Gemini context caching
+    keys on this prefix so input-token cost drops to ~25 % and TTFT shortens.
+    The variable part carries the actual mail + document content.
+    """
+    stable_parts = [
+        SYSTEM_PROMPT,
+        "",
+        FEW_SHOT_EXAMPLE,
         "",
         "Extract according to this JSON schema and return ONLY JSON:",
         schema_json,
     ]
-    return "\n".join(parts)
+    variable_parts: list[str] = []
+    if mail_body.strip():
+        variable_parts += ["=== MAIL BODY ===", mail_body, ""]
+    variable_parts += doc_sections
+    return "\n".join(stable_parts), "\n".join(variable_parts)
+
+
+def build_prompt(schema_json: str, mail_body: str, doc_sections: list[str]) -> str:
+    """Assemble the full prompt sent to the LLM (single-string form)."""
+    stable, variable = build_prompt_parts(schema_json, mail_body, doc_sections)
+    return f"{stable}\n\n{variable}" if variable else stable

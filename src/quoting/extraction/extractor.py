@@ -11,7 +11,7 @@ from .document_loader import load_attachments
 from .json_utils import extract_json_object
 from .llm import build_llm, with_retry
 from .llm.base import TokenUsage
-from .prompts import build_prompt
+from .prompts import build_prompt_parts
 
 log = get_logger()
 
@@ -31,16 +31,17 @@ def extract_anfrage(
 
     doc_sections, images = load_attachments(attachments, dpi=settings.pdf_render_dpi)
     schema_json = json.dumps(Anfrage.model_json_schema(), indent=2, ensure_ascii=False)
-    prompt = build_prompt(schema_json, mail_body, doc_sections)
+    stable_prefix, variable_suffix = build_prompt_parts(schema_json, mail_body, doc_sections)
 
-    log.info("Calling LLM (%s) with %d image(s), prompt=%d chars",
-             settings.llm_provider, len(images), len(prompt))
+    log.info("Calling LLM (%s) with %d image(s), stable=%d chars, variable=%d chars",
+             settings.llm_provider, len(images), len(stable_prefix), len(variable_suffix))
 
     try:
         llm_response = with_retry(
             llm.generate,
-            prompt=prompt,
+            prompt=variable_suffix,
             images=images,
+            cacheable_prefix=stable_prefix,
             max_retries=settings.llm_max_retries,
         )
     except Exception as exc:
