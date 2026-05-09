@@ -58,8 +58,11 @@ class ApprovalRecord:
     def from_dict(cls, data: dict | None) -> ApprovalRecord:
         if not isinstance(data, dict):
             return cls()
+        raw_state = data.get("state", "draft_generated")
+        if raw_state not in ("draft_generated", "reviewed", "approved", "ready_to_send"):
+            raw_state = "draft_generated"
         return cls(
-            state=data.get("state", "draft_generated"),
+            state=raw_state,
             approved_by=data.get("approved_by"),
             approved_at=data.get("approved_at"),
             sent_at=data.get("sent_at"),
@@ -99,10 +102,9 @@ def transition(
     """Move the review to a new state, recording who/when in history."""
     record = load_approval(review_dir)
 
-    is_nonstandard = target not in VALID_TRANSITIONS.get(record.state, set()) and target != record.state
+    if target != record.state and target not in VALID_TRANSITIONS.get(record.state, set()):
+        raise ValueError(f"Invalid transition {record.state!r} → {target!r}")
     entry: dict = {"at": _now_iso(), "from": record.state, "to": target, "actor": actor}
-    if is_nonstandard:
-        entry["warning"] = "non-standard transition"
     record.history.append(entry)
 
     record.state = target

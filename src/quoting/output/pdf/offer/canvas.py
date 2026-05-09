@@ -94,8 +94,9 @@ def _draw_logo(c, logo_path: Path | None, width: float, height: float) -> None:
                 mask="auto",
             )
             return
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Logo load failed (%s): %s", logo_path, exc)
 
     c.setFillColor(colors.black)
     c.setFont("Helvetica-Bold", 16)

@@ -38,7 +38,7 @@ def find_draft_pdf(review_dir: Path, review_id: str | None = None) -> Path | Non
     if review_id:
         candidates.append(review_dir / draft_pdf_filename(review_id))
     candidates.append(review_dir / "draft_angebot.pdf")
-    candidates.extend(sorted(review_dir.rglob("*_ANGEBOT_DRAFT.pdf")))
+    candidates.extend(sorted(review_dir.glob("*_ANGEBOT_DRAFT.pdf")))
     return _first_existing(candidates)
 
 
@@ -62,8 +62,8 @@ def find_final_pdf(review_dir: Path, review_id: str | None = None) -> Path | Non
     if review_id:
         candidates.append(review_dir / final_pdf_filename(review_id))
     candidates.append(review_dir / "final_angebot.pdf")
-    candidates.extend(sorted(review_dir.rglob("*_ANGEBOT_FINAL.pdf")))
-    candidates.extend(sorted(review_dir.rglob("*_FINAL.pdf")))
+    candidates.extend(sorted(review_dir.glob("*_ANGEBOT_FINAL.pdf")))
+    candidates.extend(sorted(review_dir.glob("*_FINAL.pdf")))
     return _first_existing(candidates)
 
 

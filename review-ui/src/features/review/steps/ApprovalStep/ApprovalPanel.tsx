@@ -181,12 +181,19 @@ export function ApprovalPanel({
               {
                 onSuccess: () => {
                   if (changedFields.size > 0) {
-                    transition.mutate({
-                      target: "approved",
-                      actor: actor.trim(),
-                      changed_fields: Array.from(changedFields).sort(),
-                      warning_acknowledged: true,
-                    });
+                    transition.mutate(
+                      {
+                        target: "approved",
+                        actor: actor.trim(),
+                        changed_fields: Array.from(changedFields).sort(),
+                        warning_acknowledged: true,
+                      },
+                      {
+                        onError: () => {
+                          // transition.isError becomes true — error rendered below
+                        },
+                      },
+                    );
                   }
                 },
               },
@@ -199,6 +206,11 @@ export function ApprovalPanel({
         {finalize.isError && (
           <p className="text-xs text-danger">
             Final-PDF konnte nicht erzeugt werden.
+          </p>
+        )}
+        {transition.isError && (
+          <p className="text-xs text-danger">
+            Freigabe-Status konnte nicht gesetzt werden.
           </p>
         )}
       </div>

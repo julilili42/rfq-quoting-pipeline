@@ -100,9 +100,13 @@ def _pdf_text(path: Path) -> str:
         log.warning("PyMuPDF missing — fast-path skips PDF: %s", path.name)
         return ""
     parts: list[str] = []
-    with fitz.open(path) as doc:
-        for page in doc:
-            parts.append(page.get_text())
+    try:
+        with fitz.open(path) as doc:
+            for page in doc:
+                parts.append(page.get_text())
+    except Exception as exc:
+        log.warning("Fast-path could not read PDF %s: %s", path.name, exc)
+        return ""
     return "\n".join(parts)
 
 
@@ -114,7 +118,11 @@ def _xlsx_text(path: Path) -> str:
         log.warning("openpyxl missing — fast-path skips XLSX: %s", path.name)
         return ""
     parts: list[str] = []
-    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    try:
+        wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    except Exception as exc:
+        log.warning("Fast-path could not read XLSX %s: %s", path.name, exc)
+        return ""
     try:
         for sn in wb.sheetnames:
             ws = wb[sn]

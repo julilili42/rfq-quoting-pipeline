@@ -80,9 +80,9 @@ export function PositionsEditor({
 
   const matchesByPos = useMemo(() => {
     const map = new Map<number, MatchResult>();
-    for (const m of matches) map.set(m.pos_nr, m);
+    for (const m of activeMatches) map.set(m.pos_nr, m);
     return map;
-  }, [matches]);
+  }, [activeMatches]);
 
   const quotationByPos = useMemo(() => {
     const map = new Map<number, QuotationItem>();

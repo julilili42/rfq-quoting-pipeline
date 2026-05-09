@@ -69,13 +69,13 @@ def _exact_match(pos: Position, stammdaten: list[dict]) -> MatchResult | None:
     if not normalized:
         return None
     for row in stammdaten:
-        if _normalize(row["artikel_nr"]) == normalized:
+        if _normalize(row.get("artikel_nr", "")) == normalized:
             return MatchResult(
                 pos_nr=pos.pos_nr,
                 status="exact",
                 score=1.0,
-                matched_artikelnr=row["artikel_nr"],
-                matched_bezeichnung=row["bezeichnung"],
+                matched_artikelnr=row.get("artikel_nr", ""),
+                matched_bezeichnung=row.get("bezeichnung", ""),
                 matched_row=row,
             )
     return None
@@ -84,7 +84,7 @@ def _exact_match(pos: Position, stammdaten: list[dict]) -> MatchResult | None:
 def _fuzzy_match(pos: Position, stammdaten: list[dict], threshold: int) -> MatchResult | None:
     if not pos.artikelnummer:
         return None
-    artikel_nrs = [row["artikel_nr"] for row in stammdaten]
+    artikel_nrs = [row.get("artikel_nr", "") for row in stammdaten]
     hit = process.extractOne(pos.artikelnummer, artikel_nrs, scorer=fuzz.ratio)
     if not hit:
         return None
@@ -96,7 +96,7 @@ def _fuzzy_match(pos: Position, stammdaten: list[dict], threshold: int) -> Match
         status="fuzzy",
         score=score / 100.0,
         matched_artikelnr=nr,
-        matched_bezeichnung=stammdaten[idx]["bezeichnung"],
+        matched_bezeichnung=stammdaten[idx].get("bezeichnung", ""),
         matched_row=stammdaten[idx],
     )
 

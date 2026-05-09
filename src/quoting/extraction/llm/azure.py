@@ -61,4 +61,9 @@ class AzureClient(LLMClient):
                 total_tokens=getattr(u, "total_tokens", 0) or 0,
             )
 
+        if not resp.choices:
+            raise RuntimeError(
+                f"Azure returned no choices (model={self._model}). "
+                "Check API response for rate-limit or content-filter errors."
+            )
         return LLMResponse(text=resp.choices[0].message.content or "", usage=usage)

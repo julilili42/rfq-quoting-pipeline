@@ -8,6 +8,7 @@ Rules:
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from ..core import Anfrage, Position
 from ..matching import MatchResult
 from .discounts import volume_discount
 from .prices import load_prices
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -65,7 +68,14 @@ def build_quotation(
     warnungen: list[str] = []
     total = 0.0
 
-    for pos, match in zip(anfrage.positionen, matches):
+    if len(anfrage.positionen) != len(matches):
+        log.warning(
+            "Position/match count mismatch: %d positions vs %d matches — "
+            "trailing items will be silently dropped by zip.",
+            len(anfrage.positionen),
+            len(matches),
+        )
+    for pos, match in zip(anfrage.positionen, matches, strict=False):
         item, warnings = _build_item(pos, match, price_overrides)
         items.append(item)
         warnungen.extend(warnings)
@@ -143,7 +153,7 @@ def _calculate_item_prices(
     """Return (einzelpreis, rabatt, gesamtpreis, cost)."""
     if ist_zertifikat:
         einzelpreis = base_price + zkalk
-        return einzelpreis, 0.0, einzelpreis, base_price
+        return einzelpreis, 0.0, einzelpreis * menge, base_price * menge
     rabatt = volume_discount(menge)
     einzelpreis = base_price * (1 - rabatt) + zkalk
     return einzelpreis, rabatt, einzelpreis * menge, base_price * menge

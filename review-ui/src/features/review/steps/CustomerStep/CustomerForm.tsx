@@ -37,9 +37,8 @@ export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFo
 
   // Keep form values in sync with upstream changes (e.g. another step
   // saved Anfrage edits and we re-rendered from a fresh detail).
-  useEffect(() => {
-    form.reset(pickCustomerFields(anfrage));
-  }, [anfrage, form]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { form.reset(pickCustomerFields(anfrage)); }, [anfrage]);
 
   const commitField = (field: keyof CustomerFormValues) => {
     const fieldPath = field;

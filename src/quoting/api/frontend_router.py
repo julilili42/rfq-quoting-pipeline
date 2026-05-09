@@ -92,6 +92,53 @@ def _extract_summary_metrics(summary: dict) -> tuple[int, float, float, float]:
     return positions, total_eur, duration_s, match_rate
 
 
+def _accumulate_review_into(folder: Path, progress: dict, agg: dict, per_review: list) -> None:
+    """Accumulate one review's metrics into agg and append a row to per_review."""
+    agg["total_reviews"] += 1
+    if progress.get("status") == "completed":
+        agg["completed_reviews"] += 1
+
+    summary = (progress.get("result") or {}).get("summary") or {}
+    positions, total_eur, duration_s, match_rate = _extract_summary_metrics(summary)
+
+    agg["total_positions"] += positions
+    agg["total_eur"] += total_eur
+    if duration_s:
+        agg["sum_duration_s"] += duration_s
+        agg["reviews_with_duration"] += 1
+    if positions:
+        agg["sum_match_rate"] += match_rate
+        agg["reviews_with_match"] += 1
+
+    token_data = summary.get("token_usage")
+    token_row = None
+    if isinstance(token_data, dict):
+        agg["total_input_tokens"] += int(token_data.get("input_tokens") or 0)
+        agg["total_output_tokens"] += int(token_data.get("output_tokens") or 0)
+        agg["total_tokens"] += int(token_data.get("total_tokens") or 0)
+        agg["reviews_with_token_data"] += 1
+        token_row = token_data
+
+    extraction_path = summary.get("extraction_path")
+    if extraction_path == "fast_path":
+        agg["fast_path_hits"] += 1
+    elif extraction_path == "llm":
+        agg["llm_calls"] += 1
+
+    per_review.append({
+        "review_id": folder.name,
+        "subject": str(summary.get("subject") or ""),
+        "status": progress.get("status"),
+        "updated_at": str(progress.get("updated_at") or ""),
+        "positions": positions,
+        "match_rate": round(match_rate, 3),
+        "total_eur": total_eur,
+        "duration_s": duration_s,
+        "token_usage": token_row,
+        "extraction_path": extraction_path,
+    })
+
+
 def _format_mail_dict(mail_meta: dict) -> dict:
     return {
         "subject": str(mail_meta.get("subject") or ""),
@@ -138,50 +185,7 @@ def get_metrics() -> dict:
         progress = read_progress(folder)
         if progress is None:
             continue
-
-        agg["total_reviews"] += 1
-        if progress.get("status") == "completed":
-            agg["completed_reviews"] += 1
-
-        summary = (progress.get("result") or {}).get("summary") or {}
-        positions, total_eur, duration_s, match_rate = _extract_summary_metrics(summary)
-
-        agg["total_positions"] += positions
-        agg["total_eur"] += total_eur
-        if duration_s:
-            agg["sum_duration_s"] += duration_s
-            agg["reviews_with_duration"] += 1
-        if positions:
-            agg["sum_match_rate"] += match_rate
-            agg["reviews_with_match"] += 1
-
-        token_data = summary.get("token_usage")
-        token_row = None
-        if isinstance(token_data, dict):
-            agg["total_input_tokens"] += int(token_data.get("input_tokens") or 0)
-            agg["total_output_tokens"] += int(token_data.get("output_tokens") or 0)
-            agg["total_tokens"] += int(token_data.get("total_tokens") or 0)
-            agg["reviews_with_token_data"] += 1
-            token_row = token_data
-
-        extraction_path = summary.get("extraction_path")
-        if extraction_path == "fast_path":
-            agg["fast_path_hits"] += 1
-        elif extraction_path == "llm":
-            agg["llm_calls"] += 1
-
-        per_review.append({
-            "review_id": folder.name,
-            "subject": str(summary.get("subject") or ""),
-            "status": progress.get("status"),
-            "updated_at": str(progress.get("updated_at") or ""),
-            "positions": positions,
-            "match_rate": round(match_rate, 3),
-            "total_eur": total_eur,
-            "duration_s": duration_s,
-            "token_usage": token_row,
-            "extraction_path": extraction_path,
-        })
+        _accumulate_review_into(folder, progress, agg, per_review)
 
     reviews_with_duration = agg.pop("reviews_with_duration") or 1
     reviews_with_match = agg.pop("reviews_with_match") or 1
@@ -272,7 +276,7 @@ def get_review_attachment(review_id: str, filename: str) -> FileResponse:
     folder = _review_dir(review_id)
 
     safe_name = Path(filename).name
-    if not safe_name or safe_name != filename:
+    if not safe_name or safe_name != filename or safe_name in {".", ".."}:
         raise HTTPException(400, "Invalid filename")
 
     meta = load_mail_meta(folder) or {}
@@ -288,16 +292,7 @@ def get_review_attachment(review_id: str, filename: str) -> FileResponse:
     if not candidate.is_file():
         raise HTTPException(404, f"Attachment file '{safe_name}' missing on disk")
 
-    return FileResponse(
-        candidate,
-        media_type=_guess_media_type(candidate),
-        filename=candidate.name,
-        content_disposition_type="inline",
-        headers={
-            "Cache-Control": "no-store",
-            "Access-Control-Allow-Origin": "*",
-        },
-    )
+    return _file_response_inline(candidate)
 
 
 @router.get("/reviews/{review_id}/original")
@@ -322,16 +317,7 @@ def get_review_original(review_id: str) -> FileResponse:
     if candidate is None:
         raise HTTPException(404, "No original input file found for this review")
 
-    return FileResponse(
-        candidate,
-        media_type=_guess_media_type(candidate),
-        filename=candidate.name,
-        content_disposition_type="inline",
-        headers={
-            "Cache-Control": "no-store",
-            "Access-Control-Allow-Origin": "*",
-        },
-    )
+    return _file_response_inline(candidate)
 
 
 class TablePreview(BaseModel):
@@ -419,6 +405,8 @@ def _xlsx_preview(path: Path, sheet: str | None) -> TablePreview:
 
     excel = pd.ExcelFile(path)
     sheet_names = list(excel.sheet_names)
+    if not sheet_names:
+        raise HTTPException(422, "Excel file contains no sheets")
     active = sheet if sheet in sheet_names else sheet_names[0]
 
     df = pd.read_excel(excel, sheet_name=active)
@@ -726,6 +714,9 @@ def search_stammdaten(
             for record in sorted(records, key=lambda r: r.artikel_nr)[:limit]
         ]
 
+    if not records:
+        return []
+
     haystack = [
         f"{r.artikel_nr} {r.bezeichnung} {r.werkstoff or ''} {r.abmessungen or ''}".strip()
         for r in records
@@ -838,34 +829,42 @@ def _build_mail(input_path: Path) -> Mail:
     return mail_from_file(input_path)
 
 
-def _load_or_extract_anfrage(folder: Path, review_id: str) -> Anfrage:
-    candidates = (
-        folder / "anfrage_reviewed.json",
-        folder / "01_extracted.json",
-        folder / "pipeline" / "01_extracted.json",
-    )
-
-    for path in candidates:
-        data = read_json(path)
-        if isinstance(data, dict) and data.get("positionen") is not None:
-            return Anfrage.model_validate(data)
-
-    pipeline = _get_pipeline()
-    mail_meta = load_mail_meta(folder) or {}
-
+def _mail_from_meta(mail_meta: dict, folder: Path) -> Mail:
+    """Reconstruct a Mail object from stored mail.json metadata."""
     attachments = []
     for att in mail_meta.get("attachments") or []:
         if isinstance(att, dict) and att.get("name"):
             path = folder / Path(att["name"]).name
             if path.exists():
                 attachments.append(path)
-
-    mail = Mail(
+    return Mail(
         subject=str(mail_meta.get("subject") or ""),
         sender=str(mail_meta.get("from") or mail_meta.get("sender") or ""),
         body=str(mail_meta.get("body") or ""),
         attachments=attachments,
     )
+
+
+def _try_load_anfrage_from_disk(folder: Path) -> Anfrage | None:
+    """Return the first valid cached Anfrage from disk, or None if not found."""
+    for path in (
+        folder / "anfrage_reviewed.json",
+        folder / "01_extracted.json",
+        folder / "pipeline" / "01_extracted.json",
+    ):
+        data = read_json(path)
+        if isinstance(data, dict) and data.get("positionen") is not None:
+            return Anfrage.model_validate(data)
+    return None
+
+
+def _load_or_extract_anfrage(folder: Path, review_id: str) -> Anfrage:
+    cached = _try_load_anfrage_from_disk(folder)
+    if cached is not None:
+        return cached
+
+    pipeline = _get_pipeline()
+    mail = _mail_from_meta(load_mail_meta(folder) or {}, folder)
 
     from quoting.pipeline import StepContext
 
@@ -926,3 +925,13 @@ def _guess_media_type(path: Path) -> str:
         ".csv": "text/csv",
         ".tsv": "text/tab-separated-values",
     }.get(suffix, "application/octet-stream")
+
+
+def _file_response_inline(path: Path) -> FileResponse:
+    return FileResponse(
+        path,
+        media_type=_guess_media_type(path),
+        filename=path.name,
+        content_disposition_type="inline",
+        headers={"Cache-Control": "no-store", "Access-Control-Allow-Origin": "*"},
+    )

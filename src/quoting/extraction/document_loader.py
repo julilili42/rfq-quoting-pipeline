@@ -67,25 +67,23 @@ def _pdf_to_images(pdf_path: Path, dpi: int) -> list[dict[str, Any]]:
 
     with fitz.open(pdf_path) as doc:
         page_count = doc.page_count
-        if page_count <= 1:
-            # Single page: don't bother with the pool.
-            page = doc[0]
-            pix = page.get_pixmap(dpi=dpi)
+
+    if page_count <= 1:
+        with fitz.open(pdf_path) as doc:
+            pix = doc[0].get_pixmap(dpi=dpi)
             return [{"mime_type": "image/png", "data": pix.tobytes("png")}]
 
-        # Pre-bind references that the worker captures. We need to avoid
-        # passing the page across threads (fitz pages are tied to the
-        # document handle), so each worker fetches its own page from the
-        # shared document. The shared document is safe to read from
-        # multiple threads as long as we don't mutate it.
-        def _render(page_index: int) -> dict[str, Any]:
-            page = doc[page_index]
-            pix = page.get_pixmap(dpi=dpi)
+    # Each worker opens its own fitz.Document handle — PyMuPDF Document
+    # objects are not thread-safe; sharing one across threads causes
+    # sporadic SIGSEGV or corrupted pages.
+    def _render(page_index: int) -> dict[str, Any]:
+        with fitz.open(pdf_path) as d:
+            pix = d[page_index].get_pixmap(dpi=dpi)
             return {"mime_type": "image/png", "data": pix.tobytes("png")}
 
-        workers = min(_PDF_RENDER_MAX_WORKERS, page_count)
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            return list(pool.map(_render, range(page_count)))
+    workers = min(_PDF_RENDER_MAX_WORKERS, page_count)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(_render, range(page_count), timeout=120))
 
 
 def _image_to_part(img_path: Path) -> dict[str, Any]:

@@ -19,10 +19,14 @@ def load_prices(path: Path) -> dict[str, dict[str, float]]:
         reader = csv.DictReader(f)
         for row in reader:
             try:
-                prices[row["artikel_nr"]] = {
+                artikel_nr = row.get("artikel_nr")
+                if not artikel_nr:
+                    log.warning("Skipping price row missing artikel_nr: %s", row)
+                    continue
+                prices[artikel_nr] = {
                     "basispreis": float(row.get("basispreis_eur", 0) or 0),
                     "zkalk_offset": float(row.get("zkalk_offset_eur", 0) or 0),
                 }
-            except ValueError as e:
+            except (ValueError, KeyError) as e:
                 log.warning("Skipping malformed price row %s: %s", row, e)
     return prices

@@ -4,7 +4,6 @@ import base64
 import json
 import logging
 import os
-import shutil
 import traceback
 import uuid
 from pathlib import Path
@@ -44,7 +43,7 @@ from quoting.reviews import (
     find_draft_pdf,
     find_final_pdf,
     reset_review_artifacts,
-    saved_attachment_paths,
+    write_json,
 )
 
 from quoting.api.frontend_router import router as frontend_router
@@ -65,6 +64,13 @@ app.add_middleware(
 )
 app.include_router(frontend_router)
 _pipeline = QuotingPipeline()
+
+
+def _review_folder(review_id: str) -> Path:
+    folder = REVIEW_DIR / review_id
+    if not folder.exists():
+        raise HTTPException(404, f"Review {review_id} not found")
+    return folder
 
 
 # --------------------------------------------------------- request payloads
@@ -134,8 +140,6 @@ def create_review(
             "completed",
             "Mail und Anhänge gespeichert",
         )
-    except HTTPException:
-        raise
     except Exception as exc:
         fail_progress(folder, str(exc))
         raise HTTPException(400, f"Could not prepare mail: {exc}") from exc
@@ -152,9 +156,7 @@ def create_review(
 
 @app.get("/api/reviews/{review_id}/status")
 def get_review_status(review_id: str):
-    folder = REVIEW_DIR / review_id
-    if not folder.exists():
-        raise HTTPException(404, f"Review {review_id} not found")
+    folder = _review_folder(review_id)
     progress = read_progress(folder)
     if progress is None:
         raise HTTPException(404, f"Progress for review {review_id} not found")
@@ -163,35 +165,32 @@ def get_review_status(review_id: str):
 
 @app.get("/api/reviews/{review_id}/approval")
 def get_approval(review_id: str):
-    folder = REVIEW_DIR / review_id
-    if not folder.exists():
-        raise HTTPException(404, f"Review {review_id} not found")
+    folder = _review_folder(review_id)
     return load_approval(folder).to_dict()
 
 
 @app.post("/api/reviews/{review_id}/approval")
 def post_approval(review_id: str, payload: ApprovalTransitionRequest):
-    folder = REVIEW_DIR / review_id
-    if not folder.exists():
-        raise HTTPException(404, f"Review {review_id} not found")
-    if payload.target not in {"draft_generated", "reviewed", "approved", "ready_to_send"}:
+    folder = _review_folder(review_id)
+    if payload.target not in VALID_TRANSITIONS:
         raise HTTPException(400, f"Unknown target state: {payload.target}")
-    record = transition(
-        folder,
-        target=cast(ApprovalState, payload.target),
-        actor=payload.actor,
-        changed_fields=payload.changed_fields,
-        warning_acknowledged=payload.warning_acknowledged,
-    )
+    try:
+        record = transition(
+            folder,
+            target=cast(ApprovalState, payload.target),
+            actor=payload.actor,
+            changed_fields=payload.changed_fields,
+            warning_acknowledged=payload.warning_acknowledged,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return record.to_dict()
 
 
 @app.post("/api/reviews/{review_id}/reset")
 def reset_review(review_id: str, background_tasks: BackgroundTasks):
     """Reset a review and re-run the pipeline against the saved mail."""
-    folder = REVIEW_DIR / review_id
-    if not folder.exists():
-        raise HTTPException(404, f"Review {review_id} not found")
+    folder = _review_folder(review_id)
 
     reset_review_artifacts(folder, review_id)
 
@@ -221,9 +220,7 @@ def reset_review(review_id: str, background_tasks: BackgroundTasks):
 @app.get("/api/reviews/{review_id}/pdf")
 def get_review_pdf(review_id: str):
     """Return the most appropriate PDF — final if approved, else draft."""
-    folder = REVIEW_DIR / review_id
-    if not folder.exists():
-        raise HTTPException(404, f"Review {review_id} not found")
+    folder = _review_folder(review_id)
 
     pdf, _ = find_current_pdf(folder, review_id)
     if pdf is None:
@@ -234,9 +231,7 @@ def get_review_pdf(review_id: str):
 @app.get("/api/reviews/{review_id}/pdf/draft")
 def get_review_draft_pdf(review_id: str):
     """Always return the draft PDF (with the red AI warning banner)."""
-    folder = REVIEW_DIR / review_id
-    if not folder.exists():
-        raise HTTPException(404, f"Review {review_id} not found")
+    folder = _review_folder(review_id)
 
     pdf = find_draft_pdf(folder, review_id)
     if pdf is None:
@@ -247,9 +242,7 @@ def get_review_draft_pdf(review_id: str):
 @app.get("/api/reviews/{review_id}/pdf/final")
 def get_review_final_pdf(review_id: str):
     """Return the final PDF — only available after the user approves."""
-    folder = REVIEW_DIR / review_id
-    if not folder.exists():
-        raise HTTPException(404, f"Review {review_id} not found")
+    folder = _review_folder(review_id)
 
     pdf = find_final_pdf(folder, review_id)
     if pdf is None:
@@ -276,26 +269,13 @@ def _build_review_response(review_id: str, *, status: str) -> dict:
     }
 
 
-def _prepare_mail_payload(payload: MailReviewRequest, folder: Path) -> Mail:
-    meta = payload.model_dump(by_alias=True, exclude={"attachments"})
-    meta["attachments"] = [
-        {
-            key: value
-            for key, value in attachment.model_dump().items()
-            if key != "contentBase64"
-        }
-        for attachment in payload.attachments
-    ]
-    (folder / "mail.json").write_text(
-        json.dumps(meta, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-    saved_paths: list[Path] = []
-    for attachment in payload.attachments:
+def _decode_and_save_attachments(attachments: list, folder: Path) -> list[Path]:
+    """Decode base64 attachments and write them to folder. Returns saved paths."""
+    saved: list[Path] = []
+    for attachment in attachments:
         if not attachment.contentBase64:
             continue
-        safe_name = Path(attachment.name).name or f"attachment_{len(saved_paths)}"
+        safe_name = Path(attachment.name).name or f"attachment_{len(saved)}"
         target = folder / safe_name
         try:
             target.write_bytes(base64.b64decode(attachment.contentBase64))
@@ -304,7 +284,32 @@ def _prepare_mail_payload(payload: MailReviewRequest, folder: Path) -> Mail:
                 400,
                 f"Bad base64 in attachment '{attachment.name}': {exc}",
             ) from exc
-        saved_paths.append(target)
+        saved.append(target)
+    return saved
+
+
+def _attachment_paths_from_meta(attachments_meta: list, folder: Path) -> list[Path]:
+    """Resolve stored attachment metadata to existing file paths."""
+    paths: list[Path] = []
+    for entry in attachments_meta:
+        name = entry.get("name") if isinstance(entry, dict) else None
+        if not name:
+            continue
+        path = folder / Path(name).name
+        if path.exists():
+            paths.append(path)
+    return paths
+
+
+def _prepare_mail_payload(payload: MailReviewRequest, folder: Path) -> Mail:
+    meta = payload.model_dump(by_alias=True, exclude={"attachments"})
+    meta["attachments"] = [
+        {k: v for k, v in attachment.model_dump().items() if k != "contentBase64"}
+        for attachment in payload.attachments
+    ]
+    write_json(folder / "mail.json", meta)
+
+    saved_paths = _decode_and_save_attachments(payload.attachments, folder)
 
     mail = Mail(
         subject=payload.subject,
@@ -331,15 +336,7 @@ def _rehydrate_mail_from_disk(folder: Path) -> Mail:
     except Exception as exc:
         raise HTTPException(400, f"Could not parse mail.json: {exc}") from exc
 
-    attachments_meta = meta.get("attachments") or []
-    attachment_paths: list[Path] = []
-    for entry in attachments_meta:
-        name = entry.get("name") if isinstance(entry, dict) else None
-        if not name:
-            continue
-        path = folder / Path(name).name
-        if path.exists():
-            attachment_paths.append(path)
+    attachment_paths = _attachment_paths_from_meta(meta.get("attachments") or [], folder)
 
     mail = Mail(
         subject=str(meta.get("subject") or ""),
@@ -348,10 +345,7 @@ def _rehydrate_mail_from_disk(folder: Path) -> Mail:
         attachments=attachment_paths,
     )
     if not mail.has_content:
-        raise HTTPException(
-            400,
-            "Reset failed: mail has no body and no attachments on disk.",
-        )
+        raise HTTPException(400, "Reset failed: mail has no body and no attachments on disk.")
     return mail
 
 

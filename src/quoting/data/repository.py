@@ -159,13 +159,13 @@ def _record_from_row(row: dict) -> StammdatenRecord:
         werkstoff=_optional_str(row.get("werkstoff")),
         abmessungen=_optional_str(row.get("abmessungen")),
         einheit=str(row.get("einheit") or "ST").strip() or "ST",
-        basispreis_eur=_optional_float(row.get("basispreis_eur"), default=0.0) or 0.0,
-        zkalk_offset_eur=_optional_float(row.get("zkalk_offset_eur"), default=0.0) or 0.0,
+        basispreis_eur=_optional_float(row.get("basispreis_eur"), default=0.0),
+        zkalk_offset_eur=_optional_float(row.get("zkalk_offset_eur"), default=0.0),
         preis_min_eur=_optional_float(row.get("preis_min_eur")),
         preis_max_eur=_optional_float(row.get("preis_max_eur")),
         sales_group=_optional_str(row.get("sales_group")),
         material_group=_optional_str(row.get("material_group")),
-        n_offers=_optional_int(row.get("n_offers"), default=0) or 0,
+        n_offers=_optional_int(row.get("n_offers"), default=0),
     )
 
 

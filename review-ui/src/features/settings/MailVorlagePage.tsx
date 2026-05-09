@@ -1,9 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, FileText, Mail, RotateCcw, Save } from "lucide-react";
+import { AlertTriangle, FileText, Mail, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 
-import { Button } from "@/shared/components/ui/button";
 import {
   Card,
   CardContent,
@@ -17,6 +16,7 @@ import { Pill } from "@/shared/components/ui/pill";
 import { ErrorState } from "@/shared/components/feedback/ErrorState";
 import { LoadingState } from "@/shared/components/feedback/LoadingState";
 import { PageContainer } from "@/shared/components/layout/PageContainer";
+import { SaveBar } from "@/shared/components/forms/SaveBar";
 import { cn } from "@/shared/lib/cn";
 import {
   appSettingsSchema,
@@ -102,26 +102,16 @@ function MailVorlageForm({ initial, saving, saveSuccess, saveError, onSave }: Fo
 
   const isDirty = form.formState.isDirty;
 
-  // Refs for cursor-aware placeholder insertion
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const filenameRef = useRef<HTMLInputElement>(null);
 
-  const { ref: subjectRegRef, ...subjectRegProps } = form.register(
-    "workflow.email_subject_template",
-  );
-  const { ref: bodyRegRef, ...bodyRegProps } = form.register(
-    "workflow.email_body_template",
-  );
-  const { ref: filenameRegRef, ...filenameRegProps } = form.register(
-    "workflow.final_pdf_filename_template",
-  );
+  const { ref: subjectRegRef, ...subjectRegProps } = form.register("workflow.email_subject_template");
+  const { ref: bodyRegRef, ...bodyRegProps } = form.register("workflow.email_body_template");
+  const { ref: filenameRegRef, ...filenameRegProps } = form.register("workflow.final_pdf_filename_template");
 
   function insertAt(
-    fieldPath:
-      | "workflow.email_subject_template"
-      | "workflow.email_body_template"
-      | "workflow.final_pdf_filename_template",
+    fieldPath: "workflow.email_subject_template" | "workflow.email_body_template" | "workflow.final_pdf_filename_template",
     ref: React.RefObject<HTMLInputElement | HTMLTextAreaElement>,
     text: string,
   ) {
@@ -151,7 +141,7 @@ function MailVorlageForm({ initial, saving, saveSuccess, saveError, onSave }: Fo
       email: {
         Betreff: "Anfrage Hydraulikpumpe XL-200",
         Firma: "Musterfirma GmbH",
-        Absender: initial.company.contact_person || "Max Mustermann",
+        Absender: initial?.company?.contact_person ?? "Max Mustermann",
         Datum: new Date().toLocaleDateString("de-DE"),
       } as Record<string, string>,
       filename: {
@@ -166,7 +156,7 @@ function MailVorlageForm({ initial, saving, saveSuccess, saveError, onSave }: Fo
         })(),
       } as Record<string, string>,
     }),
-    [initial.company.contact_person],
+    [initial?.company?.contact_person],
   );
 
   const previewSubject = resolvePlaceholders(subject ?? "", sampleData.email);
@@ -178,12 +168,21 @@ function MailVorlageForm({ initial, saving, saveSuccess, saveError, onSave }: Fo
     ...findUnknownPlaceholders(body ?? "", EMAIL_PLACEHOLDERS),
   ].filter((v, i, a) => a.indexOf(v) === i);
 
-  const unknownFilename = findUnknownPlaceholders(
-    filename ?? "",
-    FILENAME_PLACEHOLDERS,
-  );
+  const unknownFilename = findUnknownPlaceholders(filename ?? "", FILENAME_PLACEHOLDERS);
 
-  const subjectLength = (subject ?? "").length;
+  // Merge react-hook-form refs with local cursor-tracking refs
+  const mergedSubjectRef = (el: HTMLInputElement | null) => {
+    subjectRegRef(el);
+    (subjectRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+  };
+  const mergedBodyRef = (el: HTMLTextAreaElement | null) => {
+    bodyRegRef(el);
+    (bodyRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el;
+  };
+  const mergedFilenameRef = (el: HTMLInputElement | null) => {
+    filenameRegRef(el);
+    (filenameRef as React.MutableRefObject<HTMLInputElement | null>).current = el;
+  };
 
   return (
     <form
@@ -191,200 +190,141 @@ function MailVorlageForm({ initial, saving, saveSuccess, saveError, onSave }: Fo
       onSubmit={form.handleSubmit((values: AppSettings) => onSave(values))}
     >
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
-        {/* ── Left: form fields ── */}
         <div className="space-y-5">
-          {/* E-Mail Vorlage */}
-          <SectionCard
-            icon={<Mail className="h-4 w-4" />}
-            title="E-Mail Vorlage"
-            description="Betreff und Text der Angebotsmail in Outlook"
+          <EmailTemplateSection
+            subjectProps={{ ...subjectRegProps, ref: mergedSubjectRef }}
+            bodyProps={{ ...bodyRegProps, ref: mergedBodyRef }}
+            subjectLength={(subject ?? "").length}
+            unknownEmail={unknownEmail}
+            onInsertSubject={(t) => insertAt("workflow.email_subject_template", subjectRef, t)}
+            onInsertBody={(t) => insertAt("workflow.email_body_template", bodyRef, t)}
             onReset={() => {
-              form.setValue(
-                "workflow.email_subject_template",
-                WORKFLOW_DEFAULTS.email_subject_template,
-                { shouldDirty: true },
-              );
-              form.setValue(
-                "workflow.email_body_template",
-                WORKFLOW_DEFAULTS.email_body_template,
-                { shouldDirty: true },
-              );
+              form.setValue("workflow.email_subject_template", WORKFLOW_DEFAULTS.email_subject_template, { shouldDirty: true });
+              form.setValue("workflow.email_body_template", WORKFLOW_DEFAULTS.email_body_template, { shouldDirty: true });
             }}
-          >
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs">Betreff</Label>
-                  <span
-                    className={cn(
-                      "text-[11px] tabular-nums",
-                      subjectLength > 60
-                        ? "font-medium text-warning"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {subjectLength}/60
-                  </span>
-                </div>
-                <Input
-                  {...subjectRegProps}
-                  ref={(el) => {
-                    subjectRegRef(el);
-                    (
-                      subjectRef as React.MutableRefObject<HTMLInputElement | null>
-                    ).current = el;
-                  }}
-                  placeholder="Angebot zu Ihrer Anfrage: [Betreff]"
-                />
-                <PlaceholderChips
-                  placeholders={EMAIL_PLACEHOLDERS}
-                  onInsert={(t) =>
-                    insertAt("workflow.email_subject_template", subjectRef, t)
-                  }
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs">Nachrichtentext</Label>
-                <textarea
-                  {...bodyRegProps}
-                  ref={(el) => {
-                    bodyRegRef(el);
-                    (
-                      bodyRef as React.MutableRefObject<HTMLTextAreaElement | null>
-                    ).current = el;
-                  }}
-                  rows={7}
-                  placeholder={"Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihre Anfrage…"}
-                  className="flex w-full resize-y rounded-md border border-input bg-surface px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px]"
-                />
-                <PlaceholderChips
-                  placeholders={EMAIL_PLACEHOLDERS}
-                  onInsert={(t) =>
-                    insertAt("workflow.email_body_template", bodyRef, t)
-                  }
-                />
-              </div>
-
-              {unknownEmail.length > 0 && (
-                <UnknownPlaceholderWarning placeholders={unknownEmail} />
-              )}
-            </div>
-          </SectionCard>
-
-          {/* Dateiname */}
-          <SectionCard
-            icon={<FileText className="h-4 w-4" />}
-            title="Dateiname finale PDF"
-            description="Name der PDF-Datei beim Finalisieren eines Angebots"
-            onReset={() =>
-              form.setValue(
-                "workflow.final_pdf_filename_template",
-                WORKFLOW_DEFAULTS.final_pdf_filename_template,
-                { shouldDirty: true },
-              )
-            }
-          >
-            <div className="space-y-1.5">
-              <Label className="text-xs">Dateiname-Vorlage</Label>
-              <Input
-                {...filenameRegProps}
-                ref={(el) => {
-                  filenameRegRef(el);
-                  (
-                    filenameRef as React.MutableRefObject<HTMLInputElement | null>
-                  ).current = el;
-                }}
-                placeholder="Angebot_[Kunde].pdf"
-              />
-              <PlaceholderChips
-                placeholders={FILENAME_PLACEHOLDERS}
-                onInsert={(t) =>
-                  insertAt(
-                    "workflow.final_pdf_filename_template",
-                    filenameRef,
-                    t,
-                  )
-                }
-              />
-              {unknownFilename.length > 0 && (
-                <UnknownPlaceholderWarning placeholders={unknownFilename} />
-              )}
-            </div>
-          </SectionCard>
-        </div>
-
-        {/* ── Right: live preview ── */}
-        <div className="xl:sticky xl:top-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Vorschau
-            </p>
-            <Pill tone="neutral" className="text-[10px]">
-              Beispieldaten
-            </Pill>
-          </div>
-
-          <EmailPreview
-            from={
-              initial.company.company_name ||
-              initial.company.contact_person ||
-              "Ihre Firma"
-            }
-            to={sampleData.email["Firma"]}
-            subject={previewSubject}
-            body={previewBody}
           />
-
-          <div className="rounded-lg border border-border bg-surface px-4 py-3">
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Dateiname
-            </p>
-            <p className="font-mono text-sm text-foreground break-all">
-              {previewFilename || (
-                <span className="italic text-muted-foreground">
-                  Kein Dateiname
-                </span>
-              )}
-            </p>
-          </div>
+          <FilenameTemplateSection
+            filenameProps={{ ...filenameRegProps, ref: mergedFilenameRef }}
+            unknownFilename={unknownFilename}
+            onInsertFilename={(t) => insertAt("workflow.final_pdf_filename_template", filenameRef, t)}
+            onReset={() => form.setValue("workflow.final_pdf_filename_template", WORKFLOW_DEFAULTS.final_pdf_filename_template, { shouldDirty: true })}
+          />
         </div>
+        <TemplatePreviewPanel
+          from={initial?.company?.company_name || initial?.company?.contact_person || "Ihre Firma"}
+          to={sampleData.email["Firma"]}
+          subject={previewSubject}
+          body={previewBody}
+          filename={previewFilename}
+        />
       </div>
-
-      {/* ── Save bar ── */}
-      <div className="sticky bottom-0 z-10 -mx-4 border-t border-border bg-background/90 px-4 py-3 backdrop-blur-sm sm:-mx-6 sm:px-6">
-        <div className="flex items-center justify-between gap-4">
-          <span
-            className={cn(
-              "text-xs text-muted-foreground transition-opacity",
-              isDirty ? "opacity-100" : "opacity-0",
-            )}
-          >
-            Ungespeicherte Änderungen
-          </span>
-          <div className="flex items-center gap-3">
-            {saveSuccess && !isDirty && (
-              <span className="text-xs font-medium text-success">
-                Gespeichert
-              </span>
-            )}
-            {saveError != null && (
-              <span className="text-xs font-medium text-danger">
-                Speichern fehlgeschlagen
-              </span>
-            )}
-            <Button
-              variant="primary"
-              type="submit"
-              disabled={saving || !isDirty}
-            >
-              <Save className="h-4 w-4" aria-hidden="true" />
-              {saving ? "Speichere…" : "Speichern"}
-            </Button>
-          </div>
-        </div>
-      </div>
+      <SaveBar isDirty={isDirty} saving={saving} saveSuccess={saveSuccess} saveError={saveError} />
     </form>
+  );
+}
+
+function EmailTemplateSection({
+  subjectProps,
+  bodyProps,
+  subjectLength,
+  unknownEmail,
+  onInsertSubject,
+  onInsertBody,
+  onReset,
+}: {
+  subjectProps: React.InputHTMLAttributes<HTMLInputElement> & { ref: (el: HTMLInputElement | null) => void };
+  bodyProps: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { ref: (el: HTMLTextAreaElement | null) => void };
+  subjectLength: number;
+  unknownEmail: string[];
+  onInsertSubject: (text: string) => void;
+  onInsertBody: (text: string) => void;
+  onReset: () => void;
+}) {
+  return (
+    <SectionCard
+      icon={<Mail className="h-4 w-4" />}
+      title="E-Mail Vorlage"
+      description="Betreff und Text der Angebotsmail in Outlook"
+      onReset={onReset}
+    >
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Betreff</Label>
+            <span className={cn("text-[11px] tabular-nums", subjectLength > 60 ? "font-medium text-warning" : "text-muted-foreground")}>
+              {subjectLength}/60
+            </span>
+          </div>
+          <Input {...subjectProps} placeholder="Angebot zu Ihrer Anfrage: [Betreff]" />
+          <PlaceholderChips placeholders={EMAIL_PLACEHOLDERS} onInsert={onInsertSubject} />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Nachrichtentext</Label>
+          <textarea
+            {...bodyProps}
+            rows={7}
+            placeholder={"Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihre Anfrage…"}
+            className="flex w-full resize-y rounded-md border border-input bg-surface px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px]"
+          />
+          <PlaceholderChips placeholders={EMAIL_PLACEHOLDERS} onInsert={onInsertBody} />
+        </div>
+        {unknownEmail.length > 0 && <UnknownPlaceholderWarning placeholders={unknownEmail} />}
+      </div>
+    </SectionCard>
+  );
+}
+
+function FilenameTemplateSection({
+  filenameProps,
+  unknownFilename,
+  onInsertFilename,
+  onReset,
+}: {
+  filenameProps: React.InputHTMLAttributes<HTMLInputElement> & { ref: (el: HTMLInputElement | null) => void };
+  unknownFilename: string[];
+  onInsertFilename: (text: string) => void;
+  onReset: () => void;
+}) {
+  return (
+    <SectionCard
+      icon={<FileText className="h-4 w-4" />}
+      title="Dateiname finale PDF"
+      description="Name der PDF-Datei beim Finalisieren eines Angebots"
+      onReset={onReset}
+    >
+      <div className="space-y-1.5">
+        <Label className="text-xs">Dateiname-Vorlage</Label>
+        <Input {...filenameProps} placeholder="Angebot_[Kunde].pdf" />
+        <PlaceholderChips placeholders={FILENAME_PLACEHOLDERS} onInsert={onInsertFilename} />
+        {unknownFilename.length > 0 && <UnknownPlaceholderWarning placeholders={unknownFilename} />}
+      </div>
+    </SectionCard>
+  );
+}
+
+function TemplatePreviewPanel({
+  from, to, subject, body, filename,
+}: {
+  from: string;
+  to: string;
+  subject: string;
+  body: string;
+  filename: string;
+}) {
+  return (
+    <div className="xl:sticky xl:top-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vorschau</p>
+        <Pill tone="neutral" className="text-[10px]">Beispieldaten</Pill>
+      </div>
+      <EmailPreview from={from} to={to} subject={subject} body={body} />
+      <div className="rounded-lg border border-border bg-surface px-4 py-3">
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Dateiname</p>
+        <p className="font-mono text-sm text-foreground break-all">
+          {filename || <span className="italic text-muted-foreground">Kein Dateiname</span>}
+        </p>
+      </div>
+    </div>
   );
 }
 

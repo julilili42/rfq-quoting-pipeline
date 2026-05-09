@@ -93,7 +93,6 @@ export function DashboardPage() {
             filteredCount={filtered.length}
           />
           <ReviewList
-            key={`${status}-${query}-${datePreset}-${sortBy}`}
             reviews={filtered}
           />
         </section>

@@ -86,7 +86,7 @@ class MatchingStep:
             ctx.report(self.name, "failed", str(exc))
             raise
 
-        for pos, m in zip(anfrage.positionen, matches):
+        for pos, m in zip(anfrage.positionen, matches, strict=False):
             log.info("  Pos %d: %s (score %.2f)", pos.pos_nr, m.status, m.score)
 
         ctx.persist("02_matches.json", [m.to_dict() for m in matches])

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import logging
 _log = logging.getLogger("quoting.progress_store")
 
 PIPELINE_STEPS = [
@@ -57,7 +57,7 @@ def init_progress(review_dir: Path, review_id: str) -> dict[str, Any]:
                 "name": step_name,
                 "status": "running" if step_name == "Mail vorbereiten" else "pending",
                 "detail": "Review wird vorbereitet" if step_name == "Mail vorbereiten" else "",
-                "updated_at": _now_iso() if step_name == "Mail vorbereiten" else None,
+                "updated_at": now if step_name == "Mail vorbereiten" else None,
             }
             for step_name in PIPELINE_STEPS
         ],

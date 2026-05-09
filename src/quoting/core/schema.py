@@ -57,8 +57,12 @@ class Position(BaseModel):
     @field_validator("menge", mode="before")
     @classmethod
     def _coerce_menge(cls, v) -> float:
+        if v is None:
+            return 0.0
         if isinstance(v, str):
             v = v.replace(",", ".").strip()
+            if not v:
+                return 0.0
         return float(v)
 
     @field_validator("einheit", mode="before")
