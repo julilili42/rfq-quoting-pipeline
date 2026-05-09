@@ -25,6 +25,14 @@ function resolvePlaceholders(
   return result;
 }
 
+function plainTextToHtml(text: string): string {
+  if (/<[a-z][\s\S]*>/i.test(text)) return text;
+  return text
+    .split("\n\n")
+    .map(para => `<p>${para.split("\n").join("<br/>")}</p>`)
+    .join("");
+}
+
 export async function createDraftMail(
   result: CreateReviewResponse,
   mail: DraftMailContext,
@@ -51,7 +59,7 @@ export async function createDraftMail(
     "<p>Sehr geehrte Damen und Herren,</p><p>vielen Dank für Ihre Anfrage. Anbei erhalten Sie unser Angebot.</p><p>Mit freundlichen Grüßen<br/>[Absender]</p>";
 
   const subject = resolvePlaceholders(subjectTemplate, placeholders);
-  const htmlBody = resolvePlaceholders(bodyTemplate, placeholders);
+  const htmlBody = plainTextToHtml(resolvePlaceholders(bodyTemplate, placeholders));
 
   const finalPdfUrl =
     result.final_pdf_url ??

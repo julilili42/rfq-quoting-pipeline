@@ -39,6 +39,7 @@ def find_draft_pdf(review_dir: Path, review_id: str | None = None) -> Path | Non
         candidates.append(review_dir / draft_pdf_filename(review_id))
     candidates.append(review_dir / "draft_angebot.pdf")
     candidates.extend(sorted(review_dir.glob("*_ANGEBOT_DRAFT.pdf")))
+    candidates.extend(sorted(review_dir.glob("*/*_ANGEBOT_DRAFT.pdf")))
     return _first_existing(candidates)
 
 

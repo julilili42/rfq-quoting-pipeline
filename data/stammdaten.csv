@@ -5512,3 +5512,6 @@ artikel_nr,bezeichnung,werkstoff,abmessungen,einheit,basispreis_eur,zkalk_offset
 70009966,Rohl. WKZ 20x172 Pr.H. HS 21037 EM,,20x172,STK,48.7997,0.0,48.7997,48.7997,VG 20 - Mobility,,1
 70049607,Dralleinsatz SZ14 PE 1000,PE,,ST,438.235,0.0,321.86,619.78,VG 35 - Distribution,Distribution,6
 70393085,Kolbenring gasdicht Ø 111 HS21037,,,STK,25.2893,0.0,20.615,29.9636,,Compressor,2
+001GLP108015,"Gleitstück für Wiegenträger nach Zeichnung 01Z3/00124820-04.61, Ersatz für 198-01Z3/00812769-04.61","PTFE mit 15% Graphit","Ø108 x 15 mm, ca. 0.30 kg","Stück",24.50,3.50,18.00,34.00,"Gleit-/Dichtungsteile","PTFE gefüllt",3
+002GLS082003,"Gleitstück für Wiegenträger nach Zeichnung 3 Fwp 291.0.04.082.003, ohne Beschriftung","PTFE mit 20% Glasfaser und 5% Graphit oder PTFE mit 35% Kohle und 2% Graphit","Ø108 x 15 mm, ca. 0.30 kg","Stück",27.50,4.00,20.00,39.00,"Gleit-/Dichtungsteile","PTFE gefüllt",3
+001APZ00031B,"Abnahmeprüfzeugnis nach DIN EN 10204:2005-01 3.1 für Endprodukt pro Charge","Prüfung / Dokumentation","pro Charge","Stück",95.00,0.00,50.00,160.00,"Dokumentation","Prüfzeugnis 3.1",4
