@@ -1,7 +1,9 @@
 import { Maximize2 } from "lucide-react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 
 import { Button } from "@/shared/components/ui/button";
+import { ShortcutHint } from "@/shared/components/ui/ShortcutHint";
 import { isApproved } from "@/shared/schemas/approval";
 
 import { useApproval } from "../../hooks/useApproval";
@@ -39,16 +41,18 @@ export function ApprovalStep() {
   const approval = useApproval(reviewId);
   const gate = useQualityGate(detail);
 
-  if (!reviewId) return null;
-
-  const approved = isApproved(approval.data);
-  const firstAttachment = detail.mail.attachments[0]?.name;
-
   const enterFocus = () => {
     const next = new URLSearchParams(params);
     next.set("focus", "1");
     navigate({ search: next.toString() });
   };
+
+  useHotkeys("alt+f", enterFocus, { enabled: !focusMode, preventDefault: true });
+
+  if (!reviewId) return null;
+
+  const approved = isApproved(approval.data);
+  const firstAttachment = detail.mail.attachments[0]?.name;
 
   if (focusMode) {
     return (
@@ -76,10 +80,13 @@ export function ApprovalStep() {
         <div>
           <h2 className="section-label mb-1">Vergleich</h2>
         </div>
-        <Button variant="secondary" size="sm" onClick={enterFocus}>
-          <Maximize2 className="h-4 w-4" aria-hidden="true" />
-          Vollbild
-        </Button>
+        <div className="group relative">
+          <Button variant="secondary" size="sm" onClick={enterFocus}>
+            <Maximize2 className="h-4 w-4" aria-hidden="true" />
+            Vollbild
+          </Button>
+          <ShortcutHint keys={["Alt", "F"]} />
+        </div>
       </header>
 
       <ComparePanes

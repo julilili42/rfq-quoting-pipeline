@@ -1,15 +1,13 @@
 import { Outlet } from "react-router-dom";
-import { KeyboardHintsOverlay } from "@/shared/components/ui/KeyboardHintsOverlay";
 import { Sidebar } from "./Sidebar";
 
 export function AppShell() {
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar />
-      <main className="flex-1 overflow-x-hidden">
+      <main className="flex-1 overflow-y-auto">
         <Outlet />
       </main>
-      <KeyboardHintsOverlay />
     </div>
   );
 }

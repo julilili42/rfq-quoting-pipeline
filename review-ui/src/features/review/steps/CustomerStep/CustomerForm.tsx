@@ -1,9 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
+import { useHotkeys } from "react-hotkeys-hook";
 
 import { FormField } from "@/shared/components/ui/FormField";
 import { Input } from "@/shared/components/ui/input";
+import { ShortcutHint } from "@/shared/components/ui/ShortcutHint";
 import { useReviewUiStore } from "@/features/review/stores/reviewUiStore";
 import type { Anfrage, Evidence } from "@/shared/schemas/anfrage";
 import { Button } from "@/shared/components/ui/button";
@@ -76,6 +78,11 @@ export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFo
   saveAndRegenerate.mutate({ anfrage: next });
 };
 
+  useHotkeys("alt+h", fillToday, {
+    enabled: !saveAndRegenerate.isPending,
+    preventDefault: true,
+  });
+
   return (
     <section className="space-y-6">
       <div>
@@ -135,14 +142,17 @@ export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFo
                 onBlur={() => commitField("datum")}
                 placeholder="z. B. 15.03.2024"
               />
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={fillToday}
-                disabled={saveAndRegenerate.isPending}
-              >
-                Heute
-              </Button>
+              <div className="group relative">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={fillToday}
+                  disabled={saveAndRegenerate.isPending}
+                >
+                  Heute
+                </Button>
+                <ShortcutHint keys={["Alt", "H"]} />
+              </div>
             </div>
           </FormField>
         </div>

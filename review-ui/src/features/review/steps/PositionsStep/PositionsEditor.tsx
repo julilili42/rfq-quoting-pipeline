@@ -1,8 +1,10 @@
 import * as Accordion from "@radix-ui/react-accordion";
 import { Plus } from "lucide-react";
 import { useCallback, useMemo, useRef } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 
 import { Button } from "@/shared/components/ui/button";
+import { ShortcutHint } from "@/shared/components/ui/ShortcutHint";
 import { useReviewUiStore } from "@/features/review/stores/reviewUiStore";
 import type { Anfrage, Evidence, Position } from "@/shared/schemas/anfrage";
 import type { MatchResult } from "@/shared/schemas/matchResult";
@@ -182,6 +184,11 @@ export function PositionsEditor({
     });
   }, [anfrage, saveAndRegenerate, trackChange]);
 
+  useHotkeys("alt+n", handleAddPosition, {
+    enabled: !saveAndRegenerate.isPending,
+    preventDefault: true,
+  });
+
   // Open all newly-added positions by default. Existing positions stay
   // collapsed (matching the historical Streamlit behaviour).
   const defaultOpenValues = useMemo(
@@ -240,15 +247,18 @@ export function PositionsEditor({
       </Accordion.Root>
 
       <div className="flex justify-center pt-2">
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={handleAddPosition}
-          disabled={saveAndRegenerate.isPending}
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          Neue Position hinzufügen
-        </Button>
+        <div className="group relative">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleAddPosition}
+            disabled={saveAndRegenerate.isPending}
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Neue Position hinzufügen
+          </Button>
+          <ShortcutHint keys={["Alt", "N"]} />
+        </div>
       </div>
     </section>
   );

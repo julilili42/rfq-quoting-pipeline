@@ -7,15 +7,15 @@
   xsi:type="MailApp">
 
   <Id>42D1A4DE-45A6-4B74-AAA7-7F35D9A0F780</Id>
-  <Version>1.2.2.0</Version>
+  <Version>1.2.3.0</Version>
   <ProviderName>Business and AI</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
 
   <DisplayName DefaultValue="Quotation Assistant"/>
   <Description DefaultValue="Analyze RFQs and generate draft quotations directly inside Outlook."/>
 
-  <IconUrl DefaultValue="https://raw.githubusercontent.com/julilili42/Business-and-AI/main/outlook-ui/public/outlook_logo_64.png"/>
-  <HighResolutionIconUrl DefaultValue="https://raw.githubusercontent.com/julilili42/Business-and-AI/main/outlook-ui/public/outlook_logo_128.png"/>
+  <IconUrl DefaultValue="https://localhost:5173/outlook_logo_64.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:5173/outlook_logo_128.png"/>
 
   <SupportUrl DefaultValue="https://your-domain.com"/>
 
@@ -127,9 +127,9 @@
 
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://raw.githubusercontent.com/julilili42/Business-and-AI/main/outlook-ui/public/outlook_logo_16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://raw.githubusercontent.com/julilili42/Business-and-AI/main/outlook-ui/public/outlook_logo_32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://raw.githubusercontent.com/julilili42/Business-and-AI/main/outlook-ui/public/outlook_logo_80.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="https://localhost:5173/outlook_logo_16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://localhost:5173/outlook_logo_32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://localhost:5173/outlook_logo_80.png"/>
       </bt:Images>
 
       <bt:Urls>
