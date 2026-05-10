@@ -694,6 +694,11 @@ class StammdatenHit(BaseModel):
     abmessungen: str | None = None
     einheit: str = "ST"
     basispreis_eur: float = 0.0
+    preis_min_eur: float = 0.0
+    preis_max_eur: float = 0.0
+    n_offers: int = 0
+    sales_group: str | None = None
+    material_group: str | None = None
     score: float = 1.0
 
 
@@ -716,6 +721,11 @@ def search_stammdaten(
 
     if not records:
         return []
+
+    # Exact artikel_nr match — return immediately without fuzzy scoring
+    exact = next((r for r in records if r.artikel_nr == query), None)
+    if exact:
+        return [_record_to_hit(exact, score=1.0)]
 
     haystack = [
         f"{r.artikel_nr} {r.bezeichnung} {r.werkstoff or ''} {r.abmessungen or ''}".strip()
@@ -748,6 +758,11 @@ def _record_to_hit(record: Any, *, score: float) -> StammdatenHit:
         abmessungen=record.abmessungen,
         einheit=record.einheit,
         basispreis_eur=record.basispreis_eur,
+        preis_min_eur=record.preis_min_eur or 0.0,
+        preis_max_eur=record.preis_max_eur or 0.0,
+        n_offers=record.n_offers or 0,
+        sales_group=record.sales_group or None,
+        material_group=record.material_group or None,
         score=score,
     )
 

@@ -25,7 +25,6 @@ class Position(BaseModel):
     bezeichnung: str = ""
     menge: float
     einheit: str
-    liefertermin: str | None = None
     lieferzeit: str | None = None
     lieferwerk: str | None = None
     werkstoff: str | None = None

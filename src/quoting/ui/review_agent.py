@@ -40,7 +40,7 @@ def detect_agent_language(email_text: str, fallback_text: str = "") -> str:
         lower.count(w)
         for w in (
             " und ", " der ", " die ", " das ", " mit ", " fuer ", " für ",
-            "anfrage", "angebot", "liefertermin", "menge", "artikel",
+            "anfrage", "angebot", "lieferzeit", "menge", "artikel",
         )
     )
     en_hits = sum(

@@ -251,11 +251,12 @@ def main() -> None:
 
         if tunnel_proc is not None and tunnel_proc.poll() is not None:
             print(
-                f"[launcher] cloudflared exited with code {tunnel_proc.returncode}",
+                f"[launcher] cloudflared exited with code {tunnel_proc.returncode}. "
+                "Continuing without tunnel — API is still available at "
+                f"{local_url}",
                 flush=True,
             )
-            shutdown()
-            sys.exit(tunnel_proc.returncode or 0)
+            tunnel_proc = None
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ const CYRILLIC_RE = /[А-Яа-яЁё]/;
 
 const DE_HINTS = [
   " und ", " der ", " die ", " das ", " mit ", " für ",
-  "anfrage", "angebot", "liefertermin", "menge", "artikel",
+  "anfrage", "angebot", "lieferzeit", "menge", "artikel",
 ];
 const EN_HINTS = [
   " and ", " the ", " with ", "request", "quotation",

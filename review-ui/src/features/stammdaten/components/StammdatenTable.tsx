@@ -31,7 +31,7 @@ export function StammdatenTable({ rows, onRowClick }: StammdatenTableProps) {
         header: "Artikel-Nr.",
         accessorKey: "artikel_nr",
         cell: ({ getValue }) => (
-          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] group-hover:text-brand">
             {String(getValue() ?? "")}
           </code>
         ),
@@ -113,7 +113,7 @@ export function StammdatenTable({ rows, onRowClick }: StammdatenTableProps) {
                 key={row.id}
                 className={
                   onRowClick
-                    ? "cursor-pointer hover:bg-muted/60"
+                    ? "group cursor-pointer border-b border-border last:border-0 transition-colors hover:bg-surface-sunk"
                     : i % 2 === 0
                       ? "bg-surface"
                       : "bg-muted/30"

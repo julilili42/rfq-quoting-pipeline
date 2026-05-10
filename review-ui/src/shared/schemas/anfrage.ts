@@ -27,7 +27,6 @@ export const positionSchema = z
     bezeichnung: z.string().default(""),
     menge: z.number(),
     einheit: z.string(),
-    liefertermin: z.string().nullable().optional(),
     lieferzeit: z.string().nullable().optional(),
     lieferwerk: z.string().nullable().optional(),
     werkstoff: z.string().nullable().optional(),

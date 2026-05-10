@@ -31,7 +31,8 @@ function resolveFilenameTemplate(template: string, customerName: string): string
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   return template
     .replace("[Kunde]", customerName || "Kunde")
-    .replace("[Datum]", today);
+    .replace("[Datum]", today)
+    .replace(/ /g, "_");
 }
 
 export function ApprovalPanel({

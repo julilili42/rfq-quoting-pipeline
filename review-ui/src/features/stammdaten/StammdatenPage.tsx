@@ -6,8 +6,10 @@ import { LoadingState } from "@/shared/components/feedback/LoadingState";
 import { Input } from "@/shared/components/ui/input";
 import { PageContainer } from "@/shared/components/layout/PageContainer";
 import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue";
+import type { StammdatenRow } from "@/shared/schemas/stammdaten";
 
 import { useStammdatenSearch } from "../review/hooks/useStammdaten";
+import { StammdatenDetailDialog } from "./components/StammdatenDetailDialog";
 import { StammdatenTable } from "./components/StammdatenTable";
 
 /**
@@ -22,6 +24,7 @@ import { StammdatenTable } from "./components/StammdatenTable";
 export function StammdatenPage() {
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query, 250);
+  const [selectedRow, setSelectedRow] = useState<StammdatenRow | null>(null);
   const { data, isLoading, isError, error } = useStammdatenSearch(
     debouncedQuery,
     true,
@@ -76,8 +79,14 @@ export function StammdatenPage() {
               </span>
             )}
           </p>
-          <StammdatenTable rows={data} />
+          <StammdatenTable rows={data} onRowClick={setSelectedRow} />
         </>
+      )}
+      {selectedRow && (
+        <StammdatenDetailDialog
+          row={selectedRow}
+          onClose={() => setSelectedRow(null)}
+        />
       )}
     </PageContainer>
   );

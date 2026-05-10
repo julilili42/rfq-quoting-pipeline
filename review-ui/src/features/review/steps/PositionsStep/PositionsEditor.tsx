@@ -163,7 +163,6 @@ export function PositionsEditor({
       bezeichnung: "",
       menge: 1,
       einheit: "Stk",
-      liefertermin: null,
       lieferzeit: null,
       lieferwerk: null,
       werkstoff: null,
