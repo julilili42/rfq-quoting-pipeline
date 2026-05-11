@@ -75,7 +75,6 @@ class Position(BaseModel):
 class Anfrage(BaseModel):
     """Complete parsed RFQ."""
 
-    vorgangsnummer: str | None = None
     belegnummer: str | None = None
     datum: str | None = None
     kunde_firma: str | None = None

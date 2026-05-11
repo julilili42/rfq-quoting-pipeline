@@ -38,7 +38,6 @@ const FILENAME_PLACEHOLDERS = [
   "Datum",
   "Belegnummer",
   "Kundennummer",
-  "Vorgangsnummer",
 ];
 
 const WORKFLOW_DEFAULTS = workflowPreferencesSchema.parse({});
@@ -148,7 +147,6 @@ function MailVorlageForm({ initial, saving, saveSuccess, saveError, onSave }: Fo
         Kunde: "Musterfirma GmbH",
         Belegnummer: "A-2026-0042",
         Kundennummer: "K-10234",
-        Vorgangsnummer: "V-5501",
         Ansprechpartner: "Erika Musterfrau",
         Datum: (() => {
           const d = new Date();

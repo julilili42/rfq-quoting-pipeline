@@ -47,7 +47,6 @@ export type Position = z.infer<typeof positionSchema>;
 
 export const anfrageSchema = z
   .object({
-    vorgangsnummer: z.string().nullable().optional(),
     belegnummer: z.string().nullable().optional(),
     datum: z.string().nullable().optional(),
     kunde_firma: z.string().nullable().optional(),

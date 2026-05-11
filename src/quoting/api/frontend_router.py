@@ -584,7 +584,7 @@ def _resolve_filename_template(template: str, anfrage: Any, review_id: str) -> s
         .replace('[Kunde]', _field('kunde_firma') or review_id)
         .replace('[Belegnummer]', _field('belegnummer'))
         .replace('[Kundennummer]', _field('kundennummer'))
-        .replace('[Vorgangsnummer]', _field('vorgangsnummer'))
+
         .replace('[Ansprechpartner]', _field('kunde_ansprechpartner'))
         .replace('[Datum]', today)
     )

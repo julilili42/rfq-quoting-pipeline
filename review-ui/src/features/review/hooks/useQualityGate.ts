@@ -182,16 +182,7 @@ function evaluate(detail: ReviewDetail | undefined): QualityGateResult {
         description: "",
       });
     }
-    if (!(a.vorgangsnummer ?? "").trim()) {
-      warnings.push({
-        id: "vorgangsnummer-missing",
-        severity: "warning",
-        step: "customer",
-        title: "Vorgangsnummer fehlt",
-        description: "",
-      });
-    }
-    if (!(a.datum ?? "").trim()) {
+if (!(a.datum ?? "").trim()) {
       warnings.push({
         id: "datum-missing",
         severity: "warning",
