@@ -103,6 +103,16 @@ export function PositionsEditor({
     return map;
   }, [overrides]);
 
+  const discountDisabledByPos = useMemo(() => {
+    const set = new Set<number>();
+    for (const o of overrides) {
+      if (o.target === "pos" && o.mode === "disable_volume_discount") {
+        set.add(o.pos_nr);
+      }
+    }
+    return set;
+  }, [overrides]);
+
   const handlePositionChange = useCallback(
     (next: Position, original: Position) => {
       if (JSON.stringify(next) === JSON.stringify(original)) return;
@@ -121,6 +131,18 @@ export function PositionsEditor({
     (override: ManualOverride | null) => {
       if (!override) return;
       const updated = upsertOverride(overrides, override);
+      saveAndRegenerate.mutate({ overrides: updated });
+    },
+    [overrides, saveAndRegenerate],
+  );
+
+  const handleDisableDiscountChange = useCallback(
+    (posNr: number, disabled: boolean) => {
+      const updated = disabled
+        ? upsertOverride(overrides, { target: "pos", pos_nr: posNr, mode: "disable_volume_discount" })
+        : overrides.filter(
+            (o) => !(o.target === "pos" && o.mode === "disable_volume_discount" && o.pos_nr === posNr),
+          );
       saveAndRegenerate.mutate({ overrides: updated });
     },
     [overrides, saveAndRegenerate],
@@ -236,9 +258,11 @@ export function PositionsEditor({
             match={matchesByPos.get(position.pos_nr)}
             quotationItem={quotationByPos.get(position.pos_nr)}
             unitPriceOverride={unitPriceOverrideByPos.get(position.pos_nr)}
+            discountDisabled={discountDisabledByPos.has(position.pos_nr)}
             defaultOpen={newlyAddedRef.current.has(position.pos_nr)}
             onPositionChange={(next) => handlePositionChange(next, position)}
             onUnitPriceChange={handleUnitPriceChange}
+            onDiscountDisabledChange={(disabled) => handleDisableDiscountChange(position.pos_nr, disabled)}
             onFieldEdit={trackChange}
             onDelete={() => handleDeletePosition(position.pos_nr)}
             onEvidenceSelect={onEvidenceSelect}

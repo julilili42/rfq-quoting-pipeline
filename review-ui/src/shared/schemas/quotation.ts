@@ -12,7 +12,7 @@ export const quotationItemSchema = z
     menge: z.number(),
     einheit: z.string(),
     einzelpreis: z.number(),
-    rabatt_prozent: z.number(),
+    rabatt_prozent: z.number().optional().default(0),
     gesamtpreis: z.number(),
     bemerkung: z.string().default(""),
     basispreis_eur: z.number().default(0),
@@ -67,6 +67,12 @@ export const manualOverrideSchema = z.union([
     pos_nr: z.number().int(),
     mode: z.literal("discount_pct"),
     discount_pct: z.number(),
+  }),
+
+  z.object({
+    target: z.literal("pos"),
+    pos_nr: z.number().int(),
+    mode: z.literal("disable_volume_discount"),
   }),
 
   z.object({

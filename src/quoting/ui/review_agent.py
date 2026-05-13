@@ -337,9 +337,24 @@ def apply_manual_overrides(
         if x.get("target") == "artikel" and x.get("mode", "discount_pct") == "discount_pct" and "artikel_nr" in x and "discount_pct" in x
     }
 
+    disable_vol_disc = {
+        int(x["pos_nr"])
+        for x in overrides
+        if x.get("target") == "pos"
+        and x.get("mode") == "disable_volume_discount"
+        and "pos_nr" in x
+    }
+
     applied = 0
     for item in quotation.items:
         is_certificate = bool(cert_by_pos.get(item.pos_nr, False))
+
+        if item.pos_nr in disable_vol_disc and item.rabatt_prozent > 0 and not is_certificate:
+            rabatt_fraction = item.rabatt_prozent / 100.0
+            item.einzelpreis = round(item.einzelpreis + item.basispreis_eur * rabatt_fraction, 2)
+            item.gesamtpreis = round(item.einzelpreis * item.menge, 2)
+            item.rabatt_prozent = 0.0
+            applied += 1
 
         fixed_total = None
         if item.pos_nr in by_pos_total:

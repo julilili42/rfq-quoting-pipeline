@@ -15,7 +15,6 @@ import { ApprovalSummary } from "./ApprovalSummary";
 import { ComparePanes } from "./ComparePanes";
 import { FocusToolbar } from "./FocusToolbar";
 import { QualityGatePanel } from "./QualityGatePanel";
-import { AgentChat } from "./agent/AgentChat";
 
 /**
  * Step 3 — Vergleichen, Anpassen, Quality-Check, Freigeben.
@@ -94,17 +93,6 @@ export function ApprovalStep() {
         detail={detail}
         isApproved={approved}
       />
-
-      {!approved && (
-        <div className="mt-8">
-          <AgentChat
-            reviewId={reviewId}
-            anfrage={detail.anfrage}
-            quotation={detail.quotation}
-            overrides={detail.manual_overrides}
-          />
-        </div>
-      )}
 
       {!approved && (
         <div className="mt-8">

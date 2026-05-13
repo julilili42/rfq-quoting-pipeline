@@ -23,10 +23,12 @@ interface PositionCardProps {
   match?: MatchResult;
   quotationItem?: QuotationItem;
   unitPriceOverride?: number;
+  discountDisabled?: boolean;
   /** Auto-open the accordion on mount — used right after "add position". */
   defaultOpen?: boolean;
   onPositionChange: (next: Position) => void;
   onUnitPriceChange: (override: ManualOverride | null) => void;
+  onDiscountDisabledChange?: (disabled: boolean) => void;
   onFieldEdit: (fieldPath: string) => void;
   onDelete: () => void;
   onEvidenceSelect?: (target: SourceNavigationTarget) => void;
@@ -73,9 +75,11 @@ export function PositionCard({
   match,
   quotationItem,
   unitPriceOverride,
+  discountDisabled = false,
   defaultOpen = false,
   onPositionChange,
   onUnitPriceChange,
+  onDiscountDisabledChange,
   onFieldEdit,
   onDelete,
   onEvidenceSelect,
@@ -282,9 +286,7 @@ export function PositionCard({
           const tier = VOLUME_TIERS[activeIdx];
           const basis = quotationItem?.basispreis_eur ?? 0;
           const hasOverride = unitPriceOverride != null;
-          const discountedPrice = basis > 0 && tier.rabatt > 0 ? basis * (1 - tier.rabatt / 100) : basis;
-          const ersparnis = basis > 0 && tier.rabatt > 0 ? basis * (tier.rabatt / 100) : 0;
-          const showStaffel = !!quotationItem && !draft.ist_zertifikat;
+          const showStaffel = !!quotationItem && !draft.ist_zertifikat && tier.rabatt > 0;
 
           return (
             <div className="overflow-hidden border rounded-xl border-border">
@@ -347,34 +349,48 @@ export function PositionCard({
                 </div>
               </div>
 
-              {/* Mengenstaffel — innerhalb des Blocks */}
+              {/* Mengenstaffel — nur wenn Mengenrabatt aktiv */}
               {showStaffel && (
                 <div className="border-t border-border bg-muted/30 px-4 py-2.5">
                   <div className="flex items-center">
                     {VOLUME_TIERS.map((t, i) => (
                       <Fragment key={t.label}>
-                        <span className={cn(
-                          "whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
-                          i === activeIdx ? "bg-brand text-white"
-                            : i < activeIdx ? "text-muted-foreground/40"
-                            : "text-muted-foreground",
-                        )}>
-                          {t.label}{t.rabatt > 0 && ` –${t.rabatt}%`}
-                        </span>
+                        {i === activeIdx ? (
+                          <button
+                            type="button"
+                            title={discountDisabled ? "Mengenrabatt wieder aktivieren" : "Mengenrabatt deaktivieren"}
+                            onClick={() => onDiscountDisabledChange?.(!discountDisabled)}
+                            className={cn(
+                              "whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium transition-all duration-150",
+                              discountDisabled
+                                ? "bg-muted text-muted-foreground/40 line-through hover:bg-muted/80"
+                                : "bg-brand text-white hover:bg-brand/80",
+                            )}
+                          >
+                            {t.label}{t.rabatt > 0 && ` –${t.rabatt}%`}
+                          </button>
+                        ) : (
+                          <span className={cn(
+                            "whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium",
+                            i < activeIdx ? "text-muted-foreground/40" : "text-muted-foreground",
+                          )}>
+                            {t.label}{t.rabatt > 0 && ` –${t.rabatt}%`}
+                          </span>
+                        )}
                         {i < VOLUME_TIERS.length - 1 && (
                           <div className={cn("h-px min-w-[12px] flex-1", i < activeIdx ? "bg-muted-foreground/20" : "bg-border")} />
                         )}
                       </Fragment>
                     ))}
                   </div>
-                  {basis > 0 && !hasOverride && tier.rabatt > 0 && (
+                  {basis > 0 && !hasOverride && !discountDisabled && (
                     <p className="mt-1.5 text-xs text-muted-foreground">
                       <span className="tabular-nums">{formatEur(basis)}</span>
                       <span className="mx-1.5 text-foreground/30">→</span>
                       <span className="font-medium text-brand">–{tier.rabatt}% Mengenrabatt</span>
                       <span className="mx-1.5 text-foreground/30">→</span>
-                      <span className="font-semibold text-foreground tabular-nums">{formatEur(discountedPrice)}/Stk.</span>
-                      <span className="ml-3 font-medium text-brand tabular-nums">–{formatEur(ersparnis)}/Stk.</span>
+                      <span className="font-semibold text-foreground tabular-nums">{formatEur(basis * (1 - tier.rabatt / 100))}/Stk.</span>
+                      <span className="ml-3 font-medium text-brand tabular-nums">–{formatEur(basis * (tier.rabatt / 100))}/Stk.</span>
                     </p>
                   )}
                 </div>
