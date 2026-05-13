@@ -46,3 +46,18 @@ Backend:
 - Parsing of Mails (Loading of CSV, XLSX etc.)
 - Matching (Exact Match, Fuzzy Match, No Match etc.)
 - Review- / Approval Workflow (Approval State Machine)
+
+
+
+What does the key account manager want to hear?
+
+Target Audience: Key account manager
+IT as well 
+
+IT costs should be mentioned
+
+Friday: Reutlingen
+Saturday: Tübingen
+
+
+SCRUM als anhang
