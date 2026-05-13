@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Bot,
   CheckCircle2,
-  ChevronDown,
   Database,
   LayoutDashboard,
   RefreshCw,
@@ -12,7 +11,7 @@ import {
   Wifi,
   XCircle,
 } from "lucide-react";
-import React, { useState } from "react";
+import type React from "react";
 import { Link, NavLink } from "react-router-dom";
 import { ErrorState } from "@/shared/components/feedback/ErrorState";
 import { LoadingState } from "@/shared/components/feedback/LoadingState";
@@ -38,24 +37,18 @@ const STATUS_CONFIG = {
     iconClass: "text-success",
     badgeClass: "bg-success-soft text-success",
     badgeLabel: "OK",
-    bannerClass: "bg-success-soft border-success/20 text-success",
-    bannerLabel: "Alle Checks bestanden",
   },
   warning: {
     icon: AlertTriangle,
     iconClass: "text-warning",
     badgeClass: "bg-warning-soft text-warning",
     badgeLabel: "Warnung",
-    bannerClass: "bg-warning-soft border-warning/20 text-warning",
-    bannerLabel: "Hinweise vorhanden",
   },
   error: {
     icon: XCircle,
     iconClass: "text-danger",
     badgeClass: "bg-danger-soft text-danger",
     badgeLabel: "Fehler",
-    bannerClass: "bg-danger-soft border-danger/20 text-danger",
-    bannerLabel: "Kritische Probleme gefunden",
   },
 } as const;
 
@@ -107,26 +100,6 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-
-function OverallBanner({ info, checkedAt }: { info: DebugInfo; checkedAt: string }) {
-  const cfg = STATUS_CONFIG[info.overall];
-  const Icon = cfg.icon;
-  return (
-    <div className={cn("mb-8 flex items-center gap-3 rounded-xl border px-5 py-4", cfg.bannerClass)}>
-      <Icon className="h-5 w-5 shrink-0" aria-hidden />
-      <span className="font-semibold">{cfg.bannerLabel}</span>
-      <span className="ml-auto flex items-center gap-4 text-sm opacity-70">
-        <span>
-          Provider: <span className="font-mono font-semibold">{info.llm_provider}</span>
-        </span>
-        <span className="hidden opacity-40 sm:inline">|</span>
-        <span className="hidden sm:inline">
-          Geprüft: <span className="font-semibold">{formatDebugDate(checkedAt)}</span>
-        </span>
-      </span>
-    </div>
-  );
-}
 
 function DebugHeader({
   title,
@@ -217,34 +190,6 @@ function CheckGrid({ checks }: { checks: CheckResult[] }) {
       {checks.map((c) => (
         <CheckCard key={c.name} check={c} />
       ))}
-    </div>
-  );
-}
-
-function SystemChecksDisclosure({ checks }: { checks: CheckResult[] }) {
-  const [open, setOpen] = useState(false);
-  const counts = checkCounts(checks);
-  return (
-    <div className="rounded-xl border border-border bg-surface shadow-card">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-3 px-5 py-4 text-left"
-      >
-        <span className="text-lg font-bold text-foreground">System-Checks</span>
-        <span className="text-sm font-semibold text-muted-foreground">
-          {formatNumber(counts.error)} Fehler · {formatNumber(counts.warning)} Warnungen · {formatNumber(counts.ok)} OK
-        </span>
-        <ChevronDown
-          className={cn("ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200", open && "rotate-180")}
-          aria-hidden
-        />
-      </button>
-      {open && (
-        <div className="border-t border-border px-5 pb-5 pt-4">
-          <CheckGrid checks={checks} />
-        </div>
-      )}
     </div>
   );
 }
@@ -658,10 +603,7 @@ export function DebugPage() {
       subtitle="Kurzüberblick über Systemzustand, Pipeline-Fehler und wichtige Konfigurationschecks."
     >
       {(data) => (
-        <>
-          <OverallBanner info={data} checkedAt={data.checked_at} />
-          <DebugOverviewCards info={data} />
-        </>
+        <DebugOverviewCards info={data} />
       )}
     </DebugDataBoundary>
   );
