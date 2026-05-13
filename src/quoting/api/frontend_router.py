@@ -14,6 +14,7 @@ Do not include ``frontend_router_phase3`` separately anymore.
 
 from __future__ import annotations
 
+import csv
 import logging
 import math
 import re
@@ -1030,11 +1031,36 @@ class CheckResult(BaseModel):
     detail: str
 
 
-class DebugInfo(BaseModel):
-    overall: Literal["ok", "warning", "error"]
-    checks: list[CheckResult]
-    llm_provider: str
-    checked_at: str
+class PipelineFailure(BaseModel):
+    review_id: str
+    subject: str
+    sender: str
+    current_step: str
+    error: str
+    updated_at: str
+    progress_percent: int
+
+
+class PipelineFailureSummary(BaseModel):
+    total_failed: int
+    recent: list[PipelineFailure]
+
+
+class StammdatenQuality(BaseModel):
+    path: str
+    total_rows: int
+    file_size_kb: int
+    last_modified: str
+    duplicate_article_numbers: int
+    missing_article_numbers: int
+    missing_descriptions: int
+    zero_or_missing_prices: int
+    invalid_price_ranges: int
+    single_offer_articles: int
+    missing_materials: int
+    missing_dimensions: int
+    sample_duplicate_articles: list[str]
+    sample_zero_price_articles: list[str]
 
 
 class LlmProbeUsage(BaseModel):
@@ -1053,6 +1079,15 @@ class LlmProbeResult(BaseModel):
     response_preview: str | None = None
     error_type: str | None = None
     usage: LlmProbeUsage | None = None
+
+
+class DebugInfo(BaseModel):
+    overall: Literal["ok", "warning", "error"]
+    checks: list[CheckResult]
+    llm_provider: str
+    checked_at: str
+    pipeline_failures: PipelineFailureSummary
+    stammdaten_quality: StammdatenQuality | None
 
 
 def _check_llm_key(settings: Any) -> CheckResult:
@@ -1181,12 +1216,221 @@ def _check_tunnel_url(root: Path) -> CheckResult:
     return CheckResult(name="Tunnel-URL", status="ok", detail=url or "(leer)")
 
 
+def _safe_float(value: object) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip().replace(",", ".")
+    if not text:
+        return None
+    try:
+        result = float(text)
+    except ValueError:
+        return None
+    if math.isnan(result):
+        return None
+    return result
+
+
+def _safe_int(value: object) -> int | None:
+    raw = _safe_float(value)
+    return int(raw) if raw is not None else None
+
+
+def _safe_datetime(value: object, fallback_path: Path) -> datetime:
+    if isinstance(value, str) and value.strip():
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    try:
+        return datetime.fromtimestamp(fallback_path.stat().st_mtime)
+    except OSError:
+        return datetime.fromtimestamp(0)
+
+
+def _recent_pipeline_failures(
+    reviews_root: Path,
+    settings: Any,
+    *,
+    limit: int = 5,
+) -> PipelineFailureSummary:
+    if not reviews_root.exists():
+        return PipelineFailureSummary(total_failed=0, recent=[])
+
+    failures: list[tuple[float, PipelineFailure]] = []
+    for folder in reviews_root.iterdir():
+        if not folder.is_dir():
+            continue
+        progress_path = folder / "progress.json"
+        progress = read_json(progress_path)
+        if not isinstance(progress, dict):
+            continue
+        error = str(progress.get("error") or "").strip()
+        if progress.get("status") != "failed" and not error:
+            continue
+
+        failed_step = next(
+            (
+                step for step in progress.get("steps") or []
+                if isinstance(step, dict) and step.get("status") == "failed"
+            ),
+            None,
+        )
+        current_step = str(
+            progress.get("current_step")
+            or (failed_step or {}).get("name")
+            or "Unbekannter Schritt"
+        )
+        detail = error or str(progress.get("current_detail") or "").strip()
+        if not detail and isinstance(failed_step, dict):
+            detail = str(failed_step.get("detail") or "").strip()
+
+        mail = read_json(folder / "mail.json")
+        if not isinstance(mail, dict):
+            mail = {}
+        updated = _safe_datetime(progress.get("updated_at"), progress_path)
+        try:
+            progress_percent = int(progress.get("progress_percent") or 0)
+        except (TypeError, ValueError):
+            progress_percent = 0
+
+        failures.append((
+            updated.timestamp(),
+            PipelineFailure(
+                review_id=folder.name,
+                subject=str(mail.get("subject") or "(ohne Betreff)"),
+                sender=str(mail.get("from") or mail.get("sender") or ""),
+                current_step=current_step,
+                error=_scrub_llm_error(detail, settings),
+                updated_at=updated.isoformat(timespec="seconds"),
+                progress_percent=max(0, min(100, progress_percent)),
+            ),
+        ))
+
+    failures.sort(key=lambda item: item[0], reverse=True)
+    return PipelineFailureSummary(
+        total_failed=len(failures),
+        recent=[failure for _updated, failure in failures[:limit]],
+    )
+
+
+def _stammdaten_quality(path: Path) -> StammdatenQuality | None:
+    if not path.exists():
+        return None
+
+    try:
+        with path.open(newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+    except OSError:
+        return None
+
+    article_counts: dict[str, int] = {}
+    missing_article_numbers = 0
+    missing_descriptions = 0
+    zero_or_missing_prices = 0
+    invalid_price_ranges = 0
+    single_offer_articles = 0
+    missing_materials = 0
+    missing_dimensions = 0
+    zero_price_articles: list[str] = []
+
+    for index, row in enumerate(rows, start=2):
+        article = str(row.get("artikel_nr") or "").strip()
+        if article:
+            article_counts[article] = article_counts.get(article, 0) + 1
+        else:
+            missing_article_numbers += 1
+            article = f"Zeile {index}"
+
+        if not str(row.get("bezeichnung") or "").strip():
+            missing_descriptions += 1
+
+        basispreis = _safe_float(row.get("basispreis_eur"))
+        if basispreis is None or basispreis <= 0:
+            zero_or_missing_prices += 1
+            if len(zero_price_articles) < 5:
+                zero_price_articles.append(article)
+
+        preis_min = _safe_float(row.get("preis_min_eur"))
+        preis_max = _safe_float(row.get("preis_max_eur"))
+        if preis_min is not None and preis_max is not None and preis_min > preis_max:
+            invalid_price_ranges += 1
+
+        n_offers = _safe_int(row.get("n_offers"))
+        if n_offers == 1:
+            single_offer_articles += 1
+
+        if not str(row.get("werkstoff") or "").strip():
+            missing_materials += 1
+        if not str(row.get("abmessungen") or "").strip():
+            missing_dimensions += 1
+
+    duplicate_articles = [
+        article for article, count in article_counts.items() if count > 1
+    ]
+    stat = path.stat()
+    return StammdatenQuality(
+        path=str(path),
+        total_rows=len(rows),
+        file_size_kb=round(stat.st_size / 1024),
+        last_modified=datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+        duplicate_article_numbers=len(duplicate_articles),
+        missing_article_numbers=missing_article_numbers,
+        missing_descriptions=missing_descriptions,
+        zero_or_missing_prices=zero_or_missing_prices,
+        invalid_price_ranges=invalid_price_ranges,
+        single_offer_articles=single_offer_articles,
+        missing_materials=missing_materials,
+        missing_dimensions=missing_dimensions,
+        sample_duplicate_articles=duplicate_articles[:5],
+        sample_zero_price_articles=zero_price_articles,
+    )
+
+
+def _check_pipeline_failures(summary: PipelineFailureSummary) -> CheckResult:
+    if summary.total_failed == 0:
+        return CheckResult(name="Letzte Pipeline-Fehler", status="ok", detail="Keine fehlgeschlagenen Reviews gefunden")
+    latest = summary.recent[0] if summary.recent else None
+    suffix = f" · zuletzt: {latest.review_id} ({latest.current_step})" if latest else ""
+    return CheckResult(
+        name="Letzte Pipeline-Fehler",
+        status="warning",
+        detail=f"{summary.total_failed} fehlgeschlagene Review{'s' if summary.total_failed != 1 else ''}{suffix}",
+    )
+
+
+def _check_stammdaten_quality(quality: StammdatenQuality | None) -> CheckResult:
+    if quality is None:
+        return CheckResult(name="Stammdaten-Qualität", status="error", detail="stammdaten.csv konnte nicht gelesen werden")
+
+    hard_issues = (
+        quality.duplicate_article_numbers
+        + quality.missing_article_numbers
+        + quality.missing_descriptions
+        + quality.zero_or_missing_prices
+        + quality.invalid_price_ranges
+    )
+    if hard_issues:
+        return CheckResult(
+            name="Stammdaten-Qualität",
+            status="warning",
+            detail=f"{hard_issues} prüfungsrelevante Auffälligkeiten · {quality.total_rows:,} Artikel",
+        )
+    return CheckResult(
+        name="Stammdaten-Qualität",
+        status="ok",
+        detail=f"{quality.total_rows:,} Artikel · keine kritischen Auffälligkeiten",
+    )
+
+
 @router.get("/debug", response_model=DebugInfo)
 def get_debug_info() -> DebugInfo:
     from quoting.core.config import load_settings
 
     settings = load_settings()
     data_dir = settings.data_dir
+    pipeline_failures = _recent_pipeline_failures(data_dir / "reviews", settings)
+    stammdaten_quality = _stammdaten_quality(settings.stammdaten_path)
 
     checks: list[CheckResult] = [
         _check_env_file(PROJECT_ROOT),
@@ -1200,6 +1444,8 @@ def get_debug_info() -> DebugInfo:
         _check_thresholds(settings),
         _check_settings_file(data_dir / "settings.json"),
         _check_tunnel_url(PROJECT_ROOT),
+        _check_pipeline_failures(pipeline_failures),
+        _check_stammdaten_quality(stammdaten_quality),
     ]
 
     statuses = {c.status for c in checks}
@@ -1215,6 +1461,8 @@ def get_debug_info() -> DebugInfo:
         checks=checks,
         llm_provider=settings.llm_provider,
         checked_at=datetime.now().isoformat(timespec="seconds"),
+        pipeline_failures=pipeline_failures,
+        stammdaten_quality=stammdaten_quality,
     )
 
 
