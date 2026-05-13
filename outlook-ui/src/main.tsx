@@ -352,9 +352,9 @@ function App() {
           });
           setWorkflow(updated);
           setStatus(
-            `Freigabe erkannt${
-              record.approved_by ? ` (${record.approved_by})` : ""
-            } — Angebotsmail kann jetzt erstellt werden.`,
+            `Freigegeben${
+              record.approved_by ? ` · ${record.approved_by}` : ""
+            }. Angebotsmail bereit.`,
           );
         }
       } catch {

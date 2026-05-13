@@ -1,6 +1,19 @@
-export function ShortcutHint({ keys }: { keys: string[] }) {
+import { cn } from "@/shared/lib/cn";
+
+export function ShortcutHint({
+  keys,
+  placement = "bottom",
+}: {
+  keys: string[];
+  placement?: "top" | "bottom";
+}) {
   return (
-    <span className="pointer-events-none absolute -bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+    <span
+      className={cn(
+        "pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100",
+        placement === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5",
+      )}
+    >
       {keys.map((k) => (
         <kbd
           key={k}

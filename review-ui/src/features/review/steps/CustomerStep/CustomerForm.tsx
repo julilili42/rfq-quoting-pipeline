@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { CalendarDays } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -9,6 +10,7 @@ import { ShortcutHint } from "@/shared/components/ui/ShortcutHint";
 import { useReviewUiStore } from "@/features/review/stores/reviewUiStore";
 import type { Anfrage, Evidence } from "@/shared/schemas/anfrage";
 import { Button } from "@/shared/components/ui/button";
+import type { SourceNavigationTarget } from "@/shared/types/sourceNavigation";
 
 import { useSaveAndRegenerate } from "../../hooks/useReviewMutations";
 import { customerFormSchema, type CustomerFormValues } from "./schemas";
@@ -16,7 +18,7 @@ import { customerFormSchema, type CustomerFormValues } from "./schemas";
 interface CustomerFormProps {
   reviewId: string;
   anfrage: Anfrage;
-  onEvidenceSelect?: (ev: Evidence) => void;
+  onEvidenceSelect?: (target: SourceNavigationTarget) => void;
 }
 
 /**
@@ -60,23 +62,23 @@ export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFo
   };
 
   const fillToday = () => {
-  const today = new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date());
+    const today = new Intl.DateTimeFormat("de-DE", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(new Date());
 
-  form.setValue("datum", today, { shouldDirty: true });
-  trackChange("datum");
+    form.setValue("datum", today, { shouldDirty: true });
+    trackChange("datum");
 
-  const next: Anfrage = {
-    ...anfrage,
-    ...form.getValues(),
-    datum: today,
+    const next: Anfrage = {
+      ...anfrage,
+      ...form.getValues(),
+      datum: today,
+    };
+
+    saveAndRegenerate.mutate({ anfrage: next });
   };
-
-  saveAndRegenerate.mutate({ anfrage: next });
-};
 
   useHotkeys("alt+h", fillToday, {
     enabled: !saveAndRegenerate.isPending,
@@ -99,21 +101,36 @@ export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFo
           Kunde &amp; Anfrage-Header
         </h3>
         <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
-          <FormField label="Firma" evidence={anfrage.header_evidence?.kunde_firma} onNavigate={onEvidenceSelect}>
+          <FormField
+            label="Firma"
+            evidence={anfrage.header_evidence?.kunde_firma}
+            sourceTarget={headerSourceTarget(anfrage, "kunde_firma", "Firma")}
+            onNavigate={onEvidenceSelect}
+          >
             <Input
               {...form.register("kunde_firma")}
               onBlur={() => commitField("kunde_firma")}
               placeholder="z. B. Musterfirma GmbH"
             />
           </FormField>
-          <FormField label="Ansprechpartner" evidence={anfrage.header_evidence?.kunde_ansprechpartner} onNavigate={onEvidenceSelect}>
+          <FormField
+            label="Ansprechpartner"
+            evidence={anfrage.header_evidence?.kunde_ansprechpartner}
+            sourceTarget={headerSourceTarget(anfrage, "kunde_ansprechpartner", "Ansprechpartner")}
+            onNavigate={onEvidenceSelect}
+          >
             <Input
               {...form.register("kunde_ansprechpartner")}
               onBlur={() => commitField("kunde_ansprechpartner")}
               placeholder="z. B. Frau Müller"
             />
           </FormField>
-          <FormField label="E-Mail" evidence={anfrage.header_evidence?.kunde_email} onNavigate={onEvidenceSelect}>
+          <FormField
+            label="E-Mail"
+            evidence={anfrage.header_evidence?.kunde_email}
+            sourceTarget={headerSourceTarget(anfrage, "kunde_email", "E-Mail")}
+            onNavigate={onEvidenceSelect}
+          >
             <Input
               type="email"
               {...form.register("kunde_email")}
@@ -121,35 +138,57 @@ export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFo
               placeholder="kontakt@firma.de"
             />
           </FormField>
-          <FormField label="Kunden-Nr." evidence={anfrage.header_evidence?.kundennummer} onNavigate={onEvidenceSelect}>
+          <FormField
+            label="Kunden-Nr."
+            evidence={anfrage.header_evidence?.kundennummer}
+            sourceTarget={headerSourceTarget(anfrage, "kundennummer", "Kunden-Nr.")}
+            onNavigate={onEvidenceSelect}
+          >
             <Input
               {...form.register("kundennummer")}
               onBlur={() => commitField("kundennummer")}
               placeholder="z. B. 1234"
             />
           </FormField>
-          <FormField label="Anfrage / Beleg-Nr." evidence={anfrage.header_evidence?.belegnummer} onNavigate={onEvidenceSelect}>
+          <FormField
+            label="Anfrage / Beleg-Nr."
+            evidence={anfrage.header_evidence?.belegnummer}
+            sourceTarget={headerSourceTarget(anfrage, "belegnummer", "Beleg-Nr.")}
+            onNavigate={onEvidenceSelect}
+          >
             <Input
               {...form.register("belegnummer")}
               onBlur={() => commitField("belegnummer")}
               placeholder="z. B. ANF-2024-001"
             />
           </FormField>
-          <FormField label="Datum" evidence={anfrage.header_evidence?.datum} onNavigate={onEvidenceSelect}>
-            <div className="flex gap-2">
+          <FormField
+            label="Datum"
+            evidence={anfrage.header_evidence?.datum}
+            sourceTarget={headerSourceTarget(anfrage, "datum", "Datum")}
+            onNavigate={onEvidenceSelect}
+            sourceButtonClassName="right-12"
+          >
+            <div className="flex min-w-0 gap-1.5">
               <Input
                 {...form.register("datum")}
                 onBlur={() => commitField("datum")}
                 placeholder="z. B. 15.03.2024"
+                className="min-w-0 flex-1"
               />
-              <div className="group relative">
+              <div className="group relative shrink-0">
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="ghost"
+                  size="icon"
                   onClick={fillToday}
                   disabled={saveAndRegenerate.isPending}
+                  aria-label="Datum auf heute setzen"
+                  title="Heute"
+                  className="h-10 w-10 text-muted-foreground hover:bg-brand-soft hover:text-brand"
                 >
-                  Heute
+                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  <span className="sr-only">Heute</span>
                 </Button>
                 <ShortcutHint keys={["Alt", "H"]} />
               </div>
@@ -163,14 +202,24 @@ export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFo
           Kommerzielle Bedingungen
         </h3>
         <div className="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
-          <FormField label="Lieferbedingung / Incoterms" evidence={anfrage.header_evidence?.incoterms} onNavigate={onEvidenceSelect}>
+          <FormField
+            label="Lieferbedingung / Incoterms"
+            evidence={anfrage.header_evidence?.incoterms}
+            sourceTarget={headerSourceTarget(anfrage, "incoterms", "Incoterms")}
+            onNavigate={onEvidenceSelect}
+          >
             <Input
               {...form.register("incoterms")}
               onBlur={() => commitField("incoterms")}
               placeholder="z. B. EXW Werk"
             />
           </FormField>
-          <FormField label="Zahlungsbedingung" evidence={anfrage.header_evidence?.zahlungsbedingungen} onNavigate={onEvidenceSelect}>
+          <FormField
+            label="Zahlungsbedingung"
+            evidence={anfrage.header_evidence?.zahlungsbedingungen}
+            sourceTarget={headerSourceTarget(anfrage, "zahlungsbedingungen", "Zahlungsbedingung")}
+            onNavigate={onEvidenceSelect}
+          >
             <Input
               {...form.register("zahlungsbedingungen")}
               onBlur={() => commitField("zahlungsbedingungen")}
@@ -196,3 +245,24 @@ function pickCustomerFields(a: Anfrage): CustomerFormValues {
   };
 }
 
+function headerSourceTarget(
+  anfrage: Anfrage,
+  field: keyof CustomerFormValues,
+  label: string,
+): SourceNavigationTarget | undefined {
+  const evidence = anfrage.header_evidence?.[field] as Evidence | undefined;
+  if (!evidence) return undefined;
+
+  const value = anfrage[field];
+  const candidates = [
+    evidence.source_quote ?? "",
+    typeof value === "string" ? value : "",
+  ].filter((candidate) => candidate.trim().length > 0);
+
+  return {
+    evidence,
+    targetKind: "header",
+    candidates,
+    label,
+  };
+}

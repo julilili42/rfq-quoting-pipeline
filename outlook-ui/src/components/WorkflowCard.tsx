@@ -155,31 +155,34 @@ export function WorkflowCard({
           state === "review_opened" ||
           state === "approved" ||
           state === "quote_sent") && (
-          <div className="meta-grid">
+          <div className="meta-strip">
             {workflow?.reviewCreatedAt && (
-              <div className="meta-cell">
-                <span className="meta-label">Review gestartet</span>
+              <span className="meta-chip">
+                <ClockIcon size={12} />
+                <span className="meta-chip-label">Start</span>
                 <span className="meta-value">
                   {formatDate(workflow.reviewCreatedAt)}
                 </span>
-              </div>
+              </span>
             )}
             {workflow?.approvedAt && (
-              <div className="meta-cell">
-                <span className="meta-label">Freigegeben</span>
+              <span className="meta-chip">
+                <CheckIcon size={12} />
+                <span className="meta-chip-label">Freigabe</span>
                 <span className="meta-value">
                   {formatDate(workflow.approvedAt)}
                   {workflow.approvedBy ? ` · ${workflow.approvedBy}` : ""}
                 </span>
-              </div>
+              </span>
             )}
             {workflow?.quoteSentAt && (
-              <div className="meta-cell">
-                <span className="meta-label">Mail erstellt</span>
+              <span className="meta-chip">
+                <SendIcon size={12} />
+                <span className="meta-chip-label">Mail</span>
                 <span className="meta-value">
                   {formatDate(workflow.quoteSentAt)}
                 </span>
-              </div>
+              </span>
             )}
           </div>
         )}
@@ -337,9 +340,9 @@ export function WorkflowCard({
           <div className="success-banner">
             <CheckIcon className="btn-icon" />
             <span>
-              Angebot wurde freigegeben
-              {workflow?.approvedBy ? ` von ${workflow.approvedBy}` : ""}
-              . Du kannst jetzt die Angebotsmail erstellen.
+              Freigegeben
+              {workflow?.approvedBy ? ` · ${workflow.approvedBy}` : ""}
+              . Angebotsmail bereit.
             </span>
           </div>
         )}

@@ -259,34 +259,42 @@ html, body {
     word-break: break-word;
 }
 
-/* ---------------- Meta grid ------------------------------------------- */
-.meta-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-    padding: 10px 12px;
+/* ---------------- Meta strip ------------------------------------------ */
+.meta-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.meta-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    max-width: 100%;
+    padding: 4px 7px;
     background: var(--ek-surface-2);
     border: 1px solid var(--ek-border);
-    border-radius: 10px;
+    border-radius: 999px;
+    color: var(--ek-muted);
 }
-.meta-cell {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
+.meta-chip > svg {
+    flex-shrink: 0;
 }
-.meta-label {
+.meta-chip-label {
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
     color: var(--ek-muted);
 }
 .meta-value {
-    font-size: 12px;
+    min-width: 0;
+    font-size: 11.5px;
     font-weight: 600;
     color: var(--ek-text);
-    word-break: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* ---------------- Actions (button row) -------------------------------- */

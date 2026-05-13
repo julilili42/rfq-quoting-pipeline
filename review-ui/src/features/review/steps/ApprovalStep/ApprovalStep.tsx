@@ -11,6 +11,7 @@ import { useQualityGate } from "../../hooks/useQualityGate";
 import type { ReviewDetailContext } from "../../ReviewDetailPage";
 import { StepNavigation } from "../../components/StepNavigation";
 import { ApprovalPanel } from "./ApprovalPanel";
+import { ApprovalSummary } from "./ApprovalSummary";
 import { ComparePanes } from "./ComparePanes";
 import { FocusToolbar } from "./FocusToolbar";
 import { QualityGatePanel } from "./QualityGatePanel";
@@ -62,8 +63,10 @@ export function ApprovalStep() {
           reviewId={reviewId}
           detail={detail}
           isApproved={approved}
+          focusMode
         />
         {!approved && <QualityGatePanel gate={gate} />}
+        <ApprovalSummary detail={detail} gate={gate} />
         <ApprovalPanel
           reviewId={reviewId}
           approval={approval.data}
@@ -76,10 +79,7 @@ export function ApprovalStep() {
 
   return (
     <>
-      <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="section-label mb-1">Vergleich</h2>
-        </div>
+      <header className="mb-3 flex flex-wrap items-center justify-end gap-2">
         <div className="group relative">
           <Button variant="secondary" size="sm" onClick={enterFocus}>
             <Maximize2 className="h-4 w-4" aria-hidden="true" />
@@ -112,6 +112,10 @@ export function ApprovalStep() {
           <QualityGatePanel gate={gate} />
         </div>
       )}
+
+      <div className="mt-8">
+        <ApprovalSummary detail={detail} gate={gate} />
+      </div>
 
       <div className="mt-8">
         <h2 className="section-label mb-3">Freigabe</h2>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 
 import { OriginalDocumentViewer } from "@/shared/components/viewers/OriginalDocumentViewer";
-import type { Evidence } from "@/shared/schemas/anfrage";
+import type { SourceNavigationTarget } from "@/shared/types/sourceNavigation";
 
 import type { ReviewDetailContext } from "../../ReviewDetailPage";
 import { StepNavigation } from "../../components/StepNavigation";
@@ -11,7 +11,7 @@ import { PositionsEditor } from "./PositionsEditor";
 export function PositionsStep() {
   const { reviewId } = useParams<{ reviewId: string }>();
   const { detail } = useOutletContext<ReviewDetailContext>();
-  const [activeEvidence, setActiveEvidence] = useState<Evidence | null>(null);
+  const [activeSource, setActiveSource] = useState<SourceNavigationTarget | null>(null);
 
   if (!reviewId) return null;
 
@@ -25,7 +25,7 @@ export function PositionsStep() {
             reviewId={reviewId}
             mail={detail.mail}
             attachmentNames={attachmentNames}
-            activeEvidence={activeEvidence}
+            activeSource={activeSource}
             className="lg:sticky lg:top-6"
           />
         </div>
@@ -37,7 +37,7 @@ export function PositionsStep() {
             matches={detail.matches}
             quotation={detail.quotation}
             overrides={detail.manual_overrides}
-            onEvidenceSelect={setActiveEvidence}
+            onEvidenceSelect={setActiveSource}
           />
         </div>
       </div>

@@ -1,13 +1,23 @@
 import type { MailMeta } from "@/shared/api/reviews";
 import { cn } from "@/shared/lib/cn";
+import type { SourceNavigationTarget } from "@/shared/types/sourceNavigation";
 
 interface MailBodyViewerProps {
   mail: MailMeta;
   highlightQuote?: string | null;
+  sourceTarget?: SourceNavigationTarget | null;
   className?: string;
 }
 
-export function MailBodyViewer({ mail, highlightQuote, className }: MailBodyViewerProps) {
+export function MailBodyViewer({
+  mail,
+  highlightQuote,
+  sourceTarget,
+  className,
+}: MailBodyViewerProps) {
+  const body = mail.body || "(leerer Body)";
+  const highlightQuery = resolveMailHighlightQuery(body, sourceTarget, highlightQuote);
+
   return (
     <div
       className={cn(
@@ -31,16 +41,14 @@ export function MailBodyViewer({ mail, highlightQuote, className }: MailBodyView
       </header>
 
       <pre className="whitespace-pre-wrap break-words p-5 font-sans text-sm leading-relaxed text-foreground/90">
-        {highlightQuote
-          ? renderWithHighlight(mail.body || "(leerer Body)", highlightQuote)
-          : (mail.body || "(leerer Body)")}
+        {highlightQuery ? renderWithHighlight(body, highlightQuery) : body}
       </pre>
     </div>
   );
 }
 
 function renderWithHighlight(text: string, query: string) {
-  const idx = text.indexOf(query);
+  const idx = text.toLocaleLowerCase("de-DE").indexOf(query.toLocaleLowerCase("de-DE"));
   if (idx === -1) return text;
   return (
     <>
@@ -51,6 +59,29 @@ function renderWithHighlight(text: string, query: string) {
       {text.slice(idx + query.length)}
     </>
   );
+}
+
+function resolveMailHighlightQuery(
+  text: string,
+  sourceTarget?: SourceNavigationTarget | null,
+  fallbackQuote?: string | null,
+): string | null {
+  const candidates = [
+    sourceTarget?.evidence.source_quote,
+    ...(sourceTarget?.candidates ?? []),
+    fallbackQuote,
+  ];
+
+  const foldedText = text.toLocaleLowerCase("de-DE");
+  for (const candidate of candidates) {
+    const cleaned = candidate?.trim();
+    if (!cleaned) continue;
+    if (foldedText.includes(cleaned.toLocaleLowerCase("de-DE"))) {
+      return cleaned;
+    }
+  }
+
+  return null;
 }
 
 function Row({ label, value }: { label: string; value: string }) {

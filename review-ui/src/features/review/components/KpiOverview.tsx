@@ -24,26 +24,13 @@ export function KpiOverview({
   ).length;
   const matchRate = totalPositions > 0 ? Math.min(1, matched / totalPositions) : 0;
 
-  const totalMarginEur = quotation
-    ? quotation.items.reduce((sum, it) => sum + (it.margin_eur ?? 0), 0)
-    : null;
-  const marginPct =
-    totalMarginEur != null && quotation && quotation.gesamtsumme > 0
-      ? (totalMarginEur / quotation.gesamtsumme) * 100
-      : null;
-
   return (
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+    <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
       <MetricTile label="Positionen" value={totalPositions} />
       <MetricTile label="Match-Quote" value={`${Math.round(matchRate * 100)}%`} />
       <MetricTile
         label="Angebotssumme"
         value={quotation ? formatEur(quotation.gesamtsumme) : "—"}
-      />
-      <MetricTile
-        label="Marge"
-        value={totalMarginEur != null ? formatEur(totalMarginEur) : "—"}
-        hint={marginPct != null ? `${marginPct.toFixed(1)} % auf Gesamtsumme` : undefined}
       />
       <MetricTile label="PDF" value={pdfReady ? "Bereit" : "Offen"} />
     </div>

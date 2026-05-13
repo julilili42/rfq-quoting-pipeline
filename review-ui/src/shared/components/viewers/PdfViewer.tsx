@@ -1,5 +1,9 @@
+import { Download } from "lucide-react";
+
 import { cn } from "@/shared/lib/cn";
 import { pdfUrl } from "@/shared/lib/pdfUrl";
+
+import { PdfSourcePreview } from "./PdfSourcePreview";
 
 type PdfKind = "draft" | "final" | "current";
 
@@ -8,31 +12,26 @@ interface PdfViewerProps {
   kind?: PdfKind;
   /**
    * Cache-buster value. Pass a stable value (e.g. `updated_at` from the
-   * detail query) so the iframe doesn't refresh on every render — but
+   * detail query) so the viewer doesn't refresh on every render — but
    * does refresh whenever the underlying PDF actually changes.
    */
   cacheBuster?: string | number;
   className?: string;
+  previewClassName?: string;
 }
 
 /**
  * PDF preview pane.
  *
- * Uses an `<iframe>` pointing at the FastAPI streaming endpoint instead
- * of a base64 data URL. Two reasons (preserved from the Streamlit
- * implementation):
- *
- * 1. The data-URL approach pushes multi-MB strings into the React tree
- *    and can be slow.
- * 2. Browsers de-duplicate identical data URLs across iframes, which
- *    causes the draft and final tabs to render the *same* PDF after
- *    approval. Distinct API URLs sidestep that entirely.
+ * Uses the same React PDF viewer as original attachments so both panes
+ * keep matching dimensions, zoom behavior and internal scrolling.
  */
 export function PdfViewer({
   reviewId,
   kind = "current",
   cacheBuster,
   className,
+  previewClassName,
 }: PdfViewerProps) {
   const src = pdfUrl(reviewId, kind, cacheBuster);
 
@@ -40,6 +39,11 @@ export function PdfViewer({
     draft: "Angebotsentwurf",
     final: "Finales Angebot",
     current: "Angebot",
+  };
+  const downloadNames: Record<PdfKind, string> = {
+    draft: `Angebotsentwurf_${reviewId}.pdf`,
+    final: `Finales_Angebot_${reviewId}.pdf`,
+    current: `Angebot_${reviewId}.pdf`,
   };
 
   return (
@@ -49,14 +53,26 @@ export function PdfViewer({
         className,
       )}
     >
-      <div className="border-b border-border bg-muted px-4 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-        {titles[kind]}
-      </div>
-      <iframe
-        src={src}
-        title={titles[kind]}
-        className="block min-h-[700px] w-full flex-1 border-0 bg-surface"
-        loading="lazy"
+      <header className="flex items-center justify-between gap-2 border-b border-border bg-muted px-4 py-2">
+        <span className="truncate text-xs font-bold uppercase tracking-wider text-muted-foreground">
+          {titles[kind]}
+        </span>
+        <a
+          href={src}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
+          download={downloadNames[kind]}
+        >
+          <Download className="h-3 w-3" aria-hidden="true" />
+          Download
+        </a>
+      </header>
+      <PdfSourcePreview
+        reviewId={reviewId}
+        fileName={`${kind}-${reviewId}.pdf`}
+        fileUrl={src}
+        className={previewClassName}
       />
     </div>
   );

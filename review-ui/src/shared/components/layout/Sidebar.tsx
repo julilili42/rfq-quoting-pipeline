@@ -19,6 +19,7 @@ const SHORTCUTS = [
   { keys: ["Alt", "N"], label: "Neue Position" },
   { keys: ["Alt", "H"], label: "Datum heute" },
   { keys: ["Alt", "F"], label: "Vollbild" },
+  { keys: ["Esc"], label: "Vollbild verlassen" },
 ];
 
 interface SidebarProps {

@@ -46,6 +46,11 @@ from quoting.reviews import (
     scan_reviews,
     write_json,
 )
+from quoting.reviews.source_highlights import (
+    HighlightResult,
+    TargetKind,
+    resolve_pdf_highlight,
+)
 from quoting.ui.review_agent import apply_manual_overrides
 
 log = logging.getLogger("quoting.frontend_router")
@@ -274,7 +279,57 @@ def get_review_mail(review_id: str) -> dict:
 @router.get("/reviews/{review_id}/attachment/{filename}")
 def get_review_attachment(review_id: str, filename: str) -> FileResponse:
     folder = _review_dir(review_id)
+    return _file_response_inline(_resolve_review_attachment(folder, filename))
 
+
+class PdfHighlightRequest(BaseModel):
+    source_page: int | None = None
+    source_quote: str | None = None
+    candidates: list[str] = Field(default_factory=list)
+    target_kind: TargetKind = "generic"
+
+
+class PdfHighlightArea(BaseModel):
+    pageIndex: int
+    left: float
+    top: float
+    width: float
+    height: float
+
+
+class PdfHighlightResponse(BaseModel):
+    status: str
+    areas: list[PdfHighlightArea]
+    pageIndex: int | None = None
+    matched_text: str | None = None
+    message: str | None = None
+
+
+@router.post(
+    "/reviews/{review_id}/attachment/{filename}/pdf/highlight",
+    response_model=PdfHighlightResponse,
+)
+def get_pdf_source_highlight(
+    review_id: str,
+    filename: str,
+    payload: PdfHighlightRequest,
+) -> PdfHighlightResponse:
+    folder = _review_dir(review_id)
+    path = _resolve_review_attachment(folder, filename)
+    if path.suffix.lower() != ".pdf":
+        raise HTTPException(415, "Attachment is not a PDF")
+
+    result = resolve_pdf_highlight(
+        path,
+        source_page=payload.source_page,
+        source_quote=payload.source_quote,
+        candidates=payload.candidates,
+        target_kind=payload.target_kind,
+    )
+    return _pdf_highlight_response(result)
+
+
+def _resolve_review_attachment(folder: Path, filename: str) -> Path:
     safe_name = Path(filename).name
     if not safe_name or safe_name != filename or safe_name in {".", ".."}:
         raise HTTPException(400, "Invalid filename")
@@ -292,7 +347,17 @@ def get_review_attachment(review_id: str, filename: str) -> FileResponse:
     if not candidate.is_file():
         raise HTTPException(404, f"Attachment file '{safe_name}' missing on disk")
 
-    return _file_response_inline(candidate)
+    return candidate
+
+
+def _pdf_highlight_response(result: HighlightResult) -> PdfHighlightResponse:
+    return PdfHighlightResponse(
+        status=result.status,
+        areas=[PdfHighlightArea(**area.__dict__) for area in result.areas],
+        pageIndex=result.pageIndex,
+        matched_text=result.matched_text,
+        message=result.message,
+    )
 
 
 @router.get("/reviews/{review_id}/original")

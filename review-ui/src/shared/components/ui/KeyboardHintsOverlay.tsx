@@ -15,6 +15,7 @@ const SHORTCUTS: Shortcut[] = [
   { keys: ["Alt", "N"], label: "Neue Position hinzufügen" },
   { keys: ["Alt", "H"], label: "Datum auf Heute setzen" },
   { keys: ["Alt", "F"], label: "Vollbild-Modus" },
+  { keys: ["Esc"], label: "Vollbild verlassen" },
 ];
 
 function KbdKey({ k }: { k: string }) {

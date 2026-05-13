@@ -1,16 +1,18 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp, ArrowRight } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
 import type { Evidence } from "@/shared/schemas/anfrage";
 
 interface SourceBadgeProps {
   evidence: Evidence;
-  onNavigate?: (ev: Evidence) => void;
   className?: string;
 }
 
-export function SourceBadge({ evidence, onNavigate, className }: SourceBadgeProps) {
+export function SourceBadge({
+  evidence,
+  className,
+}: SourceBadgeProps) {
   const [open, setOpen] = useState(false);
 
   const hasQuote = Boolean(evidence.source_quote);
@@ -21,10 +23,6 @@ export function SourceBadge({ evidence, onNavigate, className }: SourceBadgeProp
   );
 
   if (!hasQuote && !hasLocation) return null;
-
-  const canNavigate =
-    Boolean(onNavigate) &&
-    Boolean(evidence.source_file || evidence.source_row != null);
 
   const locationText = buildLocationText(evidence);
 
@@ -55,19 +53,6 @@ export function SourceBadge({ evidence, onNavigate, className }: SourceBadgeProp
               &ldquo;{evidence.source_quote.slice(0, 200)}
               {evidence.source_quote.length > 200 ? "…" : ""}&rdquo;
             </blockquote>
-          )}
-          {canNavigate && (
-            <button
-              type="button"
-              onClick={() => {
-                onNavigate!(evidence);
-                setOpen(false);
-              }}
-              className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
-            >
-              Im Dokument anzeigen
-              <ArrowRight className="h-3 w-3" />
-            </button>
           )}
         </div>
       )}

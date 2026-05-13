@@ -4,11 +4,12 @@ import { Outlet, useParams, useSearchParams } from "react-router-dom";
 import { ErrorState } from "@/shared/components/feedback/ErrorState";
 import { LoadingState } from "@/shared/components/feedback/LoadingState";
 import { PageContainer } from "@/shared/components/layout/PageContainer";
+import { isApproved } from "@/shared/schemas/approval";
 
-import { KpiOverview } from "./components/KpiOverview";
 import { PipelineProgress } from "./components/PipelineProgress";
 import { ReviewHero } from "./components/ReviewHero";
 import { StepIndicator } from "./components/StepIndicator";
+import { useApproval } from "./hooks/useApproval";
 import { useReview } from "./hooks/useReview";
 import { useReviewStatus } from "./hooks/useReviewStatus";
 import { useReviewUiStore } from "./stores/reviewUiStore";
@@ -54,8 +55,7 @@ class StepErrorBoundary extends React.Component<
  * Review detail layout.
  *
  * Acts as a composition root for the three steps:
- * - Hero + KPI strip render once at the top
- * - Step indicator below
+ * - Hero and step indicator render once above the active step
  * - The active step renders into the <Outlet/>, fed by data from `useReview`
  *
  * If the pipeline is still running we suppress all editor chrome and
@@ -76,6 +76,7 @@ export function ReviewDetailPage() {
 
   const review = useReview(reviewId);
   const status = useReviewStatus(reviewId);
+  const approval = useApproval(reviewId);
 
   const isPipelineRunning =
     status.data?.status === "running" || status.data?.status === "failed";
@@ -116,6 +117,9 @@ export function ReviewDetailPage() {
     );
   }
 
+  const approved = isApproved(approval.data);
+  const approvedAt = approved ? (approval.data?.approved_at ?? null) : null;
+
   // Vollbild — only meaningful for the approval step. The step itself
   // is responsible for rendering the focus toolbar.
   if (focusMode) {
@@ -129,7 +133,12 @@ export function ReviewDetailPage() {
   if (isPipelineRunning && status.data) {
     return (
       <PageContainer>
-        <ReviewHero reviewId={reviewId} createdAt={detail?.created_at ?? null} />
+        <ReviewHero
+          reviewId={reviewId}
+          createdAt={detail?.created_at ?? null}
+          isApproved={approved}
+          approvedAt={approvedAt}
+        />
         <PipelineProgress progress={status.data} />
       </PageContainer>
     );
@@ -137,15 +146,12 @@ export function ReviewDetailPage() {
 
   return (
     <PageContainer wide>
-      <ReviewHero reviewId={reviewId} createdAt={detail.created_at} />
-      <div className="mb-8">
-        <KpiOverview
-          anfrage={detail.anfrage}
-          matches={detail.matches}
-          quotation={detail.quotation}
-          pdfReady={detail.has_draft_pdf || detail.has_final_pdf}
-        />
-      </div>
+      <ReviewHero
+        reviewId={reviewId}
+        createdAt={detail.created_at}
+        isApproved={approved}
+        approvedAt={approvedAt}
+      />
       <div className="mb-8">
         <StepIndicator />
       </div>

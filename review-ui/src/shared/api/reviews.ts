@@ -13,6 +13,7 @@ import {
   type ReviewSummary,
 } from "@/features/dashboard/schemas/reviewSummary";
 import { z } from "zod";
+import type { SourceNavigationTarget } from "@/shared/types/sourceNavigation";
 
 /**
  * Reviews API surface.
@@ -56,6 +57,22 @@ export interface ReviewDetail {
   has_final_pdf: boolean;
 }
 
+export interface PdfHighlightArea {
+  pageIndex: number;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface PdfHighlightResponse {
+  status: string;
+  areas: PdfHighlightArea[];
+  pageIndex?: number | null;
+  matched_text?: string | null;
+  message?: string | null;
+}
+
 const reviewDetailSchema = z.object({
   review_id: z.string(),
   created_at: z.string().nullable().default(null),
@@ -66,6 +83,22 @@ const reviewDetailSchema = z.object({
   mail: mailMetaSchema,
   has_draft_pdf: z.boolean(),
   has_final_pdf: z.boolean(),
+});
+
+const pdfHighlightResponseSchema = z.object({
+  status: z.string(),
+  areas: z.array(
+    z.object({
+      pageIndex: z.number().int(),
+      left: z.number(),
+      top: z.number(),
+      width: z.number(),
+      height: z.number(),
+    }),
+  ),
+  pageIndex: z.number().int().nullable().optional(),
+  matched_text: z.string().nullable().optional(),
+  message: z.string().nullable().optional(),
 });
 
 export const reviewsApi = {
@@ -128,6 +161,24 @@ export const reviewsApi = {
 
   reset: async (reviewId: string): Promise<void> => {
     await apiClient.post(`/api/reviews/${encodeURIComponent(reviewId)}/reset`);
+  },
+
+  pdfHighlight: async (
+    reviewId: string,
+    fileName: string,
+    target: SourceNavigationTarget,
+  ): Promise<PdfHighlightResponse> => {
+    const { evidence } = target;
+    const data = await apiClient.post<unknown>(
+      `/api/reviews/${encodeURIComponent(reviewId)}/attachment/${encodeURIComponent(fileName)}/pdf/highlight`,
+      {
+        source_page: evidence.source_page ?? null,
+        source_quote: evidence.source_quote ?? null,
+        candidates: target.candidates,
+        target_kind: target.targetKind,
+      },
+    );
+    return pdfHighlightResponseSchema.parse(data);
   },
 
   upload: async (file: File): Promise<{ review_id: string }> => {

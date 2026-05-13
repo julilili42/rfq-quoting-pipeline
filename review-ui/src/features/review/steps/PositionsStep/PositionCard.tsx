@@ -5,10 +5,11 @@ import { Fragment, useEffect, useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { FormField } from "@/shared/components/ui/FormField";
 import { Input } from "@/shared/components/ui/input";
-import { SourceBadge } from "@/shared/components/ui/SourceBadge";
+import { SourceEyeButton } from "@/shared/components/ui/SourceEyeButton";
 import { cn } from "@/shared/lib/cn";
 import { formatEur } from "@/shared/lib/format";
-import type { Evidence, Position } from "@/shared/schemas/anfrage";
+import type { Position } from "@/shared/schemas/anfrage";
+import type { SourceNavigationTarget } from "@/shared/types/sourceNavigation";
 import type { MatchResult } from "@/shared/schemas/matchResult";
 import type { ManualOverride, QuotationItem } from "@/shared/schemas/quotation";
 import type { StammdatenRow } from "@/shared/schemas/stammdaten";
@@ -28,7 +29,7 @@ interface PositionCardProps {
   onUnitPriceChange: (override: ManualOverride | null) => void;
   onFieldEdit: (fieldPath: string) => void;
   onDelete: () => void;
-  onEvidenceSelect?: (ev: Evidence) => void;
+  onEvidenceSelect?: (target: SourceNavigationTarget) => void;
   index: number;
 }
 
@@ -46,11 +47,8 @@ function activeTierIndex(qty: number): number {
   return 0;
 }
 
-const CONFIDENCE_LABEL: Record<string, string> = {
-  high: "hoch",
-  medium: "mittel",
-  low: "gering",
-};
+const CONFIDENCE_EXPLANATION =
+  "Farbe zeigt die KI-Selbsteinschätzung der Extraktion: grün eindeutig, gelb abgeleitet/teilweise lesbar, rot unklar. Kein objektiver Prüfscore.";
 
 /**
  * Editable position panel.
@@ -130,15 +128,33 @@ export function PositionCard({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  const label = `Pos ${position.pos_nr} · ${
-    position.artikelnummer || "Unbekannt"
-  } · ${Math.round(position.menge)} ${position.einheit}`;
+  const articleNumber = position.artikelnummer || "Unbekannt";
+  const quantityMeta = `${Math.round(position.menge)} ${position.einheit}`;
+  const sourceEvidence = {
+    source_file: position.source_file,
+    source_page: position.source_page,
+    source_row: position.source_row,
+    source_quote: position.source_quote || null,
+  };
+  const positionSourceTarget: SourceNavigationTarget = {
+    evidence: sourceEvidence,
+    targetKind: "position",
+    candidates: buildPositionSourceCandidates(position),
+    label: `Position ${position.pos_nr}`,
+  };
+  const canNavigateToSource =
+    Boolean(onEvidenceSelect) &&
+    Boolean(
+      sourceEvidence.source_file ||
+        sourceEvidence.source_page != null ||
+        sourceEvidence.source_quote,
+    );
 
   return (
     <Accordion.Item
       value={`pos-${position.pos_nr}`}
       className={cn(
-        "rounded-lg border bg-surface shadow-card transition-colors",
+        "rounded-lg border bg-surface shadow-card transition-colors [&[data-state=open]>h3]:border-b [&[data-state=open]>h3]:border-border",
         confirmingDelete ? "border-danger/40" : "border-border hover:border-foreground/20",
       )}
     >
@@ -146,19 +162,56 @@ export function PositionCard({
         <Accordion.Trigger
           className={cn(
             "group flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left text-sm font-semibold",
-            "data-[state=open]:border-b data-[state=open]:border-border",
           )}
         >
-          <span className="truncate">{label}</span>
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <span
+              className={cn(
+                "group relative shrink-0 rounded px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide",
+                position.confidence === "high" && "bg-success/10 text-success",
+                position.confidence === "medium" && "bg-warning/10 text-warning",
+                position.confidence === "low" && "bg-danger/10 text-danger",
+              )}
+              title={CONFIDENCE_EXPLANATION}
+            >
+              Pos {position.pos_nr}
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 w-72 rounded-md border border-border bg-surface p-2.5 text-xs font-normal normal-case leading-relaxed tracking-normal text-foreground/80 opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100"
+              >
+                {CONFIDENCE_EXPLANATION}
+              </span>
+            </span>
+            <span className="max-w-[13rem] shrink-0 truncate rounded-md border border-border bg-muted px-2 py-1 font-mono text-[13px] font-bold tracking-tight text-foreground">
+              {articleNumber}
+            </span>
+            <span className="min-w-0 truncate text-sm font-semibold text-foreground">
+              {position.bezeichnung || "Keine Bezeichnung"}
+            </span>
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">
+              {quantityMeta}
+            </span>
+          </span>
           <ChevronDown
             className="ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180"
             aria-hidden="true"
           />
         </Accordion.Trigger>
 
+        {canNavigateToSource && onEvidenceSelect && (
+          <div className="flex items-center px-1.5">
+            <SourceEyeButton
+              sourceTarget={positionSourceTarget}
+              onNavigate={onEvidenceSelect}
+              evidence={sourceEvidence}
+              label={`Quelle für Position ${position.pos_nr} markieren`}
+            />
+          </div>
+        )}
+
         {/* Delete — always visible, separate click target */}
         {confirmingDelete ? (
-          <div className="flex items-center gap-1.5 border-b border-danger/30 border-l border-l-danger/20 bg-danger-soft px-3">
+          <div className="flex items-center gap-1.5 border-l border-l-danger/20 bg-danger-soft px-3">
             <span className="text-[11px] font-semibold text-danger whitespace-nowrap">Löschen?</span>
             <button
               type="button"
@@ -180,7 +233,7 @@ export function PositionCard({
             type="button"
             aria-label={`Position ${position.pos_nr} löschen`}
             onClick={(e) => { e.stopPropagation(); setConfirmingDelete(true); }}
-            className="flex items-center border-l border-border px-3 text-muted-foreground/40 transition-colors hover:bg-danger-soft hover:text-danger data-[state=open]:border-b data-[state=open]:border-border"
+            className="flex items-center border-l border-border px-3 text-muted-foreground transition-colors hover:bg-danger-soft hover:text-danger"
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
@@ -191,32 +244,35 @@ export function PositionCard({
         className="px-4 pb-4 pt-3 data-[state=closed]:hidden"
         forceMount={defaultOpen ? true : undefined}
       >
-        {/* Match row + KI badge */}
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          {match ? <MatchChip match={match} /> : <span />}
-          <span className={cn(
-            "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-            position.confidence === "high"
-              ? "bg-success/10 text-success"
-              : position.confidence === "medium"
-                ? "bg-warning/10 text-warning"
-                : "bg-danger/10 text-danger",
-          )}>
-            KI {CONFIDENCE_LABEL[position.confidence] ?? position.confidence}
-          </span>
-          <div className="ml-auto">
-            <StammdatenSearchDialog
-              reviewId={reviewId}
-              posNr={position.pos_nr}
-              initialQuery={position.artikelnummer || position.bezeichnung}
-              onAssign={handleAssign}
-            >
-              <Button type="button" size="sm" variant="ghost" className="border border-border">
-                <Replace className="h-3.5 w-3.5" aria-hidden="true" />
-                Anderen Artikel zuordnen
-              </Button>
-            </StammdatenSearchDialog>
-          </div>
+        {/* Primary matching status */}
+        <div className="mb-4">
+          {match ? (
+            <MatchChip
+              match={match}
+              extractedArticleNumber={position.artikelnummer}
+              action={
+                <StammdatenSearchDialog
+                  reviewId={reviewId}
+                  posNr={position.pos_nr}
+                  initialQuery={position.artikelnummer || position.bezeichnung}
+                  onAssign={handleAssign}
+                >
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    title="Anderen Artikel zuordnen"
+                    className="h-7 border border-border bg-surface px-2 text-xs"
+                  >
+                    <Replace className="h-3.5 w-3.5" aria-hidden="true" />
+                    Zuordnen
+                  </Button>
+                </StammdatenSearchDialog>
+              }
+            />
+          ) : (
+            <span />
+          )}
         </div>
 
         {/* PRIMARY DATA BLOCK */}
@@ -231,7 +287,7 @@ export function PositionCard({
           const showStaffel = !!quotationItem && !draft.ist_zertifikat;
 
           return (
-            <div className="overflow-hidden rounded-xl border border-border">
+            <div className="overflow-hidden border rounded-xl border-border">
               {/* Metric row */}
               <div className="grid grid-cols-3 divide-x divide-border">
                 <div className="flex flex-col gap-1.5 px-4 py-3">
@@ -243,13 +299,13 @@ export function PositionCard({
                       value={draft.menge}
                       onChange={(e) => updateField("menge", Number(e.target.value))}
                       onBlur={() => commit(`positionen[${index}].menge`)}
-                      className="h-auto min-w-0 flex-1 border-0 bg-transparent p-0 text-xl font-bold shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                      className="flex-1 h-auto min-w-0 p-0 text-xl font-bold bg-transparent border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                     />
                     <Input
                       value={draft.einheit}
                       onChange={(e) => updateField("einheit", e.target.value)}
                       onBlur={() => commit(`positionen[${index}].einheit`)}
-                      className="h-auto w-14 shrink-0 border-0 bg-transparent p-0 text-sm font-semibold text-muted-foreground shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                      className="h-auto p-0 text-sm font-semibold bg-transparent border-0 shadow-none w-14 shrink-0 text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
                     />
                   </div>
                 </div>
@@ -260,14 +316,14 @@ export function PositionCard({
                     value={draft.lieferzeit ?? ""}
                     onChange={(e) => updateField("lieferzeit", e.target.value)}
                     onBlur={() => commit(`positionen[${index}].lieferzeit`)}
-                    className="h-auto border-0 bg-transparent p-0 text-xl font-bold shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                    className="h-auto p-0 text-xl font-bold bg-transparent border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                     placeholder="z. B. 6 Wo."
                   />
                   <Input
                     value={draft.lieferwerk ?? ""}
                     onChange={(e) => updateField("lieferwerk", e.target.value)}
                     onBlur={() => commit(`positionen[${index}].lieferwerk`)}
-                    className="h-auto border-0 bg-transparent p-0 text-xs font-medium text-muted-foreground shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                    className="h-auto p-0 text-xs font-medium bg-transparent border-0 shadow-none text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
                     placeholder="Werk"
                   />
                 </div>
@@ -285,7 +341,7 @@ export function PositionCard({
                     value={unitPriceDraft}
                     onChange={(e) => setUnitPriceDraft(Number(e.target.value))}
                     onBlur={commitUnitPrice}
-                    className="h-auto border-0 bg-transparent p-0 text-xl font-bold shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                    className="h-auto p-0 text-xl font-bold bg-transparent border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                     placeholder="—"
                   />
                 </div>
@@ -343,21 +399,21 @@ export function PositionCard({
         <button
           type="button"
           onClick={() => setDetailsOpen((o) => !o)}
-          className="mt-5 flex w-full items-center gap-3 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          className="flex items-center w-full gap-3 mt-5 text-xs transition-colors text-muted-foreground hover:text-foreground"
         >
-          <div className="h-px flex-1 bg-border" />
-          <span className="flex shrink-0 items-center gap-1 font-medium">
+          <div className="flex-1 h-px bg-border" />
+          <span className="flex items-center gap-1 font-medium shrink-0">
             <ChevronDown
               className={cn("h-3 w-3 transition-transform duration-200", detailsOpen && "rotate-180")}
               aria-hidden="true"
             />
             Weitere Details
           </span>
-          <div className="h-px flex-1 bg-border" />
+          <div className="flex-1 h-px bg-border" />
         </button>
 
         {detailsOpen && (
-          <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 mt-3 gap-x-4 gap-y-3 md:grid-cols-2">
             <FormField label="Artikelnummer">
               <Input
                 value={draft.artikelnummer}
@@ -392,7 +448,7 @@ export function PositionCard({
           </div>
         )}
 
-        <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 mt-4 text-sm cursor-pointer">
           <input
             type="checkbox"
             checked={draft.ist_zertifikat}
@@ -402,7 +458,7 @@ export function PositionCard({
               onFieldEdit(`positionen[${index}].ist_zertifikat`);
               onPositionChange(next);
             }}
-            className="h-4 w-4 rounded border-input"
+            className="w-4 h-4 rounded border-input"
           />
           <span className="font-medium">Zertifikat / Pauschalposition</span>
           <span className="text-xs text-muted-foreground">
@@ -410,22 +466,18 @@ export function PositionCard({
           </span>
         </label>
 
-        {(position.source_quote || position.source_file) && (
-          <div className="mt-3">
-            <SourceBadge
-              evidence={{
-                source_file: position.source_file,
-                source_page: position.source_page,
-                source_row: position.source_row,
-                source_quote: position.source_quote || null,
-              }}
-              onNavigate={onEvidenceSelect}
-            />
-          </div>
-        )}
-
       </Accordion.Content>
     </Accordion.Item>
   );
 }
 
+function buildPositionSourceCandidates(position: Position): string[] {
+  return [
+    position.artikelnummer,
+    String(position.pos_nr),
+    position.bezeichnung,
+    position.zeichnungsnummer ?? "",
+    position.abmessungen ?? "",
+    position.menge ? String(position.menge) : "",
+  ].filter((value) => value.trim().length > 0);
+}

@@ -38,10 +38,8 @@ export function StammdatenPage() {
             Stammdaten<span className="text-brand">.</span>
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted-foreground">
-            Suche nach Artikeln im Master-Bestand. Die Daten werden aus
-            dem Quoting-Backend gelesen und sind in dieser Ansicht
-            schreibgeschützt — Stammdaten-Pflege findet im SAP-Quellsystem
-            statt.
+            Artikel im Master-Bestand suchen. Schreibgeschützte Ansicht aus
+            dem Quoting-Backend; Pflege bleibt im SAP-Quellsystem.
           </p>
         </div>
       </header>

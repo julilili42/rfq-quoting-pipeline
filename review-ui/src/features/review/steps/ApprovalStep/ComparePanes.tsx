@@ -1,3 +1,5 @@
+import { useEffect, useState, type ReactNode } from "react";
+
 import {
   Tabs,
   TabsContent,
@@ -8,12 +10,12 @@ import { OriginalDocumentViewer } from "@/shared/components/viewers/OriginalDocu
 import { PdfViewer } from "@/shared/components/viewers/PdfViewer";
 
 import type { ReviewDetail } from "@/shared/api/reviews";
-import { Pill } from "@/shared/components/ui/pill";
 
 interface ComparePanesProps {
   reviewId: string;
   detail: ReviewDetail;
   isApproved: boolean;
+  focusMode?: boolean;
 }
 
 /**
@@ -26,13 +28,27 @@ interface ComparePanesProps {
  * which sidesteps the long-standing browser data-URL conflation
  * problem from the Streamlit version.
  */
-export function ComparePanes({ reviewId, detail, isApproved }: ComparePanesProps) {
+export function ComparePanes({
+  reviewId,
+  detail,
+  isApproved,
+  focusMode = false,
+}: ComparePanesProps) {
   const attachmentNames = detail.mail.attachments.map((a) => a.name);
+  const [offerTab, setOfferTab] = useState<"draft" | "final">("draft");
 
   // Cache buster lives at the comparison level — when the parent
   // updates `detail` (i.e. after a regenerate or a finalize), both
-  // PDF iframes refresh in lockstep.
-  const cacheBuster = detail.review_id + "::" + (isApproved ? "approved" : "draft");
+  // generated PDF viewers refresh in lockstep.
+  const cacheBuster =
+    detail.review_id + "::" + (isApproved ? "approved" : "draft");
+  const previewClassName = focusMode
+    ? "h-[calc(100vh-14rem)] min-h-[720px]"
+    : undefined;
+
+  useEffect(() => {
+    setOfferTab(isApproved ? "final" : "draft");
+  }, [isApproved]);
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -41,17 +57,20 @@ export function ComparePanes({ reviewId, detail, isApproved }: ComparePanesProps
           reviewId={reviewId}
           mail={detail.mail}
           attachmentNames={attachmentNames}
+          previewClassName={previewClassName}
         />
       </ComparePane>
 
-      <ComparePane
-        label="Angebotsentwurf"
-        badge={isApproved ? <Pill tone="success" withDot>freigegeben</Pill> : null}
-      >
-        <Tabs defaultValue="draft">
+      <ComparePane label="Angebotsentwurf">
+        <Tabs
+          value={offerTab}
+          onValueChange={(value) => setOfferTab(value as "draft" | "final")}
+        >
           <TabsList>
             <TabsTrigger value="draft">Entwurf</TabsTrigger>
-            {isApproved && <TabsTrigger value="final">Finales Angebot</TabsTrigger>}
+            {isApproved && (
+              <TabsTrigger value="final">Finales Angebot</TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="draft">
@@ -59,6 +78,7 @@ export function ComparePanes({ reviewId, detail, isApproved }: ComparePanesProps
               reviewId={reviewId}
               kind="draft"
               cacheBuster={cacheBuster + "::draft"}
+              previewClassName={previewClassName}
             />
           </TabsContent>
 
@@ -68,6 +88,7 @@ export function ComparePanes({ reviewId, detail, isApproved }: ComparePanesProps
                 reviewId={reviewId}
                 kind="final"
                 cacheBuster={cacheBuster + "::final"}
+                previewClassName={previewClassName}
               />
             </TabsContent>
           )}
@@ -79,15 +100,17 @@ export function ComparePanes({ reviewId, detail, isApproved }: ComparePanesProps
 
 interface ComparePaneProps {
   label: string;
-  badge?: React.ReactNode;
-  children: React.ReactNode;
+  badge?: ReactNode;
+  children: ReactNode;
 }
 
 function ComparePane({ label, badge, children }: ComparePaneProps) {
   return (
     <section>
-      <header className="mb-2 flex items-center gap-2">
-        <span className="section-label">{label}</span>
+      <header className="flex items-center gap-2 mb-2">
+        <span className="font-display text-lg font-bold tracking-tight text-foreground">
+          {label}
+        </span>
         {badge}
       </header>
       {children}

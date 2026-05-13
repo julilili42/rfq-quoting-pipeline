@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 
 import { OriginalDocumentViewer } from "@/shared/components/viewers/OriginalDocumentViewer";
-import type { Evidence } from "@/shared/schemas/anfrage";
+import type { SourceNavigationTarget } from "@/shared/types/sourceNavigation";
 
 import type { ReviewDetailContext } from "../../ReviewDetailPage";
 import { ChangedFieldsIndicator } from "../../components/ChangedFieldsIndicator";
@@ -12,7 +12,7 @@ import { CustomerForm } from "./CustomerForm";
 export function CustomerStep() {
   const { reviewId } = useParams<{ reviewId: string }>();
   const { detail } = useOutletContext<ReviewDetailContext>();
-  const [activeEvidence, setActiveEvidence] = useState<Evidence | null>(null);
+  const [activeSource, setActiveSource] = useState<SourceNavigationTarget | null>(null);
 
   if (!reviewId) return null;
 
@@ -28,7 +28,7 @@ export function CustomerStep() {
             reviewId={reviewId}
             mail={detail.mail}
             attachmentNames={attachmentNames}
-            activeEvidence={activeEvidence}
+            activeSource={activeSource}
             className="lg:sticky lg:top-6"
           />
         </div>
@@ -37,7 +37,7 @@ export function CustomerStep() {
           <CustomerForm
             reviewId={reviewId}
             anfrage={detail.anfrage}
-            onEvidenceSelect={setActiveEvidence}
+            onEvidenceSelect={setActiveSource}
           />
         </div>
       </div>

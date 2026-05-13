@@ -50,37 +50,45 @@ export function StepNavigation({
   useHotkeys("alt+arrowleft", goPrev, { enabled: !!reviewId, preventDefault: true });
 
   return (
-    <nav
-      aria-label="Schritt-Navigation"
-      className="sticky bottom-0 z-10 -mx-6 mt-8 flex items-center justify-between gap-4 border-t border-border bg-background px-6 pb-6 pt-5"
-    >
-      <div>
-        {prev && (
-          <div className="group relative">
-            <Button variant="secondary" onClick={goPrev}>
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              {backLabel}
-            </Button>
-            <ShortcutHint keys={["Alt", "←"]} />
+    <>
+      <div aria-hidden="true" className="mt-8 h-24" />
+      <nav
+        aria-label="Schritt-Navigation"
+        className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-background/95 shadow-[0_-8px_24px_hsl(var(--foreground)/0.06)] backdrop-blur-sm lg:left-64"
+      >
+        <div className="mx-auto flex h-20 w-full max-w-screen-2xl items-center justify-between gap-4 px-6">
+          <div>
+            {prev && (
+              <div className="group relative">
+                <Button variant="secondary" onClick={goPrev}>
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                  {backLabel}
+                </Button>
+                <ShortcutHint keys={["Alt", "←"]} placement="top" />
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      <div>
-        {next ? (
-          <div className="group relative">
-            <Button variant="primary" disabled={disabled} onClick={goNext}>
-              {forwardLabel}
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </Button>
-            <ShortcutHint keys={["Alt", "→"]} />
+          <div>
+            {next ? (
+              <div className="group relative">
+                <Button variant="primary" disabled={disabled} onClick={goNext}>
+                  {forwardLabel}
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </Button>
+                <ShortcutHint keys={["Alt", "→"]} placement="top" />
+              </div>
+            ) : onFinish ? (
+              <div className="group relative">
+                <Button variant="primary" onClick={onFinish}>
+                  {finishLabel}
+                </Button>
+                <ShortcutHint keys={["Alt", "→"]} placement="top" />
+              </div>
+            ) : null}
           </div>
-        ) : onFinish ? (
-          <Button variant="primary" onClick={onFinish}>
-            {finishLabel}
-          </Button>
-        ) : null}
-      </div>
-    </nav>
+        </div>
+      </nav>
+    </>
   );
 }

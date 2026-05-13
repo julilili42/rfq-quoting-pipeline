@@ -6,7 +6,8 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { Button } from "@/shared/components/ui/button";
 import { ShortcutHint } from "@/shared/components/ui/ShortcutHint";
 import { useReviewUiStore } from "@/features/review/stores/reviewUiStore";
-import type { Anfrage, Evidence, Position } from "@/shared/schemas/anfrage";
+import type { Anfrage, Position } from "@/shared/schemas/anfrage";
+import type { SourceNavigationTarget } from "@/shared/types/sourceNavigation";
 import type { MatchResult } from "@/shared/schemas/matchResult";
 import type {
   ManualOverride,
@@ -26,7 +27,7 @@ interface PositionsEditorProps {
   matches: MatchResult[];
   quotation: Quotation | null;
   overrides: ManualOverride[];
-  onEvidenceSelect?: (ev: Evidence) => void;
+  onEvidenceSelect?: (target: SourceNavigationTarget) => void;
 }
 
 /**
