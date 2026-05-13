@@ -384,7 +384,12 @@ function App() {
   // Render.
   // ------------------------------------------------------------------
   const workflowState = workflow?.state ?? "new";
-  const showStatusCard = !STATES_WITH_OWN_STATUS.includes(workflowState);
+  const pipelineVisible =
+    workflowState === "review_running" &&
+    (loading || (pipelineProgress !== null && pipelineProgress.status !== "completed"));
+  const showStatusCard =
+    !STATES_WITH_OWN_STATUS.includes(workflowState) ||
+    (workflowState === "review_running" && !pipelineVisible);
 
   return (
     <div className="panel">

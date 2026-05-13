@@ -18,7 +18,9 @@ import logging
 import math
 import re
 import shutil
+import time
 import uuid
+from dataclasses import replace
 from datetime import date as _date
 from datetime import datetime
 from pathlib import Path
@@ -1035,6 +1037,24 @@ class DebugInfo(BaseModel):
     checked_at: str
 
 
+class LlmProbeUsage(BaseModel):
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+
+class LlmProbeResult(BaseModel):
+    status: Literal["ok", "error"]
+    provider: str
+    model: str
+    checked_at: str
+    latency_ms: int
+    detail: str
+    response_preview: str | None = None
+    error_type: str | None = None
+    usage: LlmProbeUsage | None = None
+
+
 def _check_llm_key(settings: Any) -> CheckResult:
     provider = settings.llm_provider
     if provider == "gemini":
@@ -1059,6 +1079,22 @@ def _check_llm_model(settings: Any) -> CheckResult:
     model = settings.azure_model
     endpoint = settings.azure_endpoint
     return CheckResult(name="LLM Modell", status="ok", detail=f"{model} @ {endpoint}")
+
+
+def _llm_model_name(settings: Any) -> str:
+    if settings.llm_provider == "gemini":
+        return settings.gemini_model
+    if settings.llm_provider == "azure":
+        return settings.azure_model
+    return "(unbekannt)"
+
+
+def _scrub_llm_error(message: str, settings: Any) -> str:
+    scrubbed = message
+    for secret in (settings.google_api_key, settings.nexus_api_key):
+        if secret:
+            scrubbed = scrubbed.replace(secret, "***")
+    return scrubbed
 
 
 def _check_env_file(root: Path) -> CheckResult:
@@ -1180,3 +1216,63 @@ def get_debug_info() -> DebugInfo:
         llm_provider=settings.llm_provider,
         checked_at=datetime.now().isoformat(timespec="seconds"),
     )
+
+
+@router.post("/debug/llm", response_model=LlmProbeResult)
+def probe_llm_provider(
+    timeout_s: Annotated[int, Query(ge=1, le=120)] = 20,
+) -> LlmProbeResult:
+    """Run an explicit, minimal provider call for the debug page.
+
+    The regular ``/debug`` endpoint only validates configuration. This
+    endpoint intentionally performs a real LLM request, so the UI calls it
+    only after a user action.
+    """
+    from quoting.core.config import load_settings
+    from quoting.extraction.llm import build_llm
+
+    settings = load_settings()
+    if settings.llm_provider == "azure":
+        settings = replace(settings, llm_timeout_s=timeout_s)
+
+    started = time.monotonic()
+    checked_at = datetime.now().isoformat(timespec="seconds")
+    provider = settings.llm_provider
+    model = _llm_model_name(settings)
+
+    try:
+        llm = build_llm(settings)
+        response = llm.generate(
+            'Dies ist ein Connectivity-Check. Antworte ausschließlich mit gültigem JSON: {"status":"ok"}',
+            images=[],
+        )
+        latency_ms = int((time.monotonic() - started) * 1000)
+        usage = None
+        if response.usage is not None:
+            usage = LlmProbeUsage(
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                total_tokens=response.usage.total_tokens,
+            )
+        preview = response.text.strip()
+        return LlmProbeResult(
+            status="ok",
+            provider=provider,
+            model=model,
+            checked_at=checked_at,
+            latency_ms=latency_ms,
+            detail="Provider erreichbar; Testantwort erhalten.",
+            response_preview=preview[:500] or "(leere Antwort)",
+            usage=usage,
+        )
+    except Exception as exc:  # noqa: BLE001 - provider SDKs raise their own types
+        latency_ms = int((time.monotonic() - started) * 1000)
+        return LlmProbeResult(
+            status="error",
+            provider=provider,
+            model=model,
+            checked_at=checked_at,
+            latency_ms=latency_ms,
+            detail=_scrub_llm_error(str(exc), settings) or "Unbekannter LLM-Fehler",
+            error_type=type(exc).__name__,
+        )

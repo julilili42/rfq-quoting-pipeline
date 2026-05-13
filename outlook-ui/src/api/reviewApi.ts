@@ -152,7 +152,9 @@ export async function pollReviewUntilComplete(
 
     if (progress.status === "completed") {
       const completed = progress.result ?? review;
-      await checkPdfUrl(completed);
+      await checkPdfUrl(completed).catch(() => {
+        /* PDF transiently unreachable from add-in — proceed anyway */
+      });
       return {
         ...review,
         ...completed,
