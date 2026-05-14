@@ -1,5 +1,6 @@
 import type { MailTemplateSettings } from "../api/reviewApi";
 import type { CreateReviewResponse } from "../types";
+import { withCacheBust } from "../utils";
 
 declare const Office: any;
 
@@ -8,11 +9,6 @@ type DraftMailContext = {
   kundenFirma?: string;
   overrideFilename?: string;
 };
-
-function withCacheBust(url: string): string {
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}v=${Date.now()}`;
-}
 
 function resolvePlaceholders(
   template: string,

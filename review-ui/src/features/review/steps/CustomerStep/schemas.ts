@@ -1,21 +1,23 @@
 import { z } from "zod";
+import { anfrageSchema } from "@/shared/schemas/anfrage";
 
 /**
  * Form schema for step 2.
  *
- * Editable subset of the Anfrage. We don't validate strictly here —
- * commercial fields like incoterms can be empty, names can have any
- * shape — we just want type-safety on the form values.
+ * Editable subset of the Anfrage — derived via .pick() so the form
+ * stays in sync if the backend renames a customer-header field.
  */
-export const customerFormSchema = z.object({
-  kunde_firma: z.string().nullable().optional(),
-  kunde_ansprechpartner: z.string().nullable().optional(),
-  kunde_email: z.string().nullable().optional(),
-  kundennummer: z.string().nullable().optional(),
-  belegnummer: z.string().nullable().optional(),
-  datum: z.string().nullable().optional(),
-  incoterms: z.string().nullable().optional(),
-  zahlungsbedingungen: z.string().nullable().optional(),
-});
+export const customerFormSchema = anfrageSchema
+  .pick({
+    kunde_firma: true,
+    kunde_ansprechpartner: true,
+    kunde_email: true,
+    kundennummer: true,
+    belegnummer: true,
+    datum: true,
+    incoterms: true,
+    zahlungsbedingungen: true,
+  })
+  .strip();
 
 export type CustomerFormValues = z.infer<typeof customerFormSchema>;

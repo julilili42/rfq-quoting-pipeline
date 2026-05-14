@@ -22,9 +22,11 @@ from .pdfs import (
     find_final_pdf,
 )
 from .store import (
+    ReviewFiles,
     load_mail_meta,
     load_review_state,
     read_json,
+    read_json_list,
     saved_attachment_paths,
     write_json,
 )
@@ -35,6 +37,7 @@ from .quotation_store import load_saved_quotation, quotation_from_dict
 
 
 __all__ = [
+    "ReviewFiles",
     "draft_pdf_filename",
     "final_pdf_filename",
     "find_current_pdf",
@@ -43,6 +46,7 @@ __all__ = [
     "load_mail_meta",
     "load_review_state",
     "read_json",
+    "read_json_list",
     "saved_attachment_paths",
     "write_json",
     "reset_review_artifacts",

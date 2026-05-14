@@ -41,12 +41,14 @@ from quoting.output import build_draft_pdf
 from quoting.pipeline import QuotingPipeline
 from quoting.pricing import Quotation, build_quotation
 from quoting.reviews import (
+    ReviewFiles,
     draft_pdf_filename,
     find_draft_pdf,
     find_final_pdf,
     load_mail_meta,
     load_saved_quotation,
     read_json,
+    read_json_list,
     scan_reviews,
     write_json,
 )
@@ -157,17 +159,10 @@ def _format_mail_dict(mail_meta: dict) -> dict:
     }
 
 
-def _upsert_match(matches: list, new_match: MatchResult) -> list:
+def _upsert_match(matches: list[MatchResult], new_match: MatchResult) -> list[MatchResult]:
     """Replace an existing match by pos_nr, or append if not found."""
-    updated = []
-    replaced = False
-    for m in matches:
-        if m.pos_nr == new_match.pos_nr:
-            updated.append(new_match)
-            replaced = True
-        else:
-            updated.append(m)
-    if not replaced:
+    updated = [new_match if m.pos_nr == new_match.pos_nr else m for m in matches]
+    if not any(m.pos_nr == new_match.pos_nr for m in matches):
         updated.append(new_match)
     return updated
 
@@ -248,9 +243,7 @@ def get_review_detail(review_id: str) -> dict:
     matches = _load_or_recompute_matches(folder, anfrage, pipeline)
     quotation = _load_quotation(folder)
 
-    overrides = read_json(folder / "manual_overrides.json")
-    if not isinstance(overrides, list):
-        overrides = []
+    overrides = read_json_list(folder / ReviewFiles.MANUAL_OVERRIDES)
     overrides = _filter_redundant_custom_price_overrides(overrides, matches)
 
     mail_meta = load_mail_meta(folder) or {}
@@ -457,7 +450,8 @@ def _csv_preview(path: Path, suffix: str) -> TablePreview:
                     engine="python",
                     on_bad_lines="skip",
                 )
-            except Exception:
+            except Exception as exc:
+                log.debug("csv_preview: sep=%r enc=%r failed for %s: %s", sep, enc, path.name, exc)
                 continue
 
             if best_df is None or len(df.columns) > len(best_df.columns):
@@ -557,10 +551,10 @@ def put_anfrage(review_id: str, payload: dict) -> dict:
     previous = _try_load_anfrage_from_disk(folder)
     anfrage = _enrich_exact_article_edits(anfrage, previous, pipeline)
 
-    write_json(folder / "anfrage_reviewed.json", anfrage.model_dump(mode="json"))
-    if (folder / "matches_reviewed.json").exists():
+    write_json(folder / ReviewFiles.ANFRAGE_REVIEWED, anfrage.model_dump(mode="json"))
+    if (folder / ReviewFiles.MATCHES_REVIEWED).exists():
         matches = _load_or_recompute_matches(folder, anfrage, pipeline)
-        write_json(folder / "matches_reviewed.json", [m.to_dict() for m in matches])
+        write_json(folder / ReviewFiles.MATCHES_REVIEWED, [m.to_dict() for m in matches])
     else:
         try:
             matches = match_positions(
@@ -586,7 +580,7 @@ def put_overrides(review_id: str, payload: list[dict]) -> list[dict]:
     if not isinstance(payload, list):
         raise HTTPException(400, "Overrides payload must be a list")
 
-    write_json(folder / "manual_overrides.json", payload)
+    write_json(folder / ReviewFiles.MANUAL_OVERRIDES, payload)
     _invalidate_approval(folder)
 
     return payload
@@ -608,9 +602,7 @@ def _load_review_data(
         log.exception("load_review_data: match recompute failed for %s", review_id)
         raise HTTPException(422, f"Matching fehlgeschlagen: {exc}") from exc
 
-    overrides = read_json(folder / "manual_overrides.json") or []
-    if not isinstance(overrides, list):
-        overrides = []
+    overrides = read_json_list(folder / ReviewFiles.MANUAL_OVERRIDES)
     overrides = _filter_redundant_custom_price_overrides(overrides, matches)
     return anfrage, matches, overrides
 
@@ -651,7 +643,7 @@ def regenerate_quotation(review_id: str) -> dict:
         log.exception("regenerate: PDF build failed for %s", review_id)
         raise HTTPException(422, f"PDF-Erstellung fehlgeschlagen: {exc}") from exc
 
-    write_json(folder / "quotation_reviewed.json", quotation.to_dict())
+    write_json(folder / ReviewFiles.QUOTATION_REVIEWED, quotation.to_dict())
     return quotation.to_dict()
 
 
@@ -760,7 +752,7 @@ async def upload_review(file: Annotated[UploadFile, File()]) -> dict:
         shutil.copyfileobj(file.file, fh)
 
     write_json(
-        folder / "mail.json",
+        folder / ReviewFiles.MAIL,
         {
             "subject": Path(file.filename).stem,
             "from": "",
@@ -955,7 +947,7 @@ def create_custom_article_match(
         raise HTTPException(404, f"Position {payload.pos_nr} not found in this review")
 
     updated_anfrage = anfrage.model_copy(update={"positionen": positions})
-    write_json(folder / "anfrage_reviewed.json", updated_anfrage.model_dump(mode="json"))
+    write_json(folder / ReviewFiles.ANFRAGE_REVIEWED, updated_anfrage.model_dump(mode="json"))
 
     custom_row = {
         "artikel_nr": artikel_nr,
@@ -984,13 +976,11 @@ def create_custom_article_match(
         matched_row=custom_row,
     )
     updated_matches = _upsert_match(matches, new_match)
-    write_json(folder / "matches_reviewed.json", [m.to_dict() for m in updated_matches])
+    write_json(folder / ReviewFiles.MATCHES_REVIEWED, [m.to_dict() for m in updated_matches])
 
-    overrides = read_json(folder / "manual_overrides.json") or []
-    if not isinstance(overrides, list):
-        overrides = []
+    overrides = read_json_list(folder / ReviewFiles.MANUAL_OVERRIDES)
     write_json(
-        folder / "manual_overrides.json",
+        folder / ReviewFiles.MANUAL_OVERRIDES,
         _remove_position_price_overrides(overrides, payload.pos_nr),
     )
 
@@ -1029,7 +1019,7 @@ def _set_manual_match(review_id: str, pos_nr: int, artikel_nr: str) -> dict:
     )
 
     updated = _upsert_match(matches, new_match)
-    write_json(folder / "matches_reviewed.json", [m.to_dict() for m in updated])
+    write_json(folder / ReviewFiles.MATCHES_REVIEWED, [m.to_dict() for m in updated])
     _invalidate_approval(folder)
 
     return {
@@ -1157,8 +1147,8 @@ def _mail_from_meta(mail_meta: dict, folder: Path) -> Mail:
 def _try_load_anfrage_from_disk(folder: Path) -> Anfrage | None:
     """Return the first valid cached Anfrage from disk, or None if not found."""
     for path in (
-        folder / "anfrage_reviewed.json",
-        folder / "01_extracted.json",
+        folder / ReviewFiles.ANFRAGE_REVIEWED,
+        folder / ReviewFiles.EXTRACTED,
         folder / "pipeline" / "01_extracted.json",
     ):
         data = read_json(path)
@@ -1170,7 +1160,7 @@ def _try_load_anfrage_from_disk(folder: Path) -> Anfrage | None:
 def _try_load_original_anfrage_from_disk(folder: Path) -> Anfrage | None:
     """Return the initial extraction snapshot, ignoring reviewed edits."""
     for path in (
-        folder / "01_extracted.json",
+        folder / ReviewFiles.EXTRACTED,
         folder / "pipeline" / "01_extracted.json",
     ):
         data = read_json(path)
@@ -1260,7 +1250,7 @@ def _load_or_recompute_matches(
     anfrage: Anfrage,
     pipeline: QuotingPipeline,
 ) -> list[MatchResult]:
-    data = read_json(folder / "matches_reviewed.json") or read_json(
+    data = read_json(folder / ReviewFiles.MATCHES_REVIEWED) or read_json(
         folder / "02_matches.json"
     )
 
@@ -1578,7 +1568,7 @@ def _recent_pipeline_failures(
     for folder in reviews_root.iterdir():
         if not folder.is_dir():
             continue
-        progress_path = folder / "progress.json"
+        progress_path = folder / ReviewFiles.PROGRESS
         progress = read_json(progress_path)
         if not isinstance(progress, dict):
             continue
@@ -1602,7 +1592,7 @@ def _recent_pipeline_failures(
         if not detail and isinstance(failed_step, dict):
             detail = str(failed_step.get("detail") or "").strip()
 
-        mail = read_json(folder / "mail.json")
+        mail = read_json(folder / ReviewFiles.MAIL)
         if not isinstance(mail, dict):
             mail = {}
         updated = _safe_datetime(progress.get("updated_at"), progress_path)

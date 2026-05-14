@@ -21,6 +21,24 @@ from pathlib import Path
 from typing import Any
 
 
+# ------------------------------------------------------------------ filenames
+class ReviewFiles:
+    """Canonical names of the JSON sidecars in a review folder.
+
+    Centralized so a rename only touches this class. The names are
+    persisted on disk for existing reviews, so don't change them lightly.
+    """
+
+    MAIL = "mail.json"
+    APPROVAL = "approval.json"
+    PROGRESS = "progress.json"
+    ANFRAGE_REVIEWED = "anfrage_reviewed.json"
+    EXTRACTED = "01_extracted.json"
+    MATCHES_REVIEWED = "matches_reviewed.json"
+    MANUAL_OVERRIDES = "manual_overrides.json"
+    QUOTATION_REVIEWED = "quotation_reviewed.json"
+
+
 # ------------------------------------------------------------------ generic
 def read_json(path: Path) -> Any:
     """Return parsed JSON or ``None`` on missing / malformed input."""
@@ -30,6 +48,12 @@ def read_json(path: Path) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError, ValueError):
         return None
+
+
+def read_json_list(path: Path) -> list:
+    """Return parsed JSON as a list, or ``[]`` if missing / malformed / wrong shape."""
+    data = read_json(path)
+    return data if isinstance(data, list) else []
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -48,7 +72,7 @@ def write_json(path: Path, value: Any) -> None:
 # --------------------------------------------------------------- review-aware
 def load_mail_meta(review_dir: Path) -> dict | None:
     """Return the parsed ``mail.json`` for a review, if present."""
-    return read_json(review_dir / "mail.json")
+    return read_json(review_dir / ReviewFiles.MAIL)
 
 
 def saved_attachment_paths(review_dir: Path) -> set[Path]:
@@ -71,7 +95,7 @@ def saved_attachment_paths(review_dir: Path) -> set[Path]:
 
 def load_review_state(review_dir: Path) -> dict | None:
     """Return the parsed ``review_state.json`` snapshot, if present."""
-    return read_json(review_dir / "review_state.json")
+    return read_json(review_dir / "review_state.json")  # not in ReviewFiles — Streamlit-era artifact
 
 
 # ------------------------------------------------------------------ internal

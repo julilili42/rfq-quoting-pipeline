@@ -38,6 +38,7 @@ from quoting.api.settings_store import (
 from quoting.ingestion import Mail
 from quoting.pipeline import QuotingPipeline, StepProgress
 from quoting.reviews import (
+    ReviewFiles,
     api_base_url,
     find_current_pdf,
     find_draft_pdf,
@@ -46,10 +47,12 @@ from quoting.reviews import (
     write_json,
 )
 
-from quoting.api.frontend_router import router as frontend_router
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-REVIEW_DIR = PROJECT_ROOT / "data" / "reviews"
+from quoting.api.frontend_router import (
+    REVIEW_DIR,
+    _mail_from_meta,
+    _review_dir,
+    router as frontend_router,
+)
 
 STREAMLIT_BASE_URL = os.getenv("STREAMLIT_BASE_URL", "http://localhost:8501")
 
@@ -64,13 +67,6 @@ app.add_middleware(
 )
 app.include_router(frontend_router)
 _pipeline = QuotingPipeline()
-
-
-def _review_folder(review_id: str) -> Path:
-    folder = REVIEW_DIR / review_id
-    if not folder.exists():
-        raise HTTPException(404, f"Review {review_id} not found")
-    return folder
 
 
 # --------------------------------------------------------- request payloads
@@ -156,7 +152,7 @@ def create_review(
 
 @app.get("/api/reviews/{review_id}/status")
 def get_review_status(review_id: str):
-    folder = _review_folder(review_id)
+    folder = _review_dir(review_id)
     progress = read_progress(folder)
     if progress is None:
         raise HTTPException(404, f"Progress for review {review_id} not found")
@@ -165,13 +161,13 @@ def get_review_status(review_id: str):
 
 @app.get("/api/reviews/{review_id}/approval")
 def get_approval(review_id: str):
-    folder = _review_folder(review_id)
+    folder = _review_dir(review_id)
     return load_approval(folder).to_dict()
 
 
 @app.post("/api/reviews/{review_id}/approval")
 def post_approval(review_id: str, payload: ApprovalTransitionRequest):
-    folder = _review_folder(review_id)
+    folder = _review_dir(review_id)
     if payload.target not in VALID_TRANSITIONS:
         raise HTTPException(400, f"Unknown target state: {payload.target}")
     try:
@@ -190,7 +186,7 @@ def post_approval(review_id: str, payload: ApprovalTransitionRequest):
 @app.post("/api/reviews/{review_id}/reset")
 def reset_review(review_id: str, background_tasks: BackgroundTasks):
     """Reset a review and re-run the pipeline against the saved mail."""
-    folder = _review_folder(review_id)
+    folder = _review_dir(review_id)
 
     reset_review_artifacts(folder, review_id)
 
@@ -220,7 +216,7 @@ def reset_review(review_id: str, background_tasks: BackgroundTasks):
 @app.get("/api/reviews/{review_id}/pdf")
 def get_review_pdf(review_id: str):
     """Return the most appropriate PDF — final if approved, else draft."""
-    folder = _review_folder(review_id)
+    folder = _review_dir(review_id)
 
     pdf, _ = find_current_pdf(folder, review_id)
     if pdf is None:
@@ -231,7 +227,7 @@ def get_review_pdf(review_id: str):
 @app.get("/api/reviews/{review_id}/pdf/draft")
 def get_review_draft_pdf(review_id: str):
     """Always return the draft PDF (with the red AI warning banner)."""
-    folder = _review_folder(review_id)
+    folder = _review_dir(review_id)
 
     pdf = find_draft_pdf(folder, review_id)
     if pdf is None:
@@ -242,7 +238,7 @@ def get_review_draft_pdf(review_id: str):
 @app.get("/api/reviews/{review_id}/pdf/final")
 def get_review_final_pdf(review_id: str):
     """Return the final PDF — only available after the user approves."""
-    folder = _review_folder(review_id)
+    folder = _review_dir(review_id)
 
     pdf = find_final_pdf(folder, review_id)
     if pdf is None:
@@ -288,26 +284,13 @@ def _decode_and_save_attachments(attachments: list, folder: Path) -> list[Path]:
     return saved
 
 
-def _attachment_paths_from_meta(attachments_meta: list, folder: Path) -> list[Path]:
-    """Resolve stored attachment metadata to existing file paths."""
-    paths: list[Path] = []
-    for entry in attachments_meta:
-        name = entry.get("name") if isinstance(entry, dict) else None
-        if not name:
-            continue
-        path = folder / Path(name).name
-        if path.exists():
-            paths.append(path)
-    return paths
-
-
 def _prepare_mail_payload(payload: MailReviewRequest, folder: Path) -> Mail:
     meta = payload.model_dump(by_alias=True, exclude={"attachments"})
     meta["attachments"] = [
         {k: v for k, v in attachment.model_dump().items() if k != "contentBase64"}
         for attachment in payload.attachments
     ]
-    write_json(folder / "mail.json", meta)
+    write_json(folder / ReviewFiles.MAIL, meta)
 
     saved_paths = _decode_and_save_attachments(payload.attachments, folder)
 
@@ -327,7 +310,7 @@ def _prepare_mail_payload(payload: MailReviewRequest, folder: Path) -> Mail:
 
 def _rehydrate_mail_from_disk(folder: Path) -> Mail:
     """Rebuild a Mail from a persisted review folder for resets."""
-    meta_path = folder / "mail.json"
+    meta_path = folder / ReviewFiles.MAIL
     if not meta_path.exists():
         raise HTTPException(400, "No mail.json — review cannot be reset")
 
@@ -336,14 +319,7 @@ def _rehydrate_mail_from_disk(folder: Path) -> Mail:
     except Exception as exc:
         raise HTTPException(400, f"Could not parse mail.json: {exc}") from exc
 
-    attachment_paths = _attachment_paths_from_meta(meta.get("attachments") or [], folder)
-
-    mail = Mail(
-        subject=str(meta.get("subject") or ""),
-        sender=str(meta.get("from") or meta.get("sender") or ""),
-        body=str(meta.get("body") or ""),
-        attachments=attachment_paths,
-    )
+    mail = _mail_from_meta(meta, folder)
     if not mail.has_content:
         raise HTTPException(400, "Reset failed: mail has no body and no attachments on disk.")
     return mail

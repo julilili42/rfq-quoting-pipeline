@@ -103,6 +103,28 @@ const pdfHighlightResponseSchema = z.object({
   message: z.string().nullable().optional(),
 });
 
+/**
+ * Backend route templates for review-scoped endpoints.
+ *
+ * Centralized so a route rename touches only this object; callers compose
+ * via `reviewPath(id).status` etc. Each function pre-encodes the review id.
+ */
+export const reviewPath = (reviewId: string) => {
+  const id = encodeURIComponent(reviewId);
+  const base = `/api/reviews/${id}`;
+  return {
+    base,
+    status: `${base}/status`,
+    anfrage: `${base}/anfrage`,
+    overrides: `${base}/overrides`,
+    regenerate: `${base}/regenerate`,
+    finalize: `${base}/finalize`,
+    reset: `${base}/reset`,
+    pdfHighlight: (fileName: string) =>
+      `${base}/attachment/${encodeURIComponent(fileName)}/pdf/highlight`,
+  };
+};
+
 export const reviewsApi = {
   list: async (): Promise<ReviewSummary[]> => {
     const data = await apiClient.get<unknown>("/api/reviews");
@@ -110,24 +132,17 @@ export const reviewsApi = {
   },
 
   detail: async (reviewId: string): Promise<ReviewDetail> => {
-    const data = await apiClient.get<unknown>(
-      `/api/reviews/${encodeURIComponent(reviewId)}`,
-    );
+    const data = await apiClient.get<unknown>(reviewPath(reviewId).base);
     return reviewDetailSchema.parse(data);
   },
 
   status: async (reviewId: string): Promise<PipelineProgress> => {
-    const data = await apiClient.get<unknown>(
-      `/api/reviews/${encodeURIComponent(reviewId)}/status`,
-    );
+    const data = await apiClient.get<unknown>(reviewPath(reviewId).status);
     return pipelineProgressSchema.parse(data);
   },
 
   saveAnfrage: async (reviewId: string, anfrage: Anfrage): Promise<Anfrage> => {
-    const data = await apiClient.put<unknown>(
-      `/api/reviews/${encodeURIComponent(reviewId)}/anfrage`,
-      anfrage,
-    );
+    const data = await apiClient.put<unknown>(reviewPath(reviewId).anfrage, anfrage);
     return anfrageSchema.parse(data);
   },
 
@@ -135,17 +150,12 @@ export const reviewsApi = {
     reviewId: string,
     overrides: ManualOverride[],
   ): Promise<ManualOverride[]> => {
-    const data = await apiClient.put<unknown>(
-      `/api/reviews/${encodeURIComponent(reviewId)}/overrides`,
-      overrides,
-    );
+    const data = await apiClient.put<unknown>(reviewPath(reviewId).overrides, overrides);
     return z.array(manualOverrideSchema).parse(data);
   },
 
   regenerate: async (reviewId: string): Promise<Quotation> => {
-    const data = await apiClient.post<unknown>(
-      `/api/reviews/${encodeURIComponent(reviewId)}/regenerate`,
-    );
+    const data = await apiClient.post<unknown>(reviewPath(reviewId).regenerate);
     return quotationSchema.parse(data);
   },
 
@@ -155,14 +165,14 @@ export const reviewsApi = {
     filename?: string,
   ): Promise<{ final_pdf_path: string }> => {
     const data = await apiClient.post<unknown>(
-      `/api/reviews/${encodeURIComponent(reviewId)}/finalize`,
+      reviewPath(reviewId).finalize,
       { actor, ...(filename ? { filename } : {}) },
     );
     return z.object({ final_pdf_path: z.string() }).parse(data);
   },
 
   reset: async (reviewId: string): Promise<void> => {
-    await apiClient.post(`/api/reviews/${encodeURIComponent(reviewId)}/reset`);
+    await apiClient.post(reviewPath(reviewId).reset);
   },
 
   pdfHighlight: async (
@@ -172,7 +182,7 @@ export const reviewsApi = {
   ): Promise<PdfHighlightResponse> => {
     const { evidence } = target;
     const data = await apiClient.post<unknown>(
-      `/api/reviews/${encodeURIComponent(reviewId)}/attachment/${encodeURIComponent(fileName)}/pdf/highlight`,
+      reviewPath(reviewId).pdfHighlight(fileName),
       {
         source_page: evidence.source_page ?? null,
         source_quote: evidence.source_quote ?? null,

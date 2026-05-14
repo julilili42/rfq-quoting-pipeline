@@ -188,7 +188,7 @@ export const useReviewUiStore = create<ReviewUiState>((set, get) => ({
 }));
 
 function cloneSnapshot(snapshot: ReviewSnapshot): ReviewSnapshot {
-  return JSON.parse(JSON.stringify(snapshot)) as ReviewSnapshot;
+  return structuredClone(snapshot);
 }
 
 function sameSnapshot(a: ReviewSnapshot, b: ReviewSnapshot): boolean {

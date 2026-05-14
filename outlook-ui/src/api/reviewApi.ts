@@ -4,6 +4,7 @@ import type {
   MailSnapshot,
   PipelineProgress,
 } from "../types";
+import { withCacheBust } from "../utils";
 
 export type ProgressCallback = (progress: PipelineProgress) => void;
 
@@ -12,11 +13,6 @@ const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-function withCacheBust(url: string): string {
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}v=${Date.now()}`;
 }
 
 export async function startReview(
