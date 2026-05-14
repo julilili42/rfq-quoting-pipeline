@@ -37,6 +37,7 @@ from typing import Any
 from ..core import Anfrage, Settings, add_file_handler, get_logger, load_settings
 from ..data import StammdatenRepository, build_repository
 from ..extraction.fast_path import FastPathExtractor
+from ..extraction.own_party import load_own_party_context, sanitize_own_customer_fields
 from ..ingestion import Mail
 from ..matching import MatchResult
 from ..pricing import Quotation
@@ -176,6 +177,9 @@ class QuotingPipeline:
         # so the LLM fallback handles the messy cases.
         anfrage = self.fast_path.try_extract(mail)
         if anfrage is not None:
+            cleared = sanitize_own_customer_fields(anfrage, load_own_party_context())
+            if cleared:
+                log.info("Fast-path cleared own customer field(s): %s", ", ".join(cleared))
             ctx.report(
                 self._extraction.name,
                 "completed",
@@ -191,7 +195,12 @@ class QuotingPipeline:
                 )
             return anfrage
         ctx.extra["extraction_path"] = "llm"
-        return self._extraction.run(mail, ctx)
+        anfrage = self._extraction.run(mail, ctx)
+        cleared = sanitize_own_customer_fields(anfrage, load_own_party_context())
+        if cleared:
+            log.info("Extraction cleared own customer field(s): %s", ", ".join(cleared))
+            ctx.persist("01_extracted.json", anfrage.model_dump(mode="json"))
+        return anfrage
 
     def match(self, anfrage: Anfrage, ctx: StepContext) -> list[MatchResult]:
         return self.matching.run(anfrage, ctx)

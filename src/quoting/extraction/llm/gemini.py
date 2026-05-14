@@ -36,6 +36,8 @@ class GeminiClient(LLMClient):
         contents: list[Any] = [prompt]
         if images:
             for img in images:
+                if label := img.get("label"):
+                    contents.append(label)
                 contents.append(types.Part.from_bytes(
                     data=img["data"],
                     mime_type=img["mime_type"],

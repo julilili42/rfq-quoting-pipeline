@@ -35,6 +35,10 @@ class LLMClient(Protocol):
     ) -> LLMResponse:
         """Run extraction. ``prompt`` is the variable, per-RFQ content.
 
+        Image dicts may carry an optional ``label``. Providers should send
+        that label directly before the corresponding image part so the model
+        can map vision evidence back to source files/pages.
+
         ``cacheable_prefix`` (optional): a stable prompt prefix that the
         provider may cache across calls (Gemini context caching). When
         provided, ``prompt`` is treated as the suffix; the provider

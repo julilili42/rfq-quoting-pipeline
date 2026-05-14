@@ -41,6 +41,9 @@ EXTRACTION RULES
     - source_page: 1-indexed page number for PDF sources (use only when the PDF
       has visible page numbers or you are certain of the page).
     - source_row: 0-indexed data row from the "Row" column in Excel/CSV tables.
+    - Vision inputs are labelled "Image N: PDF <filename>, page P of M" or
+      "Image N: image file <filename>". Use these labels to map image evidence
+      to source_file and source_page.
 15. header_evidence: for each extracted Anfrage header field (e.g. "kunde_firma",
     "belegnummer", "datum"), provide an Evidence object with the same fields as
     above. Only include fields where you found clear evidence; omit the rest.
@@ -93,14 +96,17 @@ Expected JSON (abbreviated):
 
 
 def build_prompt_parts(
-    schema_json: str, mail_body: str, doc_sections: list[str]
+    schema_json: str,
+    mail_body: str,
+    doc_sections: list[str],
+    own_company_context: str = "",
 ) -> tuple[str, str]:
     """Split the prompt into a stable (cacheable) prefix and a variable suffix.
 
     The stable part — system rules + few-shot example + schema — is identical
     across every extraction call within a process. Gemini context caching
     keys on this prefix so input-token cost drops to ~25 % and TTFT shortens.
-    The variable part carries the actual mail + document content.
+    The variable part carries own-company context plus actual mail + document content.
     """
     stable_parts = [
         SYSTEM_PROMPT,
@@ -111,13 +117,29 @@ def build_prompt_parts(
         schema_json,
     ]
     variable_parts: list[str] = []
+    if own_company_context.strip():
+        variable_parts += [
+            "=== OUR COMPANY / DO NOT EXTRACT AS CUSTOMER ===",
+            own_company_context,
+            "",
+        ]
     if mail_body.strip():
         variable_parts += ["=== MAIL BODY ===", mail_body, ""]
     variable_parts += doc_sections
     return "\n".join(stable_parts), "\n".join(variable_parts)
 
 
-def build_prompt(schema_json: str, mail_body: str, doc_sections: list[str]) -> str:
+def build_prompt(
+    schema_json: str,
+    mail_body: str,
+    doc_sections: list[str],
+    own_company_context: str = "",
+) -> str:
     """Assemble the full prompt sent to the LLM (single-string form)."""
-    stable, variable = build_prompt_parts(schema_json, mail_body, doc_sections)
+    stable, variable = build_prompt_parts(
+        schema_json,
+        mail_body,
+        doc_sections,
+        own_company_context,
+    )
     return f"{stable}\n\n{variable}" if variable else stable

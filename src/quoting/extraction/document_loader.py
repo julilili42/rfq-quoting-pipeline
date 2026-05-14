@@ -53,6 +53,11 @@ def load_attachments(
         else:
             log.warning("Unsupported attachment type: %s (%s)", att.name, ext)
 
+    _annotate_image_order(images)
+    if images:
+        sections.append("=== IMAGE ORDER (VISION INPUTS) ===")
+        sections.extend(img["label"] for img in images)
+
     return sections, images
 
 
@@ -71,7 +76,14 @@ def _pdf_to_images(pdf_path: Path, dpi: int) -> list[dict[str, Any]]:
     if page_count <= 1:
         with fitz.open(pdf_path) as doc:
             pix = doc[0].get_pixmap(dpi=dpi)
-            return [{"mime_type": "image/png", "data": pix.tobytes("png")}]
+            return [{
+                "mime_type": "image/png",
+                "data": pix.tobytes("png"),
+                "source_type": "pdf",
+                "source_file": pdf_path.name,
+                "source_page": 1,
+                "source_page_count": page_count,
+            }]
 
     # Each worker opens its own fitz.Document handle — PyMuPDF Document
     # objects are not thread-safe; sharing one across threads causes
@@ -79,7 +91,14 @@ def _pdf_to_images(pdf_path: Path, dpi: int) -> list[dict[str, Any]]:
     def _render(page_index: int) -> dict[str, Any]:
         with fitz.open(pdf_path) as d:
             pix = d[page_index].get_pixmap(dpi=dpi)
-            return {"mime_type": "image/png", "data": pix.tobytes("png")}
+            return {
+                "mime_type": "image/png",
+                "data": pix.tobytes("png"),
+                "source_type": "pdf",
+                "source_file": pdf_path.name,
+                "source_page": page_index + 1,
+                "source_page_count": page_count,
+            }
 
     workers = min(_PDF_RENDER_MAX_WORKERS, page_count)
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -88,7 +107,28 @@ def _pdf_to_images(pdf_path: Path, dpi: int) -> list[dict[str, Any]]:
 
 def _image_to_part(img_path: Path) -> dict[str, Any]:
     mime = "image/png" if img_path.suffix.lower() == ".png" else "image/jpeg"
-    return {"mime_type": mime, "data": img_path.read_bytes()}
+    return {
+        "mime_type": mime,
+        "data": img_path.read_bytes(),
+        "source_type": "image",
+        "source_file": img_path.name,
+    }
+
+
+def _annotate_image_order(images: list[dict[str, Any]]) -> None:
+    """Attach explicit model-visible order labels to vision inputs."""
+    for idx, img in enumerate(images, start=1):
+        source_file = img.get("source_file") or "unknown"
+        img["order"] = idx
+        if img.get("source_type") == "pdf":
+            page = img.get("source_page")
+            page_count = img.get("source_page_count")
+            if page_count:
+                img["label"] = f"Image {idx}: PDF {source_file}, page {page} of {page_count}"
+            else:
+                img["label"] = f"Image {idx}: PDF {source_file}, page {page}"
+        else:
+            img["label"] = f"Image {idx}: image file {source_file}"
 
 
 def _excel_to_markdown(xlsx_path: Path) -> str:

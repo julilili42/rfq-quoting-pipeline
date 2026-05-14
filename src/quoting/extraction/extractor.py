@@ -11,6 +11,12 @@ from .document_loader import load_attachments
 from .json_utils import extract_json_object
 from .llm import build_llm, with_retry
 from .llm.base import TokenUsage
+from .own_party import (
+    OwnPartyContext,
+    format_own_party_prompt_context,
+    load_own_party_context,
+    sanitize_own_customer_fields,
+)
 from .prompts import build_prompt_parts
 
 log = get_logger()
@@ -24,14 +30,21 @@ def extract_anfrage(
     attachments: list[Path],
     mail_body: str = "",
     settings: Settings | None = None,
+    own_party_context: OwnPartyContext | None = None,
 ) -> tuple[Anfrage, TokenUsage | None]:
     """Run LLM extraction and return a validated Anfrage plus token usage."""
     settings = settings or load_settings()
+    own_party_context = own_party_context or load_own_party_context()
     llm = build_llm(settings)
 
     doc_sections, images = load_attachments(attachments, dpi=settings.pdf_render_dpi)
     schema_json = json.dumps(Anfrage.model_json_schema(), indent=2, ensure_ascii=False)
-    stable_prefix, variable_suffix = build_prompt_parts(schema_json, mail_body, doc_sections)
+    stable_prefix, variable_suffix = build_prompt_parts(
+        schema_json,
+        mail_body,
+        doc_sections,
+        format_own_party_prompt_context(own_party_context),
+    )
 
     log.info("Calling LLM (%s) with %d image(s), stable=%d chars, variable=%d chars",
              settings.llm_provider, len(images), len(stable_prefix), len(variable_suffix))
@@ -56,6 +69,8 @@ def extract_anfrage(
         anfrage = Anfrage.model_validate_json(raw_json)
     except ValidationError as exc:
         raise ExtractionError(f"LLM output does not match Anfrage schema: {exc}") from exc
+
+    sanitize_own_customer_fields(anfrage, own_party_context)
 
     if llm_response.usage:
         log.info("Extraction OK: %d position(s), tokens in=%d out=%d",

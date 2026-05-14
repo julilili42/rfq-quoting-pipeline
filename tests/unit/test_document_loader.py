@@ -1,9 +1,6 @@
 """Tests for attachment loading (CSV, Excel, PDF, images, edge cases)."""
 from __future__ import annotations
 
-import io
-from pathlib import Path
-
 import pytest
 
 from quoting.extraction.document_loader import load_attachments
@@ -116,6 +113,9 @@ def test_png_image_included(tmp_path):
     assert len(images) == 1
     assert images[0]["mime_type"] == "image/png"
     assert images[0]["data"] == png_bytes
+    assert images[0]["order"] == 1
+    assert images[0]["label"] == "Image 1: image file photo.png"
+    assert "Image 1: image file photo.png" in "\n".join(sections)
 
 
 def test_jpeg_image_included(tmp_path):
@@ -126,6 +126,58 @@ def test_jpeg_image_included(tmp_path):
     sections, images = load_attachments([f])
     assert len(images) == 1
     assert images[0]["mime_type"] == "image/jpeg"
+    assert images[0]["order"] == 1
+    assert images[0]["label"] == "Image 1: image file scan.jpg"
+
+
+def test_multiple_images_are_labeled_in_prompt_order(tmp_path):
+    png_file = tmp_path / "first.png"
+    jpg_file = tmp_path / "second.jpg"
+    png_bytes = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00"
+        b"\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    jpeg_bytes = b"\xff\xd8\xff\xe0" + b"\x00" * 12
+    png_file.write_bytes(png_bytes)
+    jpg_file.write_bytes(jpeg_bytes)
+
+    sections, images = load_attachments([png_file, jpg_file])
+
+    assert [img["order"] for img in images] == [1, 2]
+    assert [img["label"] for img in images] == [
+        "Image 1: image file first.png",
+        "Image 2: image file second.jpg",
+    ]
+    combined = "\n".join(sections)
+    assert "=== IMAGE ORDER (VISION INPUTS) ===" in combined
+    assert combined.index("Image 1: image file first.png") < combined.index(
+        "Image 2: image file second.jpg"
+    )
+
+
+def test_pdf_pages_are_labeled_in_prompt_order(tmp_path):
+    fitz = pytest.importorskip("fitz")
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), "Page one")
+    doc.new_page().insert_text((72, 72), "Page two")
+    path = tmp_path / "rfq.pdf"
+    doc.save(path)
+    doc.close()
+
+    sections, images = load_attachments([path])
+
+    assert len(images) == 2
+    assert [img["order"] for img in images] == [1, 2]
+    assert [img["source_page"] for img in images] == [1, 2]
+    assert [img["label"] for img in images] == [
+        "Image 1: PDF rfq.pdf, page 1 of 2",
+        "Image 2: PDF rfq.pdf, page 2 of 2",
+    ]
+    combined = "\n".join(sections)
+    assert "=== PDF: rfq.pdf ===" in combined
+    assert "Image 1: PDF rfq.pdf, page 1 of 2" in combined
+    assert "Image 2: PDF rfq.pdf, page 2 of 2" in combined
 
 
 def test_multiple_attachments_all_loaded(tmp_path):

@@ -38,6 +38,8 @@ class AzureClient(LLMClient):
         parts: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
         if images:
             for img in images:
+                if label := img.get("label"):
+                    parts.append({"type": "text", "text": label})
                 b64 = base64.b64encode(img["data"]).decode()
                 parts.append({
                     "type": "image_url",
