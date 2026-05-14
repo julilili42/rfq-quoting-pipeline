@@ -67,6 +67,7 @@ export function ReviewDetailPage() {
   const focusMode = searchParams.get("focus") === "1";
 
   const setActiveReview = useReviewUiStore((s) => s.setActiveReview);
+  const syncReviewChanges = useReviewUiStore((s) => s.syncReviewChanges);
 
   // Reset per-review UI state whenever we land on a different review.
   useEffect(() => {
@@ -77,6 +78,19 @@ export function ReviewDetailPage() {
   const review = useReview(reviewId);
   const status = useReviewStatus(reviewId);
   const approval = useApproval(reviewId);
+  const detail = review.data;
+
+  useEffect(() => {
+    if (!detail) return;
+    syncReviewChanges(
+      detail.original_anfrage,
+      detail.anfrage,
+      detail.manual_overrides,
+    );
+  }, [
+    detail,
+    syncReviewChanges,
+  ]);
 
   const isPipelineRunning =
     status.data?.status === "running" || status.data?.status === "failed";
@@ -108,7 +122,6 @@ export function ReviewDetailPage() {
     );
   }
 
-  const detail = review.data;
   if (!detail) {
     return (
       <PageContainer>

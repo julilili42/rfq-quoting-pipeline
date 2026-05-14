@@ -4,6 +4,7 @@ from quoting.api.frontend_router import (
     _filter_redundant_custom_price_overrides,
     _load_or_recompute_matches,
     _remove_position_price_overrides,
+    _try_load_original_anfrage_from_disk,
 )
 from quoting.core import Anfrage
 from quoting.data import InMemoryStammdatenRepository, StammdatenRecord
@@ -300,3 +301,17 @@ def test_load_matches_filters_deleted_position_matches(tmp_path, make_position):
 
     assert [match.pos_nr for match in matches] == [1]
     assert matches[0].matched_artikelnr is None
+
+
+def test_original_anfrage_loader_ignores_reviewed_edits(tmp_path, make_position):
+    review_dir = tmp_path / "review-1"
+    review_dir.mkdir()
+    original = Anfrage(positionen=[make_position(pos_nr=1, artikelnummer="ORIGINAL")])
+    reviewed = Anfrage(positionen=[make_position(pos_nr=1, artikelnummer="EDITED")])
+    write_json(review_dir / "01_extracted.json", original.model_dump(mode="json"))
+    write_json(review_dir / "anfrage_reviewed.json", reviewed.model_dump(mode="json"))
+
+    loaded = _try_load_original_anfrage_from_disk(review_dir)
+
+    assert loaded is not None
+    assert loaded.positionen[0].artikelnummer == "ORIGINAL"

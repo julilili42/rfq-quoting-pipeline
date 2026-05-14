@@ -140,8 +140,8 @@ export function PositionCard({
       einheit: row.einheit || draft.einheit,
     };
     setDraft(updated);
-    onPositionChange(updated);
     onFieldEdit(`positionen[${index}].artikelnummer`);
+    onPositionChange(updated);
   };
 
   const handleCustomAssign = (row: StammdatenRow) => {
@@ -167,13 +167,13 @@ export function PositionCard({
 
   const commitUnitPrice = () => {
     if (Math.abs(unitPriceDraft - initialUnitPrice) < 0.005) return;
+    onFieldEdit(`positionen[${index}].einzelpreis`);
     onUnitPriceChange({
       target: "pos",
       pos_nr: position.pos_nr,
       mode: "unit_price_eur",
       unit_price_eur: Math.max(0, Number(unitPriceDraft.toFixed(2))),
     });
-    onFieldEdit(`positionen[${index}].einzelpreis`);
   };
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);

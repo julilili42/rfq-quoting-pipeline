@@ -49,6 +49,7 @@ export interface ReviewDetail {
   review_id: string;
   created_at: string | null;
   anfrage: Anfrage;
+  original_anfrage: Anfrage | null;
   matches: MatchResult[];
   quotation: Quotation | null;
   manual_overrides: ManualOverride[];
@@ -77,6 +78,7 @@ const reviewDetailSchema = z.object({
   review_id: z.string(),
   created_at: z.string().nullable().default(null),
   anfrage: anfrageSchema,
+  original_anfrage: anfrageSchema.nullable().default(null),
   matches: z.array(matchResultSchema),
   quotation: quotationSchema.nullable(),
   manual_overrides: z.array(manualOverrideSchema).default([]),

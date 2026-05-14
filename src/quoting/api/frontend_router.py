@@ -244,6 +244,7 @@ def get_review_detail(review_id: str) -> dict:
     pipeline = _get_pipeline()
 
     anfrage = _load_or_extract_anfrage(folder, review_id)
+    original_anfrage = _try_load_original_anfrage_from_disk(folder) or anfrage
     matches = _load_or_recompute_matches(folder, anfrage, pipeline)
     quotation = _load_quotation(folder)
 
@@ -260,6 +261,7 @@ def get_review_detail(review_id: str) -> dict:
         "review_id": review_id,
         "created_at": progress.get("created_at"),
         "anfrage": anfrage.model_dump(mode="json"),
+        "original_anfrage": original_anfrage.model_dump(mode="json"),
         "matches": [m.to_dict() for m in matches],
         "quotation": quotation.to_dict() if quotation else None,
         "manual_overrides": overrides,
@@ -1156,6 +1158,18 @@ def _try_load_anfrage_from_disk(folder: Path) -> Anfrage | None:
     """Return the first valid cached Anfrage from disk, or None if not found."""
     for path in (
         folder / "anfrage_reviewed.json",
+        folder / "01_extracted.json",
+        folder / "pipeline" / "01_extracted.json",
+    ):
+        data = read_json(path)
+        if isinstance(data, dict) and data.get("positionen") is not None:
+            return Anfrage.model_validate(data)
+    return None
+
+
+def _try_load_original_anfrage_from_disk(folder: Path) -> Anfrage | None:
+    """Return the initial extraction snapshot, ignoring reviewed edits."""
+    for path in (
         folder / "01_extracted.json",
         folder / "pipeline" / "01_extracted.json",
     ):

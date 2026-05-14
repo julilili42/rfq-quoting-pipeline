@@ -3,10 +3,6 @@ import type { Page, Route } from "@playwright/test";
 const REVIEW_ID = "demo-review";
 const BLOCKED_REVIEW_ID = "blocked-review";
 
-type ApiState = {
-  approvalState: "draft_generated" | "approved";
-};
-
 const baseAnfrage = {
   belegnummer: "2026-50422",
   datum: "11.05.2026",
@@ -47,6 +43,12 @@ const baseAnfrage = {
   ],
 };
 
+type ApiState = {
+  approvalState: "draft_generated" | "approved";
+  anfrage: typeof baseAnfrage;
+  manualOverrides: unknown[];
+};
+
 const baseMatches = [
   {
     pos_nr: 1,
@@ -60,6 +62,22 @@ const baseMatches = [
       basispreis_eur: 24.5,
       zkalk_offset_eur: 1.2,
     },
+  },
+];
+
+const stammdatenRows = [
+  {
+    artikel_nr: "002GLS082003",
+    bezeichnung: "Gleitstueck variabel 82x3",
+    werkstoff: "PTFE",
+    abmessungen: "82 x 3 mm",
+    einheit: "Stueck",
+    basispreis_eur: 18.75,
+    preis_min_eur: 18.75,
+    preis_max_eur: 18.75,
+    n_offers: 4,
+    sales_group: "VG 31",
+    material_group: "Gleitstuecke",
   },
 ];
 
@@ -117,7 +135,11 @@ const progress = {
 };
 
 export async function mockReviewApi(page: Page) {
-  const state: ApiState = { approvalState: "draft_generated" };
+  const state: ApiState = {
+    approvalState: "draft_generated",
+    anfrage: clone(baseAnfrage),
+    manualOverrides: [],
+  };
 
   await page.route("**/*", async (route) => {
     const request = route.request();
@@ -159,10 +181,11 @@ export async function mockReviewApi(page: Page) {
       return json(route, {
         review_id: REVIEW_ID,
         created_at: "2026-05-11T11:00:35.275Z",
-        anfrage: baseAnfrage,
-        matches: baseMatches,
-        quotation: baseQuotation,
-        manual_overrides: [],
+        anfrage: state.anfrage,
+        original_anfrage: baseAnfrage,
+        matches: matchesFor(state.anfrage),
+        quotation: quotationFor(state.anfrage),
+        manual_overrides: state.manualOverrides,
         mail,
         has_draft_pdf: true,
         has_final_pdf: state.approvalState === "approved",
@@ -174,6 +197,10 @@ export async function mockReviewApi(page: Page) {
         review_id: BLOCKED_REVIEW_ID,
         created_at: "2026-05-11T11:00:35.275Z",
         anfrage: {
+          ...baseAnfrage,
+          positionen: [{ ...baseAnfrage.positionen[0], artikelnummer: "UNKNOWN", confidence: "low" }],
+        },
+        original_anfrage: {
           ...baseAnfrage,
           positionen: [{ ...baseAnfrage.positionen[0], artikelnummer: "UNKNOWN", confidence: "low" }],
         },
@@ -200,15 +227,31 @@ export async function mockReviewApi(page: Page) {
     }
 
     if (method === "POST" && path.endsWith("/regenerate")) {
-      return json(route, baseQuotation);
+      return json(route, quotationFor(state.anfrage));
     }
 
     if (method === "PUT" && path.endsWith("/anfrage")) {
-      return json(route, await request.postDataJSON());
+      state.anfrage = await request.postDataJSON();
+      return json(route, state.anfrage);
     }
 
     if (method === "PUT" && path.endsWith("/overrides")) {
-      return json(route, await request.postDataJSON());
+      state.manualOverrides = await request.postDataJSON();
+      return json(route, state.manualOverrides);
+    }
+
+    if (method === "GET" && path === "/api/stammdaten/search") {
+      return json(route, stammdatenRows);
+    }
+
+    if (method === "POST" && path === `/api/reviews/${REVIEW_ID}/match-override`) {
+      const payload = await request.postDataJSON();
+      const row = stammdatenRows.find((item) => item.artikel_nr === payload.artikel_nr) ?? stammdatenRows[0];
+      return json(route, {
+        pos_nr: payload.pos_nr,
+        matched_artikelnr: row.artikel_nr,
+        matched_bezeichnung: row.bezeichnung,
+      });
     }
 
     if (path.includes("/pdf/") || path.includes("/attachment/")) {
@@ -221,6 +264,64 @@ export async function mockReviewApi(page: Page) {
 
     return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: `Unhandled ${method} ${path}` }) });
   });
+}
+
+function matchesFor(anfrage: typeof baseAnfrage) {
+  return anfrage.positionen.map((position) => {
+    if (position.artikelnummer === "001GLP108015") {
+      return { ...baseMatches[0], pos_nr: position.pos_nr };
+    }
+    const row = stammdatenRows.find((item) => item.artikel_nr === position.artikelnummer);
+    if (row) {
+      return {
+        pos_nr: position.pos_nr,
+        status: "exact",
+        score: 1,
+        matched_artikelnr: row.artikel_nr,
+        matched_bezeichnung: row.bezeichnung,
+        matched_row: row,
+      };
+    }
+    return {
+      pos_nr: position.pos_nr,
+      status: "no_match",
+      score: 0,
+      matched_artikelnr: null,
+      matched_bezeichnung: null,
+      matched_row: null,
+    };
+  });
+}
+
+function quotationFor(anfrage: typeof baseAnfrage) {
+  return {
+    ...baseQuotation,
+    items: anfrage.positionen.map((position) => {
+      if (position.pos_nr === 1) return baseQuotation.items[0];
+      return {
+        pos_nr: position.pos_nr,
+        artikel_nr: position.artikelnummer,
+        bezeichnung: position.bezeichnung,
+        menge: position.menge,
+        einheit: position.einheit,
+        einzelpreis: 18.75,
+        rabatt_prozent: 0,
+        gesamtpreis: 18.75 * position.menge,
+        bemerkung: "",
+        basispreis_eur: 18.75,
+        margin_eur: 0,
+        margin_pct: 0,
+      };
+    }),
+    gesamtsumme: anfrage.positionen.reduce(
+      (sum, position) => sum + (position.pos_nr === 1 ? 2447.5 : 18.75 * position.menge),
+      0,
+    ),
+  };
+}
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
 }
 
 function approvalPayload(state: ApiState) {

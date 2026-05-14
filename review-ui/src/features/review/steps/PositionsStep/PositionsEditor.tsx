@@ -66,6 +66,8 @@ export function PositionsEditor({
   onEvidenceSelect,
 }: PositionsEditorProps) {
   const trackChange = useReviewUiStore((s) => s.trackChange);
+  const refreshChangedFields = useReviewUiStore((s) => s.refreshChangedFields);
+  const recordUndoSnapshot = useReviewUiStore((s) => s.recordUndoSnapshot);
   const saveAndRegenerate = useSaveAndRegenerate(reviewId);
   const showSaveStatus = useDelayedVisible(saveAndRegenerate.isPending);
 
@@ -124,18 +126,22 @@ export function PositionsEditor({
           p.pos_nr === next.pos_nr ? next : p,
         ),
       };
+      recordUndoSnapshot();
+      refreshChangedFields(updated);
       saveAndRegenerate.mutate({ anfrage: updated });
     },
-    [anfrage, saveAndRegenerate],
+    [anfrage, recordUndoSnapshot, refreshChangedFields, saveAndRegenerate],
   );
 
   const handleUnitPriceChange = useCallback(
     (override: ManualOverride | null) => {
       if (!override) return;
       const updated = upsertOverride(overrides, override);
+      recordUndoSnapshot();
+      refreshChangedFields(anfrage, updated);
       saveAndRegenerate.mutate({ overrides: updated });
     },
-    [overrides, saveAndRegenerate],
+    [anfrage, overrides, recordUndoSnapshot, refreshChangedFields, saveAndRegenerate],
   );
 
   const handleDisableDiscountChange = useCallback(
@@ -145,9 +151,11 @@ export function PositionsEditor({
         : overrides.filter(
             (o) => !(o.target === "pos" && o.mode === "disable_volume_discount" && o.pos_nr === posNr),
           );
+      recordUndoSnapshot();
+      refreshChangedFields(anfrage, updated);
       saveAndRegenerate.mutate({ overrides: updated });
     },
-    [overrides, saveAndRegenerate],
+    [anfrage, overrides, recordUndoSnapshot, refreshChangedFields, saveAndRegenerate],
   );
 
   const handleDeletePosition = useCallback(
@@ -164,14 +172,16 @@ export function PositionsEditor({
         (o) => !(o.target === "pos" && o.pos_nr === posNr),
       );
 
+      recordUndoSnapshot();
       trackChange(`positionen[delete:${posNr}]`);
+      refreshChangedFields(updatedAnfrage, updatedOverrides);
       saveAndRegenerate.mutate({
         anfrage: updatedAnfrage,
         overrides:
           updatedOverrides.length !== overrides.length ? updatedOverrides : undefined,
       });
     },
-    [anfrage, overrides, saveAndRegenerate, trackChange],
+    [anfrage, overrides, recordUndoSnapshot, refreshChangedFields, saveAndRegenerate, trackChange],
   );
 
   const handleAddPosition = useCallback(() => {
@@ -202,12 +212,17 @@ export function PositionsEditor({
     };
 
     newlyAddedRef.current.add(nextPosNr);
+    recordUndoSnapshot();
     trackChange(`positionen[add:${nextPosNr}]`);
+    refreshChangedFields({
+      ...anfrage,
+      positionen: [...anfrage.positionen, blank],
+    });
 
     saveAndRegenerate.mutate({
       anfrage: { ...anfrage, positionen: [...anfrage.positionen, blank] },
     });
-  }, [anfrage, saveAndRegenerate, trackChange]);
+  }, [anfrage, recordUndoSnapshot, refreshChangedFields, saveAndRegenerate, trackChange]);
 
   useHotkeys("alt+n", handleAddPosition, {
     enabled: !saveAndRegenerate.isPending,

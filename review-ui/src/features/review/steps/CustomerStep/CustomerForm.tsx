@@ -34,6 +34,8 @@ interface CustomerFormProps {
  */
 export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFormProps) {
   const trackChange = useReviewUiStore((s) => s.trackChange);
+  const refreshChangedFields = useReviewUiStore((s) => s.refreshChangedFields);
+  const recordUndoSnapshot = useReviewUiStore((s) => s.recordUndoSnapshot);
   const saveAndRegenerate = useSaveAndRegenerate(reviewId);
   const showSaveStatus = useDelayedVisible(saveAndRegenerate.isPending);
 
@@ -49,7 +51,6 @@ export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFo
 
   const commitField = (field: keyof CustomerFormValues) => {
     const fieldPath = field;
-    trackChange(fieldPath);
 
     const next: Anfrage = {
       ...anfrage,
@@ -61,6 +62,9 @@ export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFo
     ) {
       return; // nothing changed
     }
+    recordUndoSnapshot();
+    trackChange(fieldPath);
+    refreshChangedFields(next);
     saveAndRegenerate.mutate({ anfrage: next });
   };
 
@@ -71,6 +75,7 @@ export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFo
       year: "numeric",
     }).format(new Date());
 
+    recordUndoSnapshot();
     form.setValue("datum", today, { shouldDirty: true });
     trackChange("datum");
 
@@ -81,6 +86,7 @@ export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFo
     };
 
     saveAndRegenerate.mutate({ anfrage: next });
+    refreshChangedFields(next);
   };
 
   useHotkeys("alt+h", fillToday, {
