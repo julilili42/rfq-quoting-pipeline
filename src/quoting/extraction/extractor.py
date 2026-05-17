@@ -17,7 +17,7 @@ from .own_party import (
     load_own_party_context,
     sanitize_own_customer_fields,
 )
-from .prompts import build_prompt_parts
+from .prompts import build_prompt
 
 log = get_logger()
 
@@ -39,22 +39,21 @@ def extract_anfrage(
 
     doc_sections, images = load_attachments(attachments, dpi=settings.pdf_render_dpi)
     schema_json = json.dumps(Anfrage.model_json_schema(), indent=2, ensure_ascii=False)
-    stable_prefix, variable_suffix = build_prompt_parts(
+    prompt = build_prompt(
         schema_json,
         mail_body,
         doc_sections,
         format_own_party_prompt_context(own_party_context),
     )
 
-    log.info("Calling LLM (%s) with %d image(s), stable=%d chars, variable=%d chars",
-             settings.llm_provider, len(images), len(stable_prefix), len(variable_suffix))
+    log.info("Calling LLM (%s) with %d image(s), prompt=%d chars",
+             settings.llm_provider, len(images), len(prompt))
 
     try:
         llm_response = with_retry(
             llm.generate,
-            prompt=variable_suffix,
+            prompt=prompt,
             images=images,
-            cacheable_prefix=stable_prefix,
             max_retries=settings.llm_max_retries,
         )
     except Exception as exc:

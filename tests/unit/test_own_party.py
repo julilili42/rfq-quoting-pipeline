@@ -7,7 +7,7 @@ from quoting.extraction.own_party import (
     format_own_party_prompt_context,
     sanitize_own_customer_fields,
 )
-from quoting.extraction.prompts import build_prompt_parts
+from quoting.extraction.prompts import build_prompt
 
 
 def test_own_party_prompt_context_warns_against_customer_extraction():
@@ -27,16 +27,16 @@ def test_own_party_prompt_context_warns_against_customer_extraction():
 
 
 def test_build_prompt_puts_own_company_context_before_mail_body():
-    _, variable = build_prompt_parts(
+    prompt = build_prompt(
         "{}",
         "Bitte Angebot",
         ["=== PDF: Anfrage.pdf ==="],
         "own company: ElringKlinger",
     )
 
-    assert "=== OUR COMPANY / DO NOT EXTRACT AS CUSTOMER ===" in variable
-    assert variable.index("own company: ElringKlinger") < variable.index("=== MAIL BODY ===")
-    assert variable.index("=== MAIL BODY ===") < variable.index("=== PDF: Anfrage.pdf ===")
+    assert "=== OUR COMPANY / DO NOT EXTRACT AS CUSTOMER ===" in prompt
+    assert prompt.index("own company: ElringKlinger") < prompt.index("=== MAIL BODY ===")
+    assert prompt.index("=== MAIL BODY ===") < prompt.index("=== PDF: Anfrage.pdf ===")
 
 
 def test_sanitize_clears_own_values_from_customer_fields():

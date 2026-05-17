@@ -25,13 +25,8 @@ class GeminiClient(LLMClient):
         self,
         prompt: str,
         images: list[dict[str, Any]] | None = None,
-        *,
-        cacheable_prefix: str | None = None,
     ) -> LLMResponse:
         from google.genai import types
-
-        if cacheable_prefix:
-            prompt = f"{cacheable_prefix}\n\n{prompt}" if prompt else cacheable_prefix
 
         contents: list[Any] = [prompt]
         if images:

@@ -27,14 +27,7 @@ class AzureClient(LLMClient):
         self,
         prompt: str,
         images: list[dict[str, Any]] | None = None,
-        *,
-        cacheable_prefix: str | None = None,
     ) -> LLMResponse:
-        # Azure has its own implicit caching for repeated prefixes; we
-        # just concatenate so the model sees the same final prompt either
-        # way. Explicit caching support can be added later.
-        if cacheable_prefix:
-            prompt = f"{cacheable_prefix}\n\n{prompt}" if prompt else cacheable_prefix
         parts: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
         if images:
             for img in images:

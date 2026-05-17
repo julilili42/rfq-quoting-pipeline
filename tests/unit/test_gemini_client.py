@@ -45,20 +45,7 @@ def _make_client(
     return client, fake_genai_client.models.generate_content
 
 
-LONG_PREFIX = "STABLE PREFIX" * 500
-
-
-def test_cacheable_prefix_is_sent_inline_with_prompt():
-    client, gen_call = _make_client()
-
-    client.generate(prompt="MAIL", cacheable_prefix=LONG_PREFIX)
-
-    contents = gen_call.call_args.kwargs["contents"]
-    assert contents[0].startswith(LONG_PREFIX)
-    assert contents[0].endswith("MAIL")
-
-
-def test_no_cacheable_prefix_passes_prompt_through():
+def test_prompt_is_sent_as_first_content_item():
     client, gen_call = _make_client()
 
     client.generate(prompt="JUST MAIL")

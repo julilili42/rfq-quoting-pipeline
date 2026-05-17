@@ -95,20 +95,14 @@ Expected JSON (abbreviated):
 """
 
 
-def build_prompt_parts(
+def build_prompt(
     schema_json: str,
     mail_body: str,
     doc_sections: list[str],
     own_company_context: str = "",
-) -> tuple[str, str]:
-    """Split the prompt into a stable (cacheable) prefix and a variable suffix.
-
-    The stable part — system rules + few-shot example + schema — is identical
-    across every extraction call within a process. Gemini context caching
-    keys on this prefix so input-token cost drops to ~25 % and TTFT shortens.
-    The variable part carries own-company context plus actual mail + document content.
-    """
-    stable_parts = [
+) -> str:
+    """Assemble the full prompt sent to the LLM."""
+    parts = [
         SYSTEM_PROMPT,
         "",
         FEW_SHOT_EXAMPLE,
@@ -116,30 +110,17 @@ def build_prompt_parts(
         "Extract according to this JSON schema and return ONLY JSON:",
         schema_json,
     ]
-    variable_parts: list[str] = []
+    body_parts: list[str] = []
     if own_company_context.strip():
-        variable_parts += [
+        body_parts += [
             "=== OUR COMPANY / DO NOT EXTRACT AS CUSTOMER ===",
             own_company_context,
             "",
         ]
     if mail_body.strip():
-        variable_parts += ["=== MAIL BODY ===", mail_body, ""]
-    variable_parts += doc_sections
-    return "\n".join(stable_parts), "\n".join(variable_parts)
+        body_parts += ["=== MAIL BODY ===", mail_body, ""]
+    body_parts += doc_sections
 
-
-def build_prompt(
-    schema_json: str,
-    mail_body: str,
-    doc_sections: list[str],
-    own_company_context: str = "",
-) -> str:
-    """Assemble the full prompt sent to the LLM (single-string form)."""
-    stable, variable = build_prompt_parts(
-        schema_json,
-        mail_body,
-        doc_sections,
-        own_company_context,
-    )
-    return f"{stable}\n\n{variable}" if variable else stable
+    body = "\n".join(body_parts)
+    head = "\n".join(parts)
+    return f"{head}\n\n{body}" if body else head
