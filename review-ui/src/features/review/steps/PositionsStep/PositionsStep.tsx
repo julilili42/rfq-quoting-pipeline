@@ -6,6 +6,7 @@ import type { SourceNavigationTarget } from "@/shared/types/sourceNavigation";
 
 import type { ReviewDetailContext } from "../../ReviewDetailPage";
 import { StepNavigation } from "../../components/StepNavigation";
+import { CustomerForm } from "../CustomerStep/CustomerForm";
 import { PositionsEditor } from "./PositionsEditor";
 
 export function PositionsStep() {
@@ -30,7 +31,12 @@ export function PositionsStep() {
           />
         </div>
 
-        <div className="order-1 lg:order-2">
+        <div className="order-1 space-y-6 lg:order-2">
+          <CustomerForm
+            reviewId={reviewId}
+            anfrage={detail.anfrage}
+            onEvidenceSelect={setActiveSource}
+          />
           <PositionsEditor
             reviewId={reviewId}
             anfrage={detail.anfrage}
@@ -38,11 +44,12 @@ export function PositionsStep() {
             quotation={detail.quotation}
             overrides={detail.manual_overrides}
             onEvidenceSelect={setActiveSource}
+            showChangeIndicator={false}
           />
         </div>
       </div>
 
-      <StepNavigation current="positions" forwardLabel="Positionen bestätigen" />
+      <StepNavigation current="positions" forwardLabel="Zur Freigabe" />
     </>
   );
 }

@@ -5,9 +5,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ....pricing import Quotation
 from ..offer.config import OfferPdfConfig
 from ..offer.formatting import html_escape
-from ....pricing import Quotation
 
 
 class OfferTemplateCanvas:
@@ -56,7 +56,6 @@ def draw_header_footer(
 ) -> None:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import cm
 
     width, height = A4
     red = colors.HexColor("#E30613")

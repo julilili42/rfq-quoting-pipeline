@@ -21,6 +21,7 @@ interface CustomerFormProps {
   reviewId: string;
   anfrage: Anfrage;
   onEvidenceSelect?: (target: SourceNavigationTarget) => void;
+  showChangeIndicator?: boolean;
 }
 
 /**
@@ -32,7 +33,12 @@ interface CustomerFormProps {
  * controlled input wiring; the actual save delegates to the same
  * `saveAndRegenerate` mutation as the positions step.
  */
-export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFormProps) {
+export function CustomerForm({
+  reviewId,
+  anfrage,
+  onEvidenceSelect,
+  showChangeIndicator = true,
+}: CustomerFormProps) {
   const trackChange = useReviewUiStore((s) => s.trackChange);
   const refreshChangedFields = useReviewUiStore((s) => s.refreshChangedFields);
   const recordUndoSnapshot = useReviewUiStore((s) => s.recordUndoSnapshot);
@@ -95,11 +101,17 @@ export function CustomerForm({ reviewId, anfrage, onEvidenceSelect }: CustomerFo
   });
 
   return (
-    <section className="space-y-6">
+    <section
+      id="customer-data"
+      aria-labelledby="customer-data-heading"
+      className="scroll-mt-6 space-y-6"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="section-label">Kundendaten prüfen</h2>
+        <h2 id="customer-data-heading" className="section-label">
+          Kunde &amp; Konditionen
+        </h2>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <ChangedFieldsIndicator />
+          {showChangeIndicator && <ChangedFieldsIndicator />}
           {showSaveStatus && (
             <span className="text-xs font-medium text-muted-foreground" role="status">
               Änderungen werden gespeichert…

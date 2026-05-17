@@ -6,7 +6,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/shared/components/ui/button";
 import { ShortcutHint } from "@/shared/components/ui/ShortcutHint";
 
-const STEP_ORDER = ["positions", "customer", "approval"] as const;
+const STEP_ORDER = ["positions", "approval"] as const;
 type Slug = (typeof STEP_ORDER)[number];
 
 interface StepNavigationProps {

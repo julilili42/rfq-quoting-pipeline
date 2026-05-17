@@ -29,7 +29,7 @@ export function useApprovalTransition(reviewId: string | undefined) {
       if (!reviewId) throw new Error("reviewId is required");
       return approvalApi.transition(reviewId, input);
     },
-    onSuccess: (_data) => {
+    onSuccess: () => {
       if (!reviewId) return;
       queryClient.invalidateQueries({ queryKey: approvalQueryKey(reviewId) });
       queryClient.invalidateQueries({ queryKey: reviewQueryKey(reviewId) });

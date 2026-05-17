@@ -16,7 +16,7 @@ import { ComparePanes } from "./ComparePanes";
 import { FocusToolbar } from "./FocusToolbar";
 
 /**
- * Step 3 — Vergleichen, Anpassen, Abschluss-Check, Freigeben.
+ * Step 2 — Vergleichen, Anpassen, Abschluss-Check, Freigeben.
  *
  * Vertical rhythm:
  *

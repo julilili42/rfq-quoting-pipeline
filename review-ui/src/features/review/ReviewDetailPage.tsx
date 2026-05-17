@@ -54,7 +54,7 @@ class StepErrorBoundary extends React.Component<
 /**
  * Review detail layout.
  *
- * Acts as a composition root for the three steps:
+ * Acts as a composition root for the two review steps:
  * - Hero and step indicator render once above the active step
  * - The active step renders into the <Outlet/>, fed by data from `useReview`
  *

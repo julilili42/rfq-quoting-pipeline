@@ -29,10 +29,11 @@ interface PositionsEditorProps {
   quotation: Quotation | null;
   overrides: ManualOverride[];
   onEvidenceSelect?: (target: SourceNavigationTarget) => void;
+  showChangeIndicator?: boolean;
 }
 
 /**
- * Step-1 editor.
+ * Position editor inside the combined request-data step.
  *
  * CRUD operations are intentionally narrow:
  *
@@ -64,6 +65,7 @@ export function PositionsEditor({
   quotation,
   overrides,
   onEvidenceSelect,
+  showChangeIndicator = true,
 }: PositionsEditorProps) {
   const trackChange = useReviewUiStore((s) => s.trackChange);
   const refreshChangedFields = useReviewUiStore((s) => s.refreshChangedFields);
@@ -240,17 +242,21 @@ export function PositionsEditor({
   );
 
   return (
-    <section aria-labelledby="positions-heading" className="space-y-4">
+    <section
+      id="positions-data"
+      aria-labelledby="positions-heading"
+      className="scroll-mt-6 space-y-4"
+    >
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="positions-heading" className="section-label mb-2">
-            Positionen prüfen
+            Positionen
           </h2>
           <MatchSummary matches={activeMatches} />
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <ChangedFieldsIndicator />
+          {showChangeIndicator && <ChangedFieldsIndicator />}
           {showSaveStatus && (
             <span className="text-xs font-medium text-muted-foreground" role="status">
               Änderungen werden gespeichert…

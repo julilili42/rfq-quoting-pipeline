@@ -9,19 +9,25 @@ import uuid
 from pathlib import Path
 from typing import cast
 
-log = logging.getLogger(__name__)
-
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from quoting.api.approval_store import (
-    ApprovalState,
     VALID_TRANSITIONS,
+    ApprovalState,
     load_approval,
     reset_approval,
     transition,
+)
+from quoting.api.frontend_router import (
+    REVIEW_DIR,
+    _mail_from_meta,
+    _review_dir,
+)
+from quoting.api.frontend_router import (
+    router as frontend_router,
 )
 from quoting.api.progress_store import (
     complete_progress,
@@ -32,7 +38,11 @@ from quoting.api.progress_store import (
 )
 from quoting.api.settings_store import (
     AppSettings,
+)
+from quoting.api.settings_store import (
     load_settings as load_app_settings,
+)
+from quoting.api.settings_store import (
     save_settings as save_app_settings,
 )
 from quoting.ingestion import Mail
@@ -47,12 +57,7 @@ from quoting.reviews import (
     write_json,
 )
 
-from quoting.api.frontend_router import (
-    REVIEW_DIR,
-    _mail_from_meta,
-    _review_dir,
-    router as frontend_router,
-)
+log = logging.getLogger(__name__)
 
 STREAMLIT_BASE_URL = os.getenv("STREAMLIT_BASE_URL", "http://localhost:8501")
 

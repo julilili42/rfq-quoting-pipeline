@@ -40,8 +40,8 @@ def test_quotation_discount_at_500(make_position, exact_match_factory):
     assert q.items[0].gesamtpreis == 47500.0
 
 
-def test_certificate_is_flat_surcharge_no_discount(make_position, exact_match_factory):
-    # Certificate must NOT get volume discount and total = unit price regardless of qty
+def test_certificate_uses_quantity_without_volume_discount(make_position, exact_match_factory):
+    # Certificates must NOT get volume discount, but quantity still applies.
     anfrage = Anfrage(positionen=[make_position(
         artikelnummer="001APZ00031B",
         bezeichnung="Abnahmeprüfzeugnis 3.1",
@@ -52,7 +52,7 @@ def test_certificate_is_flat_surcharge_no_discount(make_position, exact_match_fa
     q = build_quotation(anfrage, matches, Path("/nonexistent.csv"))
     assert q.items[0].rabatt_prozent == 0.0
     assert q.items[0].einzelpreis == 45.0
-    assert q.items[0].gesamtpreis == 45.0  # flat, NOT 45 * 1000
+    assert q.items[0].gesamtpreis == 45000.0
 
 
 def test_no_match_adds_warning(make_position):

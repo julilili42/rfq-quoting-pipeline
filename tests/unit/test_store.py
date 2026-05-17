@@ -3,12 +3,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
 
 import pytest
 
-from quoting.reviews.store import read_json, write_json, _to_jsonable
-
+from quoting.reviews.store import _to_jsonable, read_json, write_json
 
 # ---------- read_json ----------
 

@@ -81,7 +81,7 @@ class OfferPdfConfig:
         "[BIC 2]",
     )
 
-    def with_overrides(self, **kwargs) -> "OfferPdfConfig":
+    def with_overrides(self, **kwargs) -> OfferPdfConfig:
         """Return a copy with selected fields overridden."""
         return replace(self, **kwargs)
 

@@ -14,7 +14,6 @@ from quoting.extraction.fast_path import (
 )
 from quoting.ingestion import Mail
 
-
 # ----------------------------------------------------------- normalization
 
 def test_normalize_strips_separators_and_uppercases():

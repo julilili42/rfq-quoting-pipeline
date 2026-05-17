@@ -2,17 +2,12 @@
 from __future__ import annotations
 
 import email
-import textwrap
-from email import policy
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 
-import pytest
-
-from quoting.ingestion.mail import Mail, mail_from_file, parse_mail, _html_to_text
-
+from quoting.ingestion.mail import _html_to_text, mail_from_file, parse_mail
 
 # ---------- helpers ----------
 

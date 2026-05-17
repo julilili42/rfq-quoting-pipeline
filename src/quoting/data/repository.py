@@ -21,8 +21,9 @@ Public surface
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from ..core import get_logger
 from .records import StammdatenRecord

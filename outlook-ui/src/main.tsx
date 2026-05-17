@@ -274,7 +274,6 @@ function App() {
       setIsOutlook(true);
       loadMail();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ------------------------------------------------------------------
@@ -377,7 +376,6 @@ function App() {
         approvalPollTimerRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mailId, workflow?.state, workflow?.review?.review_id]);
 
   // ------------------------------------------------------------------

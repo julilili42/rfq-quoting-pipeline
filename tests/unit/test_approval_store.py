@@ -1,17 +1,18 @@
 """Tests for quoting.api.approval_store — state machine transitions."""
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 
+import pytest
+
 from quoting.api.approval_store import (
+    VALID_TRANSITIONS,
     ApprovalRecord,
     load_approval,
+    mark_field_changed,
     reset_approval,
     save_approval,
     transition,
-    mark_field_changed,
-    VALID_TRANSITIONS,
 )
 
 
@@ -59,9 +60,9 @@ def test_final_pdf_path_stored(review_dir):
     assert rec.final_pdf_path == "final.pdf"
 
 
-def test_non_standard_transition_recorded_in_history(review_dir):
-    rec = transition(review_dir, "ready_to_send")  # skip reviewed & approved
-    assert any("non-standard" in str(e.get("warning", "")) for e in rec.history)
+def test_invalid_transition_is_rejected(review_dir):
+    with pytest.raises(ValueError, match="Invalid transition"):
+        transition(review_dir, "ready_to_send")  # skip reviewed & approved
 
 
 def test_reset_returns_to_draft_generated(review_dir):

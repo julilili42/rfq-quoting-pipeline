@@ -128,7 +128,7 @@ export function PdfSourcePreview({
     }, 180);
 
     return () => window.clearTimeout(timeout);
-  }, [initialPage, numPages, targetKey]);
+  }, [initialPage, numPages, sourceTarget, targetKey]);
 
   return (
     <div className={cn("flex flex-col", className ?? "h-[700px]")}>

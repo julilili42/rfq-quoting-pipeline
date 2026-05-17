@@ -4,7 +4,7 @@ Rules:
 - Base price from external price table OR master-data row
 - Volume discount via tier table
 - SAP ZKALK offset added per piece
-- Certificates: flat price, no discount, no per-piece multiplier
+- Certificates: no volume discount; quantity multiplier still applies
 """
 from __future__ import annotations
 
@@ -125,7 +125,7 @@ def _build_item(
             base_price, zkalk, pos.menge, pos.ist_zertifikat
         )
     if pos.ist_zertifikat and not bemerkung:
-        bemerkung = "Certificate - flat surcharge"
+        bemerkung = "Certificate - no volume discount"
 
     gesamtpreis_r = round(gesamtpreis, 2)
     margin_eur = round(gesamtpreis_r - cost, 2)

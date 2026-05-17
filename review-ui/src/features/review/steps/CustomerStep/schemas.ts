@@ -2,7 +2,7 @@ import { z } from "zod";
 import { anfrageSchema } from "@/shared/schemas/anfrage";
 
 /**
- * Form schema for step 2.
+ * Form schema for the customer section in the combined request-data step.
  *
  * Editable subset of the Anfrage — derived via .pick() so the form
  * stays in sync if the backend renames a customer-header field.

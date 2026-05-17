@@ -182,6 +182,7 @@ async function checkPdfUrl(result: CreateReviewResponse): Promise<void> {
   } catch (error) {
     throw new Error(
       `Review wurde erstellt, aber PDF-URL ist aus dem Add-in nicht erreichbar: ${String(error)}`,
+      { cause: error },
     );
   }
 }

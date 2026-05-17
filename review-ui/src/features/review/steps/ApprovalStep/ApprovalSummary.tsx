@@ -26,6 +26,11 @@ const MATCH_LABEL: Record<MatchStatus, string> = {
   no_match: "Kein Treffer",
 };
 
+const ISSUE_TARGETS: Record<Issue["step"], { slug: "positions"; hash: string }> = {
+  customer: { slug: "positions", hash: "customer-data" },
+  positions: { slug: "positions", hash: "positions-data" },
+};
+
 type GateState = "blocked" | "warning" | "ok";
 
 function resolveGateState(gate: QualityGateResult): GateState {
@@ -206,10 +211,10 @@ function IssueGroup({
 
 function IssueItem({ issue }: { issue: Issue }) {
   const { reviewId } = useParams<{ reviewId: string }>();
-  const target =
-    reviewId && issue.step
-      ? `/reviews/${encodeURIComponent(reviewId)}/${issue.step}`
-      : null;
+  const issueTarget = ISSUE_TARGETS[issue.step];
+  const target = reviewId
+    ? `/reviews/${encodeURIComponent(reviewId)}/${issueTarget.slug}#${issueTarget.hash}`
+    : null;
   return (
     <li className="flex items-start gap-3 rounded-sm bg-surface/60 px-2.5 py-1.5 text-sm">
       <div className="flex-1 text-foreground">

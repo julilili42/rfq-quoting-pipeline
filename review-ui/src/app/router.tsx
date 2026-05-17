@@ -52,7 +52,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="positions" replace /> },
           { path: "positions", lazy: () => import("./lazy/positions") },
-          { path: "customer", lazy: () => import("./lazy/customer") },
+          { path: "customer", element: <Navigate to="../positions" replace /> },
           { path: "approval", lazy: () => import("./lazy/approval") },
         ],
       },

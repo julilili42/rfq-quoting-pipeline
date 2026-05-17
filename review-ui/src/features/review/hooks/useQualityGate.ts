@@ -16,8 +16,8 @@ import type { ReviewDetail } from "@/shared/api/reviews";
  *   of low-confidence positions, missing Beleg-Nr. The user can ignore
  *   them but should at least look once.
  *
- * Each issue carries a `step` so the React UI can deep-link the user
- * straight to the right editor.
+ * Each issue carries a target area so the React UI can deep-link the
+ * user straight to the right section in the combined request-data step.
  */
 
 export type IssueStep = "positions" | "customer";

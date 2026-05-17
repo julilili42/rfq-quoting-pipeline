@@ -506,9 +506,9 @@ export function PositionCard({
             }}
             className="w-4 h-4 rounded border-input"
           />
-          <span className="font-medium">Zertifikat / Pauschalposition</span>
+          <span className="font-medium">Zertifikat</span>
           <span className="text-xs text-muted-foreground">
-            (z. B. Abnahmeprüfzeugnis)
+            (kein Mengenrabatt)
           </span>
         </label>
 

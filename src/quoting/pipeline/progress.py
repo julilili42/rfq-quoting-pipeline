@@ -11,8 +11,9 @@ string so step authors don't have to coordinate vocabularies with the UI.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Literal
 
 StepStatus = Literal["started", "completed", "failed", "skipped"]
 

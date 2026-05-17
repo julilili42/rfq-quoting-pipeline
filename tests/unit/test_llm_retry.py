@@ -61,7 +61,7 @@ def test_retry_attempt_count_equals_max_on_failure():
 
     def fn():
         calls.append(1)
-        raise IOError("boom")
+        raise OSError("boom")
 
     with pytest.raises(IOError):
         with_retry(fn, max_retries=4, base_delay=0)

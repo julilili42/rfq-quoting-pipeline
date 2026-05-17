@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from quoting.pricing import Quotation, QuotationItem
-from quoting.reviews import read_json
+from quoting.reviews.store import read_json
 
 
 def load_saved_quotation(review_dir: Path) -> Quotation | None:

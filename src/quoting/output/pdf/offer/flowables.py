@@ -175,9 +175,8 @@ def items_table(
     the *Stückpreis* is the per-piece price actually used for the
     calculation, and *Gesamtpreis* is the matching line total.
 
-    For certificate / pauschal positions there is no per-piece
-    distinction, so *Stückpreis* and *Gesamtpreis* carry the same
-    flat amount and the line is annotated as a "Pauschalposition".
+    Certificate positions are displayed like regular line items; their
+    pricing rule is handled upstream by the quotation engine.
     """
     from reportlab.lib import colors
     from reportlab.lib.units import cm
@@ -206,14 +205,10 @@ def items_table(
         "Gesamtpreis EUR",
     ]]
 
-    certificate_positions = {
-        pos.pos_nr for pos in anfrage.positionen if pos.ist_zertifikat
-    }
     positions_by_nr = {pos.pos_nr: pos for pos in anfrage.positionen}
 
     for item in quotation.items:
         source_pos = positions_by_nr.get(item.pos_nr)
-        is_certificate = item.pos_nr in certificate_positions
 
         # Both prices come straight from the quotation engine. No
         # multiplication, no PE confusion: Stückpreis is per piece,
@@ -230,17 +225,6 @@ def items_table(
             format_eur_de(unit_price),
             format_eur_de(line_total),
         ])
-
-        if is_certificate:
-            data.append([
-                "",
-                Paragraph("Pauschalposition", styles["table_small"]),
-                Paragraph(
-                    "Einmaliger Pauschalbetrag, kein Mengen-Multiplikator.",
-                    styles["table_small"],
-                ),
-                "", "", "", "",
-            ])
 
         if item.bemerkung and not config.is_final:
             data.append([

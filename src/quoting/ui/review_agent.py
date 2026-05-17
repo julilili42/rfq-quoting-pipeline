@@ -1,14 +1,13 @@
 """Helpers for the review chat-agent in Streamlit UI."""
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from dataclasses import asdict
-import re
 
 from ..core import Anfrage
 from ..matching import MatchResult
 from ..pricing import Quotation
-
 
 _DISCOUNT_KEYWORDS = ("discount", "rabatt")
 _PRICE_KEYWORDS = ("euro", "eur", "preis", "price", "set", "mach", "mache")

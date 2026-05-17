@@ -7,18 +7,12 @@ const STEPS = [
   {
     num: 1,
     slug: "positions",
-    title: "Positionen prüfen",
+    title: "Anfrage vorbereiten",
     description:
-      "KI-extrahierte Positionen kontrollieren und Stammdaten-Treffer validieren.",
+      "Kunde, Konditionen, Positionen und Stammdaten-Treffer gegen den Originaleingang prüfen.",
   },
   {
     num: 2,
-    slug: "customer",
-    title: "Kundendaten prüfen",
-    description: "Empfänger, Ansprechpartner und kommerzielle Bedingungen prüfen.",
-  },
-  {
-    num: 3,
     slug: "approval",
     title: "Vergleichen & freigeben",
     description: "Angebotsentwurf mit dem Originaleingang vergleichen und freigeben.",
@@ -28,7 +22,6 @@ const STEPS = [
 type StepSlug = (typeof STEPS)[number]["slug"];
 
 function activeStepFromPath(pathname: string): StepSlug {
-  if (pathname.endsWith("/customer")) return "customer";
   if (pathname.endsWith("/approval")) return "approval";
   return "positions";
 }
@@ -40,7 +33,7 @@ export function StepIndicator() {
   const activeIndex = STEPS.findIndex((s) => s.slug === active);
 
   return (
-    <ol className="grid grid-cols-1 gap-3 md:grid-cols-3" aria-label="Workflow-Schritte">
+    <ol className="grid grid-cols-1 gap-3 md:grid-cols-2" aria-label="Workflow-Schritte">
       {STEPS.map((step, index) => {
         const isDone = index < activeIndex;
         const isActive = index === activeIndex;
