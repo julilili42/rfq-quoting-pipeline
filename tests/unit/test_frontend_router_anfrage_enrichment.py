@@ -1,4 +1,4 @@
-from quoting.api import frontend_router
+from quoting.api import _common, frontend_router
 from quoting.api.frontend_router import (
     _enrich_exact_article_edits,
     _filter_redundant_custom_price_overrides,
@@ -134,8 +134,8 @@ def test_custom_article_match_persists_review_local_article(
         ],
     )
 
-    monkeypatch.setattr(frontend_router, "REVIEW_DIR", tmp_path)
-    monkeypatch.setattr(frontend_router, "_pipeline", _PipelineStub())
+    monkeypatch.setattr(_common, "REVIEW_DIR", tmp_path)
+    monkeypatch.setattr(_common, "_pipeline", _PipelineStub())
 
     response = frontend_router.create_custom_article_match(
         "review-1",
