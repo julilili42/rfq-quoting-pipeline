@@ -80,6 +80,33 @@ def test_semantic_match_uses_dimensions_to_disambiguate_variants(make_position):
     assert res[0].matched_artikelnr == "A-08203"
 
 
+def test_semantic_match_uses_material_context_for_short_description(make_position):
+    stammdaten = [
+        {
+            "artikel_nr": "02599900KS0001",
+            "bezeichnung": "Ventilsitz SD1 RSS 40 PTFE mod.",
+            "werkstoff": "PTFE",
+            "abmessungen": "",
+        },
+        {
+            "artikel_nr": "04255940KS0001",
+            "bezeichnung": "Ventilsitz aus PTFE 25% Glas",
+            "werkstoff": "PTFE",
+            "abmessungen": "",
+        },
+    ]
+    positions = [make_position(
+        artikelnummer="",
+        bezeichnung="Ventilsitz",
+        werkstoff="PTFE 25% Glas",
+    )]
+
+    res = match_positions(positions, stammdaten, semantic_threshold=70)
+
+    assert res[0].status == "semantic"
+    assert res[0].matched_artikelnr == "04255940KS0001"
+
+
 def test_preserves_position_order(make_position, sample_stammdaten):
     positions = [
         make_position(artikelnummer="001GLP108015"),

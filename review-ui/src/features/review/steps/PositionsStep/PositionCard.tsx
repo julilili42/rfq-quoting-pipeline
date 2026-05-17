@@ -151,6 +151,7 @@ export function PositionCard({
 
   const articleNumber = displayArticleNumber(position, match);
   const articleTone = articleBadgeTone(position, match);
+  const stammdatenInitialQuery = buildStammdatenSearchQuery(position);
   const quantityMeta = `${Math.round(position.menge)} ${position.einheit}`;
   const sourceEvidence = {
     source_file: position.source_file,
@@ -275,7 +276,7 @@ export function PositionCard({
                 <StammdatenSearchDialog
                   reviewId={reviewId}
                   posNr={position.pos_nr}
-                  initialQuery={position.artikelnummer || position.bezeichnung}
+                  initialQuery={stammdatenInitialQuery}
                   initialArticleNumber={position.artikelnummer}
                   initialDescription={position.bezeichnung}
                   initialUnit={position.einheit}
@@ -524,4 +525,26 @@ function buildPositionSourceCandidates(position: Position): string[] {
     position.abmessungen ?? "",
     position.menge ? String(position.menge) : "",
   ].filter((value) => value.trim().length > 0);
+}
+
+function buildStammdatenSearchQuery(position: Position): string {
+  const articleNumber = position.artikelnummer.trim();
+  if (looksLikeArticleNumber(articleNumber)) return articleNumber;
+
+  return [
+    articleNumber,
+    position.bezeichnung,
+    position.werkstoff ?? "",
+    position.abmessungen ?? "",
+  ].filter((value) => value.trim().length > 0).join(" ");
+}
+
+function looksLikeArticleNumber(value: string): boolean {
+  if (!value) return false;
+  const compact = value.replace(/\s+/g, "");
+  return (
+    compact.length >= 6 &&
+    /\d/.test(compact) &&
+    /^[A-Za-z0-9._/-]+$/.test(compact)
+  );
 }

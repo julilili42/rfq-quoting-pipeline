@@ -1,8 +1,8 @@
-**Introduction**
+# Introduction
 - Before we begin *Goal of Demo*: Showcase standard workflow for the sales employee
 - Most of the inquiries are received by mail => Decided to build a Plugin for easy integration
 
-**Start**
+# Start
 - Employee receives an email pricing inquiry, wants to create a pricing offer
 - Use the pdf inquiry example provided by ElringKlinger + wrote a simple Mail Body Text
 - Simply clicking on the quotation button, opens up the sidebar 
@@ -15,55 +15,41 @@
 
 
 
-
-- Prototype consists of Review Website + Outlook Plugin
-- Start our demo in outlook, and work ourselves towards the review website
-
+- Preiswarnung(en) aus Kalkulation => Always present if no_match, fuzzy or semantic
+- Certificate Position => No discount
 
 
-Matching:
+# Questions
+## Matching:
 - **Exact Match** on article number
 - **Fuzzy Match** on article number, external library rapidfuzz. 
   Uses Levenstein Distance to compare strings
 - **Semantic Match**: Activated if no exact and no fuzzy match on article number. Fuzzy matching on name of product and material
 
+## Highlighting:
+Fuzzy Matching of extracted position on to original document. 
+=> Simulates which parts of the original document the llm used to extract the position.
+=> Does not prove the LLM truly looked at exactly that area internally. 
+=> Highlights the source evidence that supports the extracted information.
 
+## Fast Path
+- Tries Determenistic extraction before LLM . 
+- Extraction of article number based on determenistic automata which is build using a python package (pyahocorasick). Automata looks like prefix tree.
+- Quantity is matched using regex 
+- Fires rarely but allows very fast extraction
 
-
-
-Certificate Position => No discount
-
-
-
-
-
-Fast Path:
-Uses python package (pyahocorasick)
-
-
-Infrastructure:
-FastAPI Backend, React Review-UI and Outlook Add-in
-
-Supports PDF, Excel, CSV and pure Text
-PDF, Image -> Image
-CSV, Excel -> Markdown
-
-
-Data:
+## Data
 - Grouped Overview_Offers.xlsx File by article number and selected important columns
 - Base price is calculated as base_price = median(price_per_piece)
 
-LLM:
+## LLM
 - LLM calling with retries (standard 3 times)
 - LLM returns JSON Object => Used to match on database
-Hallucinations are minimized by a single request to the LLM:
+- Hallucinations are minimized by a single request to the LLM:
 - Position extraction is done via LLM
 - Mapping to Articles from database is done deterministically (via exact article number, fuzzy matching etc.)
 
-
-
-
-Testing:
+## Testing
 Frontend:
 - Playwright used to test 
 Backend:
@@ -73,15 +59,12 @@ Backend:
 
 
 
-What does the key account manager want to hear?
-
-Target Audience: Key account manager
-IT as well 
-
-IT costs should be mentioned
-
-Friday: Reutlingen
-Saturday: Tübingen
 
 
-SCRUM als anhang
+Infrastructure:
+FastAPI Backend, React Review-UI and Outlook Add-in
+
+Supports PDF, Excel, CSV and pure Text
+PDF, Image -> Image
+CSV, Excel -> Markdown
+

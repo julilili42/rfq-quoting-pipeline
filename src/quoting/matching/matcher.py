@@ -102,22 +102,36 @@ def _fuzzy_match(pos: Position, stammdaten: list[dict], threshold: int) -> Match
 
 
 def _composite_match(pos: Position, stammdaten: list[dict], threshold: int) -> MatchResult | None:
-    # Weighted: description dominates; dimensions and material disambiguate variants.
+    # Weighted: the free-text context dominates; dimensions and material
+    # disambiguate variants. The context intentionally combines extracted
+    # description, material, and dimensions so a short description such as
+    # "Ventilsitz" can still find a row whose description contains
+    # "PTFE 25% Glas".
+    pos_context = _match_text(pos.bezeichnung, pos.werkstoff, pos.abmessungen)
+    has_context_fields = bool(pos.werkstoff or pos.abmessungen)
     best_idx = -1
     best_score = 0.0
     for i, row in enumerate(stammdaten):
-        bez_score = fuzz.token_set_ratio(pos.bezeichnung or "", row.get("bezeichnung", ""))
+        row_context = _match_text(
+            row.get("bezeichnung", ""),
+            row.get("werkstoff", ""),
+            row.get("abmessungen", ""),
+        )
+        text_score = fuzz.token_set_ratio(pos_context, row_context) if pos_context else 0.0
         dim_score = (
             fuzz.ratio(_normalize_dimension(pos.abmessungen), _normalize_dimension(row["abmessungen"]))
             if pos.abmessungen and row.get("abmessungen")
             else 0.0
         )
         mat_score = (
-            fuzz.token_set_ratio(pos.werkstoff, row["werkstoff"])
+            fuzz.token_sort_ratio(pos.werkstoff, row["werkstoff"])
             if pos.werkstoff and row.get("werkstoff")
             else 0.0
         )
-        combined = 0.60 * bez_score + 0.25 * dim_score + 0.15 * mat_score
+        if has_context_fields:
+            combined = 0.75 * text_score + 0.15 * dim_score + 0.10 * mat_score
+        else:
+            combined = 0.60 * text_score
         if combined > best_score:
             best_score = combined
             best_idx = i
@@ -138,6 +152,11 @@ def _composite_match(pos: Position, stammdaten: list[dict], threshold: int) -> M
 def _normalize(s: str) -> str:
     """Uppercase, strip all whitespace. Preserves digits/hyphens/dots."""
     return "".join((s or "").upper().split())
+
+
+def _match_text(*parts: object) -> str:
+    """Build the text used by composite fuzzy matching."""
+    return " ".join(str(part).strip() for part in parts if part and str(part).strip())
 
 
 def _normalize_dimension(value: str | None) -> str:
