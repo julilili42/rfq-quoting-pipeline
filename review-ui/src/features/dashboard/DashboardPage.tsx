@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { reviewsApi } from "@/shared/api/reviews";
+import { reviewListQueryKey } from "@/shared/api/queryKeys";
 import { EmptyState } from "@/shared/components/feedback/EmptyState";
 import { ErrorState } from "@/shared/components/feedback/ErrorState";
 import { LoadingState } from "@/shared/components/feedback/LoadingState";
@@ -96,7 +97,7 @@ export function DashboardPage() {
         reviewIds.forEach((id) => next.delete(id));
         return next;
       });
-      queryClient.invalidateQueries({ queryKey: ["reviews", "list"] });
+      queryClient.invalidateQueries({ queryKey: reviewListQueryKey });
     },
   });
 

@@ -187,17 +187,7 @@ export function WorkflowCard({
         )}
 
         {state === "review_opened" && (
-          <div
-            style={{
-              padding: "10px 12px",
-              background: "var(--ek-warning-soft)",
-              border: "1px solid var(--ek-warning-border)",
-              color: "var(--ek-warning)",
-              borderRadius: 10,
-              fontSize: 12.5,
-              lineHeight: 1.5,
-            }}
-          >
+          <div className="notice-banner notice-banner-warning">
             Bitte zuerst in der Review-UI auf <strong>Freigeben</strong>{" "}
             klicken. Sobald freigegeben, kann hier die Angebotsmail
             erstellt werden.
@@ -213,7 +203,7 @@ export function WorkflowCard({
                 onClick={() => onCreateReview(false)}
               >
                 <SparkIcon className="btn-icon" />
-                Draft erstellen
+                Review erstellen
               </button>
               <button
                 className="btn btn-secondary"
@@ -221,7 +211,7 @@ export function WorkflowCard({
                 onClick={() => onCreateReview(true)}
               >
                 <ExternalIcon className="btn-icon" />
-                Erstellen &amp; öffnen
+                Review erstellen &amp; öffnen
               </button>
               <button
                 className="btn btn-ghost"

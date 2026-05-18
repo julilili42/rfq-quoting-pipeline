@@ -1,7 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { approvalApi, type ApprovalTransitionInput } from "@/shared/api/approval";
-import { approvalQueryKey, reviewQueryKey } from "@/shared/api/queryKeys";
+import {
+  approvalQueryKey,
+  reviewListQueryKey,
+  reviewQueryKey,
+} from "@/shared/api/queryKeys";
 
 export { approvalQueryKey };
 
@@ -33,6 +37,7 @@ export function useApprovalTransition(reviewId: string | undefined) {
       if (!reviewId) return;
       queryClient.invalidateQueries({ queryKey: approvalQueryKey(reviewId) });
       queryClient.invalidateQueries({ queryKey: reviewQueryKey(reviewId) });
+      queryClient.invalidateQueries({ queryKey: reviewListQueryKey });
     },
   });
 }

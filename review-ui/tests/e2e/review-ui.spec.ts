@@ -20,6 +20,37 @@ test("opens a review from the dashboard and shows extracted position data", asyn
   await expect(page.getByText(/exakt/i).first()).toBeVisible();
 });
 
+test("keeps the dashboard table width stable when selecting reviews", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("Preisanfrage 2026-50422")).toBeVisible();
+
+  const table = page.locator("table").first();
+  const before = await table.evaluate((el) => ({
+    width: el.getBoundingClientRect().width,
+    scrollWidth: el.closest(".overflow-x-auto")?.scrollWidth ?? 0,
+  }));
+
+  await page.getByRole("checkbox", { name: /Preisanfrage 2026-50422/ }).check({ force: true });
+  await expect(page.locator("[aria-label='Auswahl-Aktionen']")).toBeVisible();
+
+  const after = await table.evaluate((el) => ({
+    width: el.getBoundingClientRect().width,
+    scrollWidth: el.closest(".overflow-x-auto")?.scrollWidth ?? 0,
+  }));
+
+  expect(Math.abs(after.width - before.width)).toBeLessThan(0.1);
+  expect(after.scrollWidth).toBe(before.scrollWidth);
+});
+
+test("hides draft PDF downloads for reviews that still need approval", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByText("Preisanfrage 2026-50422")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "PDF öffnen" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "PDF" })).toHaveCount(0);
+});
+
 test("does not count a newly added position after it is deleted again", async ({ page }) => {
   await page.goto(`/reviews/${ids.review}/positions`);
 

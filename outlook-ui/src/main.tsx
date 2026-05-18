@@ -233,12 +233,18 @@ function App() {
     setBatchItems(
       selectedItems.map((item) => ({ ...item, status: "pending" })),
     );
-    setStatus(`Batch gestartet: ${selectedItems.length} Drafts werden erstellt…`);
+    setStatus("Batch gestartet.");
 
     let completedCount = 0;
     let failedCount = 0;
 
-    async function processOne(selected: SelectedMailSummary) {
+    const jobs: Array<{
+      selected: SelectedMailSummary;
+      mail: MailSnapshot;
+      itemMailId: string;
+    }> = [];
+
+    for (const selected of selectedItems) {
       patchBatchItem(selected.itemId, {
         status: "loading",
         detail: "Mail-Inhalt und Anhänge werden geladen…",
@@ -247,6 +253,43 @@ function App() {
       try {
         const mail = await readSelectedMailSnapshot(selected.itemId);
         const itemMailId = deriveMailId({ itemId: selected.itemId }, mail);
+        jobs.push({ selected, mail, itemMailId });
+        patchBatchItem(selected.itemId, {
+          status: "pending",
+          detail: "Bereit für Pipeline",
+        });
+      } catch (error) {
+        failedCount += 1;
+        patchBatchItem(selected.itemId, {
+          status: "failed",
+          error: String(error),
+        });
+      }
+    }
+
+    if (jobs.length === 0) {
+      setStatus(`${failedCount} Mails konnten nicht geladen werden.`);
+      setLoading(false);
+      return;
+    }
+
+    setStatus("Pipelines werden gestartet…");
+
+    async function processOne({
+      selected,
+      mail,
+      itemMailId,
+    }: {
+      selected: SelectedMailSummary;
+      mail: MailSnapshot;
+      itemMailId: string;
+    }) {
+      patchBatchItem(selected.itemId, {
+        status: "running",
+        detail: "Pipeline wird gestartet…",
+      });
+
+      try {
         const started = await startReview(mail);
         upsertWorkflow(itemMailId, {
           subject: mail.subject,
@@ -281,7 +324,7 @@ function App() {
         patchBatchItem(selected.itemId, {
           status: "completed",
           reviewId: completed.review_id,
-          detail: "Review bereit",
+          detail: undefined,
         });
       } catch (error) {
         failedCount += 1;
@@ -294,20 +337,20 @@ function App() {
 
     const CONCURRENCY = 3;
     let cursor = 0;
-    const workerCount = Math.min(CONCURRENCY, selectedItems.length);
+    const workerCount = Math.min(CONCURRENCY, jobs.length);
     const workers = Array.from({ length: workerCount }, async () => {
       while (true) {
         const index = cursor++;
-        if (index >= selectedItems.length) return;
-        await processOne(selectedItems[index]);
+        if (index >= jobs.length) return;
+        await processOne(jobs[index]);
       }
     });
     await Promise.all(workers);
 
     setStatus(
       failedCount > 0
-        ? `${completedCount} Drafts erstellt, ${failedCount} fehlgeschlagen.`
-        : `${completedCount} Drafts erstellt. Bereit zur Review-Inbox.`,
+        ? `${completedCount} Reviews erstellt, ${failedCount} fehlgeschlagen.`
+        : `${completedCount} Reviews erstellt. Bereit zur Review-Inbox.`,
     );
     setLoading(false);
   }
@@ -451,6 +494,13 @@ function App() {
       }
       setIsOutlook(true);
       void loadMail();
+      const itemChanged = Office.EventType?.ItemChanged;
+      if (itemChanged) {
+        Office.context?.mailbox?.addHandlerAsync?.(
+          itemChanged,
+          () => void loadMail(),
+        );
+      }
       const selectedItemsChanged = Office.EventType?.SelectedItemsChanged;
       if (selectedItemsChanged) {
         Office.context?.mailbox?.addHandlerAsync?.(
@@ -572,10 +622,18 @@ function App() {
     (loading || (pipelineProgress !== null && pipelineProgress.status !== "completed"));
   const showStatusCard = shouldShowStatusCard(status, loading, pipelineVisible);
   const batchCompleted = isCompletedBatch(batchItems);
+  const batchStarted = batchItems.length > 0;
+  const batchWorkflowState: MailWorkflowState = batchCompleted
+    ? "review_created"
+    : batchStarted
+      ? "review_running"
+      : "new";
 
   if (selectedItems.length > 1) {
     return (
       <div className="panel">
+        <Steps workflowState={batchWorkflowState} />
+
         <BatchWorkflowCard
           selectedItems={selectedItems}
           batchItems={batchItems}
@@ -584,6 +642,9 @@ function App() {
           onReloadSelection={loadMail}
           onOpenOverview={() => openUrl(REVIEW_OVERVIEW_URL)}
         />
+        {shouldShowStatusCard(status, false, false) && (
+          <StatusCard status={status} loading={loading} />
+        )}
         {!batchCompleted && <OverviewLink />}
       </div>
     );

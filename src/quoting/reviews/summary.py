@@ -5,12 +5,12 @@ Every review folder is treated as a self-contained artifact.
 
 Status detection
 ----------------
-- ``abgeschlossen`` — the user clicked "save" in the review UI at least
-  once (``review_state.json`` exists with a recorded total).
+- ``abgeschlossen`` — the review was explicitly approved
+  (``approval.json`` is ``approved`` or ``ready_to_send``).
 - ``pdf_bereit``   — the initial pipeline has produced a draft PDF, but
-  the user has not yet opened the review UI.
+  the review has not been approved yet.
 - ``in_arbeit``    — the folder exists but no PDF was produced (likely a
-  failed pipeline run).
+  running or failed pipeline run).
 """
 from __future__ import annotations
 
@@ -103,7 +103,8 @@ def _summarize(folder: Path) -> ReviewSummary:
                                            "01_extracted.json")) or {}
     quotation = _read_json_first(folder, ("quotation_reviewed.json",
                                           "03_quotation.json")) or {}
-    state = read_json(folder / "review_state.json")
+    legacy_state = read_json(folder / "review_state.json")
+    approval = read_json(folder / "approval.json") or {}
     overrides = read_json(folder / "manual_overrides.json") or []
 
     positions = extraction.get("positionen") or []
@@ -120,7 +121,14 @@ def _summarize(folder: Path) -> ReviewSummary:
 
     pdf_path = find_draft_pdf(folder, review_id)
 
-    if state and "review_id" in state:
+    approval_state = approval.get("state") if isinstance(approval, dict) else None
+    has_legacy_completed_state = (
+        approval_state is None
+        and isinstance(legacy_state, dict)
+        and "review_id" in legacy_state
+    )
+
+    if approval_state in {"approved", "ready_to_send"} or has_legacy_completed_state:
         status: ReviewStatus = "abgeschlossen"
     elif pdf_path:
         status = "pdf_bereit"

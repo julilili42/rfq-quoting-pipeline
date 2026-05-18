@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { reviewListQueryKey } from "@/shared/api/queryKeys";
 import { reviewsApi } from "@/shared/api/reviews";
 
 /**
@@ -10,7 +11,7 @@ import { reviewsApi } from "@/shared/api/reviews";
  */
 export function useReviewSummaries() {
   return useQuery({
-    queryKey: ["reviews", "list"],
+    queryKey: reviewListQueryKey,
     queryFn: () => reviewsApi.list(),
     staleTime: 15_000,
   });

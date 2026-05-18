@@ -1,3 +1,5 @@
+export const reviewListQueryKey = ["reviews", "list"] as const;
+
 export const reviewQueryKey = (reviewId: string) =>
   ["reviews", "detail", reviewId] as const;
 

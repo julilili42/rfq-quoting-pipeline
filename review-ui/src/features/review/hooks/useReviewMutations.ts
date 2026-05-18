@@ -4,7 +4,11 @@ import { reviewsApi } from "@/shared/api/reviews";
 import type { Anfrage } from "@/shared/schemas/anfrage";
 import type { ManualOverride } from "@/shared/schemas/quotation";
 
-import { approvalQueryKey, reviewQueryKey } from "@/shared/api/queryKeys";
+import {
+  approvalQueryKey,
+  reviewListQueryKey,
+  reviewQueryKey,
+} from "@/shared/api/queryKeys";
 
 /**
  * Persist edits + rebuild draft PDF.
@@ -35,6 +39,7 @@ export function useSaveAndRegenerate(reviewId: string | undefined) {
       if (!reviewId) return;
       queryClient.invalidateQueries({ queryKey: reviewQueryKey(reviewId) });
       queryClient.invalidateQueries({ queryKey: approvalQueryKey(reviewId) });
+      queryClient.invalidateQueries({ queryKey: reviewListQueryKey });
     },
   });
 }
@@ -54,6 +59,7 @@ export function useFinalize(reviewId: string | undefined) {
       if (!reviewId) return;
       queryClient.invalidateQueries({ queryKey: reviewQueryKey(reviewId) });
       queryClient.invalidateQueries({ queryKey: approvalQueryKey(reviewId) });
+      queryClient.invalidateQueries({ queryKey: reviewListQueryKey });
     },
   });
 }
@@ -70,7 +76,7 @@ export function useResetReview(reviewId: string | undefined) {
       if (!reviewId) return;
       queryClient.invalidateQueries({ queryKey: reviewQueryKey(reviewId) });
       queryClient.invalidateQueries({ queryKey: approvalQueryKey(reviewId) });
-      queryClient.invalidateQueries({ queryKey: ["reviews", "list"] });
+      queryClient.invalidateQueries({ queryKey: reviewListQueryKey });
     },
   });
 }

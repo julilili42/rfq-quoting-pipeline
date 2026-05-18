@@ -138,22 +138,17 @@ export function ReviewCard({
               Review
             </Link>
           )}
-          {review.has_pdf && (
+          {review.has_pdf && !needsReview && (
             <a
               href={pdfUrl(review.review_id, "current", review.updated_at)}
               target="_blank"
               rel="noopener noreferrer"
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-bold transition-all",
-                needsReview
-                  ? "border border-border bg-surface text-muted-foreground hover:border-foreground/30 hover:text-foreground"
-                  : "bg-brand text-white shadow-sm hover:-translate-y-px hover:bg-brand-dark",
-              )}
+              className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition-all hover:-translate-y-px hover:bg-brand-dark"
               onClick={(e) => e.stopPropagation()}
-              title={needsReview ? "PDF öffnen" : undefined}
+              title="PDF öffnen"
             >
               <FileDown className="h-3 w-3" aria-hidden="true" />
-              {needsReview ? <span className="sr-only">PDF öffnen</span> : "PDF"}
+              PDF
             </a>
           )}
           {!review.has_pdf && !needsReview && (

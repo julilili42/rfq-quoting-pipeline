@@ -2,6 +2,7 @@ import type { SelectedMailSummary } from "../outlook/mailbox";
 import {
   AlertIcon,
   CheckIcon,
+  ClockIcon,
   ExternalIcon,
   RefreshIcon,
   SparkIcon,
@@ -30,25 +31,53 @@ type BatchWorkflowCardProps = {
   onOpenOverview: () => void;
 };
 
-function labelFor(status: BatchDraftStatus): string {
-  switch (status) {
-    case "pending":
-      return "Wartet";
-    case "loading":
-      return "Lädt Mail";
-    case "running":
-      return "Pipeline";
-    case "completed":
-      return "Erstellt";
-    case "failed":
-      return "Fehler";
-  }
-}
-
 function iconFor(status: BatchDraftStatus) {
   if (status === "completed") return CheckIcon;
   if (status === "failed") return AlertIcon;
+  if (status === "pending") return ClockIcon;
   return SparkIcon;
+}
+
+function batchTitle({
+  hasStarted,
+  allCompleted,
+  failed,
+  loading,
+}: {
+  hasStarted: boolean;
+  allCompleted: boolean;
+  failed: number;
+  loading: boolean;
+}): string {
+  if (failed > 0) return "Batch prüfen";
+  if (allCompleted) return "Reviews bereit";
+  if (loading || hasStarted) return "Reviews werden erstellt";
+  return "Batch vorbereiten";
+}
+
+function itemDetail(item: BatchDraftItem): string {
+  if (item.error) return item.error;
+  if (item.status === "loading" || item.status === "running") {
+    return item.detail ?? "";
+  }
+  return "";
+}
+
+function batchSubtitle({
+  hasStarted,
+  allCompleted,
+  failed,
+  selectionLabel,
+}: {
+  hasStarted: boolean;
+  allCompleted: boolean;
+  failed: number;
+  selectionLabel: string;
+}): string | null {
+  if (failed > 0) return `${failed} fehlgeschlagen`;
+  if (allCompleted) return null;
+  if (hasStarted) return "Pipelines laufen";
+  return selectionLabel;
 }
 
 export function BatchWorkflowCard({
@@ -65,15 +94,26 @@ export function BatchWorkflowCard({
   const hasStarted = batchItems.length > 0;
   const completed = items.filter((item) => item.status === "completed").length;
   const failed = items.filter((item) => item.status === "failed").length;
+  const active = items.filter(
+    (item) => item.status === "loading" || item.status === "running",
+  ).length;
   const total = selectedItems.length;
   const allCompleted = hasStarted && completed === total && failed === 0;
   const hasCollapsedConversations = selectedItems.some(
     (item) => item.collapsedCount > 1,
   );
   const canCreate = total > 0 && !loading;
+  const progress = total > 0 ? Math.round(((completed + failed) / total) * 100) : 0;
+  const listLabel = hasCollapsedConversations ? "Unterhaltungen" : "Mails";
   const selectionLabel = hasCollapsedConversations
     ? `${total} Unterhaltungen ausgewählt`
     : `${total} Mails ausgewählt`;
+  const subtitle = batchSubtitle({
+    hasStarted,
+    allCompleted,
+    failed,
+    selectionLabel,
+  });
   const cardClass = failed
     ? "card card-error"
     : allCompleted
@@ -83,46 +123,49 @@ export function BatchWorkflowCard({
   return (
     <section className={cardClass}>
       <div className="card-stack">
-        <div className="row-between">
-          <span className="pill pill-info">
-            <span className="pill-dot" />
-            {selectionLabel}
-          </span>
-        </div>
-
         <div>
           <div className="mail-subject">
-            {allCompleted ? "Batch-Drafts erstellt" : "Batch-Drafts erstellen"}
+            {batchTitle({ hasStarted, allCompleted, failed, loading })}
           </div>
+          {subtitle && <div className="mail-sender">{subtitle}</div>}
         </div>
 
+        {hasStarted && !allCompleted && active > 0 && (
+          <div className="batch-progress" aria-label={`Batch-Fortschritt ${progress}%`}>
+            <div className="batch-progress-head">
+              <span>{completed + failed} von {total} fertig</span>
+              <strong>{progress}%</strong>
+            </div>
+            <div className="pipeline-progress-bar">
+              <div
+                className="pipeline-progress-fill"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="batch-list-head">
+          <span>{listLabel}</span>
+        </div>
         <div className="batch-list" aria-label="Ausgewählte Mails">
           {items.map((item) => {
             const Icon = iconFor(item.status);
-            const detail =
-              item.reviewId ??
-              item.error ??
-              item.detail ??
-              (hasStarted ? labelFor(item.status) : "");
+            const detail = itemDetail(item);
             return (
               <div
                 key={item.itemId}
-                className={`batch-row batch-row-${item.status} ${
-                  hasStarted ? "" : "batch-row-idle"
-                }`}
+                className={`batch-row batch-row-${item.status}`}
               >
-                <Icon className="batch-row-icon" />
+                <span className="batch-row-icon-wrap">
+                  <Icon className="batch-row-icon" />
+                </span>
                 <div className="batch-row-main">
                   <div className="batch-row-title">{item.subject}</div>
                   {detail && (
                     <div className="batch-row-detail">{detail}</div>
                   )}
                 </div>
-                {hasStarted && (
-                  <span className="batch-row-status">
-                    {labelFor(item.status)}
-                  </span>
-                )}
               </div>
             );
           })}
@@ -145,7 +188,11 @@ export function BatchWorkflowCard({
               onClick={onCreateBatch}
             >
               <SparkIcon className="btn-icon" />
-              {total} Drafts erstellen
+              {hasStarted
+                ? loading
+                  ? "Reviews werden erstellt"
+                  : "Erneut versuchen"
+                : `${total} Reviews erstellen`}
             </button>
           )}
           <button

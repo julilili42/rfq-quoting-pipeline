@@ -94,7 +94,7 @@ function ReviewTable({
   return (
     <div className="overflow-hidden rounded-xl border border-border shadow-card">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="min-w-[70rem] w-full table-fixed text-sm">
           <thead>
             <tr className="border-b border-border bg-surface-sunk">
               <th className="w-12 px-4 py-3 text-left">
@@ -136,4 +136,3 @@ function ReviewTable({
     </div>
   );
 }
-
