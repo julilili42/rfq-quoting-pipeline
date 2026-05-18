@@ -163,14 +163,6 @@ export async function pollReviewUntilComplete(
   }
 }
 
-export async function createReview(
-  mail: MailSnapshot,
-  onProgress?: ProgressCallback,
-): Promise<CreateReviewResponse> {
-  const started = await startReview(mail);
-  return pollReviewUntilComplete(started, onProgress);
-}
-
 async function checkPdfUrl(result: CreateReviewResponse): Promise<void> {
   try {
     const pdfCheck = await fetch(withCacheBust(result.draft_pdf_url), {

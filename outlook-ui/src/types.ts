@@ -56,11 +56,3 @@ export type CreateReviewResponse = {
   summary?: Record<string, unknown>;
   progress?: PipelineProgress;
 };
-
-
-export type PendingReview = {
-  review: CreateReviewResponse;
-  mailSubject: string;
-  sender: string;
-  createdAt: string;
-};

@@ -99,12 +99,6 @@ export function getWorkflow(mailId: string): MailWorkflow | null {
   return readStore()[mailId] ?? null;
 }
 
-export function listWorkflows(): MailWorkflow[] {
-  return Object.values(readStore()).sort((a, b) =>
-    b.updatedAt.localeCompare(a.updatedAt),
-  );
-}
-
 export function upsertWorkflow(
   mailId: string,
   patch: Omit<Partial<MailWorkflow>, "mailId">,
