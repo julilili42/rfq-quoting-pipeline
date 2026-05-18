@@ -2,6 +2,15 @@ import type { MailAttachment, MailSnapshot } from "../types";
 
 declare const Office: any;
 
+export type SelectedMailSummary = {
+  itemId: string;
+  subject: string;
+  conversationId?: string;
+  internetMessageId?: string;
+  hasAttachment: boolean;
+  collapsedCount: number;
+};
+
 function formatFrom(item: any): string {
   const from = item.from;
   if (!from) return "(unknown)";
@@ -52,12 +61,121 @@ function getBodyText(item: any): Promise<string> {
   });
 }
 
-export async function readMailSnapshot(): Promise<MailSnapshot> {
-  const item = Office.context.mailbox.item;
+async function readMailSnapshotFromItem(item: any): Promise<MailSnapshot> {
   return {
     subject: item.subject || "(no subject)",
     from: formatFrom(item),
     body: await getBodyText(item),
     attachments: await getAttachmentsWithContent(item),
   };
+}
+
+export async function readMailSnapshot(): Promise<MailSnapshot> {
+  const item = Office.context.mailbox.item;
+  return readMailSnapshotFromItem(item);
+}
+
+export function getSelectedMailItems(): Promise<SelectedMailSummary[]> {
+  const mailbox = Office.context?.mailbox;
+  if (!mailbox?.getSelectedItemsAsync) {
+    return Promise.resolve([]);
+  }
+
+  return new Promise((resolve) => {
+    try {
+      mailbox.getSelectedItemsAsync((result: any) => {
+        if (result.status !== Office.AsyncResultStatus.Succeeded) {
+          resolve([]);
+          return;
+        }
+        const items = Array.isArray(result.value) ? result.value : [];
+        resolve(collapseSelectedItems(items));
+      });
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
+function selectedItemKey(item: SelectedMailSummary): string {
+  return item.conversationId || item.itemId;
+}
+
+function isBetterRepresentative(
+  candidate: SelectedMailSummary,
+  current: SelectedMailSummary,
+): boolean {
+  if (candidate.hasAttachment !== current.hasAttachment) {
+    return candidate.hasAttachment;
+  }
+  return false;
+}
+
+export function collapseSelectedItems(items: any[]): SelectedMailSummary[] {
+  const bySelectionKey = new Map<string, SelectedMailSummary>();
+
+  for (const item of items) {
+    if (!item?.itemId) continue;
+
+    const summary: SelectedMailSummary = {
+      itemId: String(item.itemId),
+      subject: item.subject || "(no subject)",
+      conversationId: item.conversationId
+        ? String(item.conversationId)
+        : undefined,
+      internetMessageId: item.internetMessageId
+        ? String(item.internetMessageId)
+        : undefined,
+      hasAttachment: Boolean(item.hasAttachment),
+      collapsedCount: 1,
+    };
+
+    const key = selectedItemKey(summary);
+    const current = bySelectionKey.get(key);
+    if (!current) {
+      bySelectionKey.set(key, summary);
+      continue;
+    }
+
+    current.collapsedCount += 1;
+    if (isBetterRepresentative(summary, current)) {
+      bySelectionKey.set(key, {
+        ...summary,
+        collapsedCount: current.collapsedCount,
+      });
+    }
+  }
+
+  return Array.from(bySelectionKey.values());
+}
+
+export async function readSelectedMailSnapshot(
+  itemId: string,
+): Promise<MailSnapshot> {
+  const mailbox = Office.context?.mailbox;
+  if (!mailbox?.loadItemByIdAsync) {
+    throw new Error("Outlook unterstützt das Laden ausgewählter Mails nicht.");
+  }
+
+  const loadedItem = await new Promise<any>((resolve, reject) => {
+    mailbox.loadItemByIdAsync(itemId, (result: any) => {
+      if (result.status === Office.AsyncResultStatus.Succeeded) {
+        resolve(result.value);
+      } else {
+        reject(result.error?.message || "selected mail load failed");
+      }
+    });
+  });
+
+  try {
+    return await readMailSnapshotFromItem(loadedItem);
+  } finally {
+    await new Promise<void>((resolve) => {
+      if (!loadedItem?.unloadAsync) {
+        resolve();
+        return;
+      }
+      loadedItem.unloadAsync(() => resolve());
+    });
+  }
 }

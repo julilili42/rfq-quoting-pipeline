@@ -15,9 +15,6 @@ Only the extraction step uses an LLM. Matching and pricing are deterministic and
 - Node.js 20+
 - `uv`, if you want to use the root command `npm run dev`
 - API key for Gemini or Azure OpenAI
-- Optional for Outlook tests with a public HTTPS URL: `cloudflared`
-
-Cloudflare Tunnel is not required for testing the Review UI locally in the browser or upload files directly through the dashboard. For Outlook sideloading, a tunnel is required, since PDF attachments need a publicly reachable HTTPS URL.
 
 ## Installation
 
@@ -94,9 +91,7 @@ The actual ports are always shown in the terminal output.
 npm run dev
 ```
 
-2. If needed, start the Cloudflare Tunnel and set `.tunnel_url`.
-
-3. Open the Outlook sideload page:
+2. Open the Outlook sideload page:
 
 ```text
 https://aka.ms/olksideload
@@ -108,9 +103,9 @@ Alternatively, use the official Microsoft documentation:
 https://learn.microsoft.com/en-us/office/dev/add-ins/outlook/sideload-outlook-add-ins-for-testing
 ```
 
-4. Open Outlook add-in management.
+3. Open Outlook add-in management.
 
-5. Upload `outlook-ui/manifest.xml` as a custom add-in.
+4. Upload `outlook-ui/manifest.xml` as a custom add-in.
 
 6. Open an email with an RFQ attachment and run the add-in button.
 

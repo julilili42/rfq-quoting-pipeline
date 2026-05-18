@@ -136,6 +136,14 @@ export const reviewsApi = {
     return reviewDetailSchema.parse(data);
   },
 
+  delete: async (reviewId: string): Promise<void> => {
+    await apiClient.delete<void>(reviewPath(reviewId).base);
+  },
+
+  deleteMany: async (reviewIds: string[]): Promise<void> => {
+    await Promise.all(reviewIds.map((reviewId) => reviewsApi.delete(reviewId)));
+  },
+
   status: async (reviewId: string): Promise<PipelineProgress> => {
     const data = await apiClient.get<unknown>(reviewPath(reviewId).status);
     return pipelineProgressSchema.parse(data);

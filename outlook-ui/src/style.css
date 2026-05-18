@@ -374,6 +374,74 @@ html, body {
     border-color: var(--ek-danger-border);
 }
 
+/* ---------------- Batch review creation ------------------------------- */
+.batch-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 260px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+.batch-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--ek-border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.74);
+}
+.batch-row-idle {
+    grid-template-columns: auto minmax(0, 1fr);
+}
+.batch-row-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--ek-muted);
+}
+.batch-row-completed .batch-row-icon {
+    color: var(--ek-success);
+}
+.batch-row-failed .batch-row-icon {
+    color: var(--ek-danger);
+}
+.batch-row-main {
+    min-width: 0;
+}
+.batch-row-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+    font-weight: 650;
+    color: var(--ek-text);
+}
+.batch-row-detail {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--ek-muted);
+}
+.batch-row-status {
+    font-size: 10px;
+    font-weight: 750;
+    color: var(--ek-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.batch-row-running .batch-row-status,
+.batch-row-loading .batch-row-status {
+    color: var(--ek-info);
+}
+.batch-row-completed .batch-row-status {
+    color: var(--ek-success);
+}
+.batch-row-failed .batch-row-status {
+    color: var(--ek-danger);
+}
 /* ---------------- Success banner -------------------------------------- */
 .success-banner {
     display: flex;

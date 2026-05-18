@@ -7,7 +7,7 @@
   xsi:type="MailApp">
 
   <Id>42D1A4DE-45A6-4B74-AAA7-7F35D9A0F780</Id>
-  <Version>1.2.3.0</Version>
+  <Version>1.2.4.0</Version>
   <ProviderName>Business and AI</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
 
@@ -25,7 +25,7 @@
 
   <Requirements>
     <Sets>
-      <Set Name="Mailbox" MinVersion="1.5"/>
+      <Set Name="Mailbox" MinVersion="1.15"/>
     </Sets>
   </Requirements>
 
@@ -44,7 +44,7 @@
     </Form>
   </FormSettings>
 
-  <Permissions>ReadWriteItem</Permissions>
+  <Permissions>ReadWriteMailbox</Permissions>
 
   <Rule xsi:type="RuleCollection" Mode="Or">
     <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read"/>
@@ -57,8 +57,12 @@
     xmlns="http://schemas.microsoft.com/office/mailappversionoverrides"
     xsi:type="VersionOverridesV1_0">
 
+    <VersionOverrides
+      xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1"
+      xsi:type="VersionOverridesV1_1">
+
     <Requirements>
-      <bt:Sets DefaultMinVersion="1.5">
+      <bt:Sets DefaultMinVersion="1.15">
         <bt:Set Name="Mailbox"/>
       </bt:Sets>
     </Requirements>
@@ -89,6 +93,9 @@
 
                   <Action xsi:type="ShowTaskpane">
                     <SourceLocation resid="Taskpane.Url"/>
+                    <SupportsPinning>true</SupportsPinning>
+                    <SupportsNoItemContext>true</SupportsNoItemContext>
+                    <SupportsMultiSelect>true</SupportsMultiSelect>
                   </Action>
                 </Control>
               </Group>
@@ -115,6 +122,9 @@
 
                   <Action xsi:type="ShowTaskpane">
                     <SourceLocation resid="Taskpane.Url"/>
+                    <SupportsPinning>true</SupportsPinning>
+                    <SupportsNoItemContext>true</SupportsNoItemContext>
+                    <SupportsMultiSelect>true</SupportsMultiSelect>
                   </Action>
                 </Control>
               </Group>
@@ -147,5 +157,6 @@
       </bt:LongStrings>
     </Resources>
 
+    </VersionOverrides>
   </VersionOverrides>
 </OfficeApp>

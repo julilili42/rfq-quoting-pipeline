@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from quoting.api import _common
@@ -126,6 +127,17 @@ def get_review_detail(review_id: str) -> dict:
         "has_draft_pdf": find_draft_pdf(folder, review_id) is not None,
         "has_final_pdf": find_final_pdf(folder, review_id) is not None,
     }
+
+
+@router.delete("/reviews/{review_id}", status_code=204)
+def delete_review(review_id: str) -> Response:
+    folder = _common.review_dir(review_id)
+    try:
+        shutil.rmtree(folder)
+    except OSError as exc:
+        log.exception("delete_review: could not delete %s", review_id)
+        raise HTTPException(500, f"Review konnte nicht gelöscht werden: {exc}") from exc
+    return Response(status_code=204)
 
 
 @router.get("/reviews/{review_id}/mail")

@@ -30,7 +30,12 @@ def get_pipeline() -> QuotingPipeline:
 
 
 def review_dir(review_id: str) -> Path:
-    folder = REVIEW_DIR / review_id
+    root = REVIEW_DIR.resolve()
+    folder = (REVIEW_DIR / review_id).resolve()
+    try:
+        folder.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(404, f"Review {review_id} not found") from exc
     if not folder.exists() or not folder.is_dir():
         raise HTTPException(404, f"Review {review_id} not found")
     return folder

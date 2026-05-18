@@ -64,7 +64,7 @@ npm run dev
 ```
 
 Öffnet `http://localhost:5173`. Vite proxiert `/api/*` auf
-`http://127.0.0.1:8000`. Für Tunnel- / Production-Setups die
+`http://127.0.0.1:8000`. Für Production-Setups die
 Umgebungsvariable `VITE_API_BASE_URL` setzen.
 
 ## Build

@@ -94,8 +94,6 @@ data/settings.json
 # TypeScript incremental build artifacts
 *.tsbuildinfo
 
-.tunnel_url
-
 # Claude
 .claude
 Claude.md

@@ -233,14 +233,6 @@ def check_settings_file(path: Path) -> CheckResult:
         return CheckResult(name="settings.json", status="error", detail=f"Parse-Fehler: {e}")
 
 
-def check_tunnel_url(root: Path) -> CheckResult:
-    tunnel_file = root / ".tunnel_url"
-    if not tunnel_file.exists():
-        return CheckResult(name="Tunnel-URL", status="warning", detail=".tunnel_url fehlt — Outlook Add-in kann Backend möglicherweise nicht erreichen")
-    url = tunnel_file.read_text(encoding="utf-8").strip()
-    return CheckResult(name="Tunnel-URL", status="ok", detail=url or "(leer)")
-
-
 def check_pipeline_failures(summary: PipelineFailureSummary) -> CheckResult:
     if summary.total_failed == 0:
         return CheckResult(name="Letzte Pipeline-Fehler", status="ok", detail="Keine fehlgeschlagenen Reviews gefunden")
@@ -436,7 +428,6 @@ def compute_debug_info(project_root: Path) -> DebugInfo:
         check_disk_space(data_dir),
         check_thresholds(settings),
         check_settings_file(data_dir / "settings.json"),
-        check_tunnel_url(project_root),
         check_pipeline_failures(failures),
         check_stammdaten_quality(quality),
     ]

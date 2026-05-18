@@ -5,16 +5,11 @@
  *
  *   Steps indicator
  *   WorkflowCard          ← single source of truth (state + progress in one)
- *   StatusCard            ← only shown when workflow card doesn't cover it
- *                           (initial load, errors, mail-loading)
+ *   StatusCard            ← only shown for active loading/error feedback
  *   Quoting-Übersicht link ← prominent, with arrow
  *
- * The StatusCard used to render under every state, which produced two
- * "Pipeline läuft" / "Extraktion" labels at once — once inside the
- * WorkflowCard, once below it. We now hide the StatusCard whenever
- * the WorkflowCard already names the state (review_running through
- * quote_sent) and only surface it for the truly informational stages:
- * initial load, errors, and the new state.
+ * Passive "mail loaded" text stays out of the UI; the card itself is
+ * the state surface.
  *
  * Approval polling
  * ----------------
@@ -35,12 +30,21 @@ import {
   pollReviewUntilComplete,
   startReview,
 } from "./api/reviewApi";
+import {
+  BatchWorkflowCard,
+  type BatchDraftItem,
+} from "./components/BatchWorkflowCard";
 import { ExternalIcon } from "./components/Icons";
 import { StatusCard } from "./components/StatusCard";
 import { Steps } from "./components/Steps";
 import { WorkflowCard } from "./components/WorkflowCard";
 import { createDraftMail, openUrl } from "./outlook/draftMail";
-import { readMailSnapshot } from "./outlook/mailbox";
+import {
+  getSelectedMailItems,
+  readMailSnapshot,
+  readSelectedMailSnapshot,
+  type SelectedMailSummary,
+} from "./outlook/mailbox";
 import {
   type MailWorkflow,
   type MailWorkflowState,
@@ -62,17 +66,6 @@ import "./style.css";
 declare const Office: any;
 
 const REVIEW_OVERVIEW_URL = REVIEW_UI_URL;
-// Workflow states whose UI is fully described by the WorkflowCard.
-// During these states the StatusCard would just repeat what's already
-// visible, so we hide it.
-const STATES_WITH_OWN_STATUS: MailWorkflowState[] = [
-  "review_running",
-  "review_created",
-  "review_opened",
-  "approved",
-  "quote_sent",
-];
-
 // Workflow states where polling the approval endpoint is meaningful.
 const STATES_TO_POLL_APPROVAL: MailWorkflowState[] = [
   "review_created",
@@ -98,9 +91,53 @@ function formatProgressStatus(progress: PipelineProgress): string {
   return `Pipeline läuft: ${progress.current_step}`;
 }
 
+function formatSelectionStatus(items: SelectedMailSummary[]): string {
+  const label = items.some((item) => item.collapsedCount > 1)
+    ? "Unterhaltungen"
+    : "Mails";
+  return `${items.length} ${label} ausgewählt.`;
+}
+
+function shouldShowStatusCard(
+  status: string,
+  loading: boolean,
+  pipelineVisible: boolean,
+): boolean {
+  if (loading && !pipelineVisible) return true;
+  return (
+    status.startsWith("Fehler") ||
+    status.includes("fehlgeschlagen") ||
+    status.includes("konnte nicht")
+  );
+}
+
+function isCompletedBatch(items: BatchDraftItem[]): boolean {
+  return (
+    items.length > 0 &&
+    items.every((item) => item.status === "completed")
+  );
+}
+
+function OverviewLink() {
+  return (
+    <button
+      className="overview-link"
+      onClick={() => openUrl(REVIEW_OVERVIEW_URL)}
+      type="button"
+    >
+      <span className="overview-link-text">
+        Quoting-Übersicht öffnen
+      </span>
+      <ExternalIcon className="overview-link-icon" />
+    </button>
+  );
+}
+
 function App() {
   const [isOutlook, setIsOutlook] = useState(false);
   const [mailId, setMailId] = useState<string | null>(null);
+  const [selectedItems, setSelectedItems] = useState<SelectedMailSummary[]>([]);
+  const [batchItems, setBatchItems] = useState<BatchDraftItem[]>([]);
   const [snapshot, setSnapshot] = useState<MailSnapshot | null>(null);
   const [workflow, setWorkflow] = useState<MailWorkflow | null>(null);
   const [pipelineProgress, setPipelineProgress] =
@@ -113,10 +150,53 @@ function App() {
 
   async function loadMail() {
     setLoading(true);
-    setStatus("Lade Mail-Inhalt und Anhänge…");
+    setStatus("Lade Outlook-Auswahl…");
     try {
-      const mail = await readMailSnapshot();
-      const id = deriveMailId(Office.context?.mailbox?.item, mail);
+      const currentItem = Office.context?.mailbox?.item;
+      setBatchItems([]);
+
+      if (currentItem) {
+        setSelectedItems([]);
+        setStatus("Lade Mail-Inhalt und Anhänge…");
+        const mail = await readMailSnapshot();
+        const id = deriveMailId(currentItem, mail);
+        maybeMigrateLegacy(id);
+        const existingWorkflow = getWorkflow(id);
+        setMailId(id);
+        setSnapshot(mail);
+        setWorkflow(existingWorkflow);
+        setStatus(
+          `Mail geladen — ${mail.attachments.length} ${
+            mail.attachments.length === 1 ? "Anhang" : "Anhänge"
+          }.`,
+        );
+        return;
+      }
+
+      const selected = await getSelectedMailItems();
+      setSelectedItems(selected);
+
+      if (selected.length > 1) {
+        setMailId(null);
+        setSnapshot(null);
+        setWorkflow(null);
+        setPipelineProgress(null);
+        setStatus(formatSelectionStatus(selected));
+        return;
+      }
+
+      if (selected.length === 0) {
+        setMailId(null);
+        setSnapshot(null);
+        setWorkflow(null);
+        setPipelineProgress(null);
+        setStatus("Keine Mail ausgewählt.");
+        return;
+      }
+
+      setStatus("Lade Mail-Inhalt und Anhänge…");
+      const mail = await readSelectedMailSnapshot(selected[0].itemId);
+      const id = deriveMailId({ itemId: selected[0].itemId }, mail);
       maybeMigrateLegacy(id);
       const existingWorkflow = getWorkflow(id);
       setMailId(id);
@@ -132,6 +212,104 @@ function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function patchBatchItem(
+    itemId: string,
+    patch: Partial<BatchDraftItem>,
+  ) {
+    setBatchItems((items) =>
+      items.map((item) =>
+        item.itemId === itemId ? { ...item, ...patch } : item,
+      ),
+    );
+  }
+
+  async function handleCreateBatchReviews() {
+    if (selectedItems.length === 0) return;
+
+    setLoading(true);
+    setPipelineProgress(null);
+    setBatchItems(
+      selectedItems.map((item) => ({ ...item, status: "pending" })),
+    );
+    setStatus(`Batch gestartet: ${selectedItems.length} Drafts werden erstellt…`);
+
+    let completedCount = 0;
+    let failedCount = 0;
+
+    async function processOne(selected: SelectedMailSummary) {
+      patchBatchItem(selected.itemId, {
+        status: "loading",
+        detail: "Mail-Inhalt und Anhänge werden geladen…",
+      });
+
+      try {
+        const mail = await readSelectedMailSnapshot(selected.itemId);
+        const itemMailId = deriveMailId({ itemId: selected.itemId }, mail);
+        const started = await startReview(mail);
+        upsertWorkflow(itemMailId, {
+          subject: mail.subject,
+          sender: mail.from,
+          state: "review_running",
+          review: started,
+          reviewCreatedAt: new Date().toISOString(),
+        });
+        patchBatchItem(selected.itemId, {
+          status: "running",
+          reviewId: started.review_id,
+          detail: "Pipeline läuft…",
+        });
+
+        const completed = await pollReviewUntilComplete(
+          started,
+          (progress) => {
+            patchBatchItem(selected.itemId, {
+              status: "running",
+              detail: formatProgressStatus(progress),
+            });
+          },
+        );
+
+        upsertWorkflow(itemMailId, {
+          subject: mail.subject,
+          sender: mail.from,
+          state: "review_created",
+          review: completed,
+        });
+        completedCount += 1;
+        patchBatchItem(selected.itemId, {
+          status: "completed",
+          reviewId: completed.review_id,
+          detail: "Review bereit",
+        });
+      } catch (error) {
+        failedCount += 1;
+        patchBatchItem(selected.itemId, {
+          status: "failed",
+          error: String(error),
+        });
+      }
+    }
+
+    const CONCURRENCY = 3;
+    let cursor = 0;
+    const workerCount = Math.min(CONCURRENCY, selectedItems.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = cursor++;
+        if (index >= selectedItems.length) return;
+        await processOne(selectedItems[index]);
+      }
+    });
+    await Promise.all(workers);
+
+    setStatus(
+      failedCount > 0
+        ? `${completedCount} Drafts erstellt, ${failedCount} fehlgeschlagen.`
+        : `${completedCount} Drafts erstellt. Bereit zur Review-Inbox.`,
+    );
+    setLoading(false);
   }
 
   async function awaitReviewCompletion(
@@ -272,7 +450,14 @@ function App() {
         return;
       }
       setIsOutlook(true);
-      loadMail();
+      void loadMail();
+      const selectedItemsChanged = Office.EventType?.SelectedItemsChanged;
+      if (selectedItemsChanged) {
+        Office.context?.mailbox?.addHandlerAsync?.(
+          selectedItemsChanged,
+          () => void loadMail(),
+        );
+      }
     });
   }, []);
 
@@ -385,9 +570,24 @@ function App() {
   const pipelineVisible =
     workflowState === "review_running" &&
     (loading || (pipelineProgress !== null && pipelineProgress.status !== "completed"));
-  const showStatusCard =
-    !STATES_WITH_OWN_STATUS.includes(workflowState) ||
-    (workflowState === "review_running" && !pipelineVisible);
+  const showStatusCard = shouldShowStatusCard(status, loading, pipelineVisible);
+  const batchCompleted = isCompletedBatch(batchItems);
+
+  if (selectedItems.length > 1) {
+    return (
+      <div className="panel">
+        <BatchWorkflowCard
+          selectedItems={selectedItems}
+          batchItems={batchItems}
+          loading={loading}
+          onCreateBatch={handleCreateBatchReviews}
+          onReloadSelection={loadMail}
+          onOpenOverview={() => openUrl(REVIEW_OVERVIEW_URL)}
+        />
+        {!batchCompleted && <OverviewLink />}
+      </div>
+    );
+  }
 
   return (
     <div className="panel">
@@ -408,16 +608,7 @@ function App() {
 
       {showStatusCard && <StatusCard status={status} loading={loading} />}
 
-      <button
-        className="overview-link"
-        onClick={() => openUrl(REVIEW_OVERVIEW_URL)}
-        type="button"
-      >
-        <span className="overview-link-text">
-          Quoting-Übersicht öffnen
-        </span>
-        <ExternalIcon className="overview-link-icon" />
-      </button>
+      <OverviewLink />
     </div>
   );
 }

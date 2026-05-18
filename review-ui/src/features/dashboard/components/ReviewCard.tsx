@@ -1,6 +1,7 @@
 import { AlertCircle, ArrowUpRight, FileDown } from "lucide-react";
 import { Link } from "react-router-dom";
 
+import { Checkbox } from "@/shared/components/ui/checkbox";
 import { cn } from "@/shared/lib/cn";
 import { formatDate, formatEur } from "@/shared/lib/format";
 import { pdfUrl } from "@/shared/lib/pdfUrl";
@@ -18,9 +19,17 @@ const STATUS_CONFIG: Record<
 
 interface ReviewCardProps {
   review: ReviewSummary;
+  selected: boolean;
+  selectionDisabled?: boolean;
+  onToggleSelected: () => void;
 }
 
-export function ReviewCard({ review }: ReviewCardProps) {
+export function ReviewCard({
+  review,
+  selected,
+  selectionDisabled = false,
+  onToggleSelected,
+}: ReviewCardProps) {
   const detailHref = `/reviews/${encodeURIComponent(review.review_id)}`;
   const cfg = STATUS_CONFIG[review.status];
   const rate = matchRate(review);
@@ -28,7 +37,22 @@ export function ReviewCard({ review }: ReviewCardProps) {
   const needsReview = review.status !== "abgeschlossen";
 
   return (
-    <tr className="group border-b border-border last:border-0 transition-colors hover:bg-surface-sunk">
+    <tr
+      className={cn(
+        "group border-b border-border last:border-0 transition-colors hover:bg-surface-sunk",
+        selected && "bg-info-soft/50 hover:bg-info-soft/70",
+      )}
+    >
+      {/* Auswahl */}
+      <td className="w-12 px-4 py-4 align-middle">
+        <Checkbox
+          checked={selected}
+          disabled={selectionDisabled}
+          ariaLabel={`Anfrage ${review.subject || review.review_id} auswählen`}
+          onCheckedChange={onToggleSelected}
+        />
+      </td>
+
       {/* Status */}
       <td className="w-36 px-4 py-4 align-middle">
         <div className="flex items-center gap-2">
