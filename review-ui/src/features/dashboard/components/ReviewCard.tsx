@@ -12,7 +12,7 @@ const STATUS_CONFIG: Record<
   { dot: string; text: string; label: string }
 > = {
   in_arbeit:     { dot: "bg-warning", text: "text-warning", label: "In Arbeit" },
-  pdf_bereit:    { dot: "bg-info",    text: "text-info",    label: "PDF bereit" },
+  pdf_bereit:    { dot: "bg-info",    text: "text-info",    label: "Zu prüfen" },
   abgeschlossen: { dot: "bg-success", text: "text-success", label: "Abgeschlossen" },
 };
 
@@ -25,6 +25,7 @@ export function ReviewCard({ review }: ReviewCardProps) {
   const cfg = STATUS_CONFIG[review.status];
   const rate = matchRate(review);
   const hasOpenPositions = review.matches_no_match > 0 && review.status !== "abgeschlossen";
+  const needsReview = review.status !== "abgeschlossen";
 
   return (
     <tr className="group border-b border-border last:border-0 transition-colors hover:bg-surface-sunk">
@@ -93,7 +94,7 @@ export function ReviewCard({ review }: ReviewCardProps) {
       </td>
 
       {/* Aktion + Warnungen */}
-      <td className="w-28 px-4 py-4 text-right align-middle">
+      <td className="w-36 px-4 py-4 text-right align-middle">
         <div className="flex items-center justify-end gap-2">
           {hasOpenPositions && (
             <span
@@ -104,18 +105,34 @@ export function ReviewCard({ review }: ReviewCardProps) {
               {review.matches_no_match}
             </span>
           )}
-          {review.has_pdf ? (
+          {needsReview && (
+            <Link
+              to={detailHref}
+              className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition-all hover:-translate-y-px hover:bg-brand-dark"
+            >
+              <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
+              Review
+            </Link>
+          )}
+          {review.has_pdf && (
             <a
               href={pdfUrl(review.review_id, "current", review.updated_at)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition-all hover:-translate-y-px hover:bg-brand-dark"
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-bold transition-all",
+                needsReview
+                  ? "border border-border bg-surface text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                  : "bg-brand text-white shadow-sm hover:-translate-y-px hover:bg-brand-dark",
+              )}
               onClick={(e) => e.stopPropagation()}
+              title={needsReview ? "PDF öffnen" : undefined}
             >
               <FileDown className="h-3 w-3" aria-hidden="true" />
-              PDF
+              {needsReview ? <span className="sr-only">PDF öffnen</span> : "PDF"}
             </a>
-          ) : (
+          )}
+          {!review.has_pdf && !needsReview && (
             <Link
               to={detailHref}
               className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"

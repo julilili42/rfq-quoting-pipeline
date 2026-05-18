@@ -168,7 +168,7 @@ function App() {
     }
   }
 
-  async function handleCreateReview() {
+  async function handleCreateReview(openWhenReady = false) {
     if (!mailId) return;
     setLoading(true);
     setPipelineProgress(null);
@@ -186,7 +186,7 @@ function App() {
       });
       setWorkflow(runningWorkflow);
       setStatus(`Pipeline gestartet: ${started.review_id}.`);
-      await awaitReviewCompletion(started, mailId, true);
+      await awaitReviewCompletion(started, mailId, openWhenReady);
     } catch (error) {
       setStatus(`Fehler beim Erstellen des Reviews: ${String(error)}`);
       setLoading(false);

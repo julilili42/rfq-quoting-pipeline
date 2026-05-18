@@ -25,7 +25,7 @@ interface ReviewFiltersProps {
 const STATUS_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: "all", label: "Alle" },
   { value: "in_arbeit", label: "In Arbeit" },
-  { value: "pdf_bereit", label: "PDF bereit" },
+  { value: "pdf_bereit", label: "Zu prüfen" },
   { value: "abgeschlossen", label: "Abgeschlossen" },
 ];
 

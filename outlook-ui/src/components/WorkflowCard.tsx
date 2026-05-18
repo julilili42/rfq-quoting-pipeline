@@ -42,7 +42,7 @@ type WorkflowCardProps = {
   isOutlook: boolean;
   loading: boolean;
   pipelineProgress: PipelineProgress | null;
-  onCreateReview: () => void;
+  onCreateReview: (openWhenReady?: boolean) => void;
   onOpenReview: () => void;
   onCreateDraftMail: () => void;
   onResetWorkflow: () => void;
@@ -210,10 +210,18 @@ export function WorkflowCard({
               <button
                 className="btn btn-primary"
                 disabled={!isOutlook || loading || !snapshot}
-                onClick={onCreateReview}
+                onClick={() => onCreateReview(false)}
               >
                 <SparkIcon className="btn-icon" />
                 Draft erstellen
+              </button>
+              <button
+                className="btn btn-secondary"
+                disabled={!isOutlook || loading || !snapshot}
+                onClick={() => onCreateReview(true)}
+              >
+                <ExternalIcon className="btn-icon" />
+                Erstellen &amp; öffnen
               </button>
               <button
                 className="btn btn-ghost"
@@ -253,7 +261,7 @@ export function WorkflowCard({
                 onClick={onResetWorkflow}
               >
                 <TrashIcon className="btn-icon" />
-                Verwerfen & neu
+                Aus Ansicht entfernen
               </button>
             </>
           )}

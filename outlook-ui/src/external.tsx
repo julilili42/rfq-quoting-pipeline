@@ -13,7 +13,7 @@ function ExternalApp() {
         <h2>Status</h2>
         <pre>
           Der Outlook-Button sendet die Mail jetzt direkt an die lokale Review-API
-          und öffnet danach die React Review-UI.
+          und legt den Draft in der React Review-UI ab.
         </pre>
       </section>
     </div>
