@@ -23,6 +23,8 @@ log = get_logger()
 # Cap concurrency at a reasonable bound: most RFQs are <10 pages so we
 # don't need more, and we don't want to swamp small machines.
 _PDF_RENDER_MAX_WORKERS = min(8, max(2, (os.cpu_count() or 2)))
+_PDF_TEXT_MAX_CHARS_PER_PAGE = 6_000
+_PDF_TEXT_MAX_TOTAL_CHARS = 24_000
 
 
 def load_attachments(
@@ -41,6 +43,9 @@ def load_attachments(
         ext = att.suffix.lower().lstrip(".")
         if ext == "pdf":
             sections.append(f"=== PDF: {att.name} ===")
+            pdf_text = _pdf_to_text_section(att)
+            if pdf_text:
+                sections.append(pdf_text)
             images.extend(_pdf_to_images(att, dpi))
         elif ext in ("xlsx", "xls"):
             sections.append(f"=== EXCEL: {att.name} ===")
@@ -103,6 +108,37 @@ def _pdf_to_images(pdf_path: Path, dpi: int) -> list[dict[str, Any]]:
     workers = min(_PDF_RENDER_MAX_WORKERS, page_count)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return list(pool.map(_render, range(page_count), timeout=120))
+
+
+def _pdf_to_text_section(pdf_path: Path) -> str:
+    """Extract embedded PDF text as model-readable source evidence.
+
+    Digital RFQs usually contain a selectable text layer. Passing that text
+    alongside the rendered page image gives the LLM exact numbers and emails
+    without adding another provider round trip. Scanned PDFs simply return an
+    empty section and keep using the vision path.
+    """
+    import fitz  # PyMuPDF
+
+    pages: list[str] = []
+    remaining = _PDF_TEXT_MAX_TOTAL_CHARS
+    with fitz.open(pdf_path) as doc:
+        for page_idx, page in enumerate(doc, start=1):
+            if remaining <= 0:
+                break
+            text = " ".join(page.get_text("text", sort=True).split())
+            if not text:
+                continue
+            if len(text) > _PDF_TEXT_MAX_CHARS_PER_PAGE:
+                text = text[:_PDF_TEXT_MAX_CHARS_PER_PAGE].rstrip() + " [...]"
+            if len(text) > remaining:
+                text = text[:remaining].rstrip() + " [...]"
+            remaining -= len(text)
+            pages.append(f"--- Page {page_idx} ---\n{text}")
+
+    if not pages:
+        return ""
+    return f"=== PDF TEXT: {pdf_path.name} ===\n" + "\n".join(pages)
 
 
 def _image_to_part(img_path: Path) -> dict[str, Any]:

@@ -47,6 +47,13 @@ EXTRACTION RULES
 15. header_evidence: for each extracted Anfrage header field (e.g. "kunde_firma",
     "belegnummer", "datum"), provide an Evidence object with the same fields as
     above. Only include fields where you found clear evidence; omit the rest.
+16. If PDF TEXT sections are present, use them as the primary source for exact
+    values such as email addresses, dates, customer numbers, RFQ numbers,
+    article numbers and quantities. Use images as fallback for layout, scans,
+    illegible text, or values not present in the text layer.
+17. LOCAL CANDIDATE HINTS are non-authoritative. Prefer them only when they
+    are supported by the source text or image evidence. Never copy a candidate
+    value that contradicts the source.
 
 OUTPUT
 ======
@@ -100,6 +107,7 @@ def build_prompt(
     mail_body: str,
     doc_sections: list[str],
     own_company_context: str = "",
+    candidate_hints: str = "",
 ) -> str:
     """Assemble the full prompt sent to the LLM."""
     parts = [
@@ -115,6 +123,12 @@ def build_prompt(
         body_parts += [
             "=== OUR COMPANY / DO NOT EXTRACT AS CUSTOMER ===",
             own_company_context,
+            "",
+        ]
+    if candidate_hints.strip():
+        body_parts += [
+            "=== LOCAL CANDIDATE HINTS ===",
+            candidate_hints,
             "",
         ]
     if mail_body.strip():

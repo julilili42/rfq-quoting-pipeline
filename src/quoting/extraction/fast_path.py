@@ -25,6 +25,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from ..core import Anfrage, Position
 from ..data import StammdatenRecord, StammdatenRepository
@@ -187,7 +188,9 @@ class FastPathExtractor:
 
     def __init__(self, repo: StammdatenRepository):
         self._repo = repo
-        self._automaton = None  # ahocorasick.Automaton
+        # ahocorasick has no stubs; treat as Any so the None initialiser
+        # doesn't poison every later access.
+        self._automaton: Any = None
 
     def _ensure_built(self) -> None:
         if self._automaton is not None:

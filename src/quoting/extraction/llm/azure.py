@@ -41,7 +41,7 @@ class AzureClient(LLMClient):
                         "detail": "high",
                     },
                 })
-        resp = self._client.chat.completions.create(
+        resp = self._client.chat.completions.create(  # type: ignore[call-overload]
             model=self._model,
             messages=[{"role": "user", "content": parts}],
             response_format={"type": "json_object"},

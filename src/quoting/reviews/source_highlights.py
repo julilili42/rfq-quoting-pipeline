@@ -5,7 +5,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     import fitz
@@ -201,7 +201,7 @@ def _search_fuzzy_blocks(doc: fitz.Document, page_indices: list[int], quote: str
     if len(needle) < _MIN_FUZZY_NEEDLE_LEN:
         return HighlightResult("not_found", [])
 
-    best: tuple[float, int, object, str] | None = None
+    best: tuple[float, int, Any, str] | None = None
     for page_index in page_indices:
         page = doc[page_index]
         for block in _text_blocks(page):

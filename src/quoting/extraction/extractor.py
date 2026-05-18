@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from ..core import Anfrage, Settings, get_logger, load_settings
+from .candidates import build_candidate_hints
 from .document_loader import load_attachments
 from .json_utils import extract_json_object
 from .llm import build_llm, with_retry
@@ -18,6 +19,7 @@ from .own_party import (
     sanitize_own_customer_fields,
 )
 from .prompts import build_prompt
+from .source_guard import harden_extraction_with_sources
 
 log = get_logger()
 
@@ -39,11 +41,13 @@ def extract_anfrage(
 
     doc_sections, images = load_attachments(attachments, dpi=settings.pdf_render_dpi)
     schema_json = json.dumps(Anfrage.model_json_schema(), indent=2, ensure_ascii=False)
+    candidate_hints = build_candidate_hints(mail_body, doc_sections)
     prompt = build_prompt(
         schema_json,
         mail_body,
         doc_sections,
         format_own_party_prompt_context(own_party_context),
+        candidate_hints,
     )
 
     log.info("Calling LLM (%s) with %d image(s), prompt=%d chars",
@@ -68,6 +72,10 @@ def extract_anfrage(
         anfrage = Anfrage.model_validate_json(raw_json)
     except ValidationError as exc:
         raise ExtractionError(f"LLM output does not match Anfrage schema: {exc}") from exc
+
+    source_guard_changes = harden_extraction_with_sources(anfrage, mail_body, doc_sections)
+    if source_guard_changes:
+        log.info("Extraction source guard adjusted: %s", ", ".join(source_guard_changes))
 
     sanitize_own_customer_fields(anfrage, own_party_context)
 

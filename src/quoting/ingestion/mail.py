@@ -103,7 +103,7 @@ def _parse_eml(eml_path: Path, temp_dir: Path | None = None) -> Mail:
         safe_name = Path(filename).name
         target = _unique_path(target_dir, safe_name)
         payload = part.get_payload(decode=True)
-        if payload:
+        if isinstance(payload, bytes) and payload:
             target.write_bytes(payload)
             attachments.append(target)
 

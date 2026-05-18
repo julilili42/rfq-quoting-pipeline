@@ -110,7 +110,7 @@ def _to_jsonable(value: Any, _depth: int = 0) -> Any:
         return value.model_dump(mode="json")
     if hasattr(value, "to_dict"):
         return value.to_dict()
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         return asdict(value)
     if isinstance(value, list):
         return [_to_jsonable(item, _depth + 1) for item in value]

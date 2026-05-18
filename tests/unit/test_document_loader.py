@@ -176,8 +176,28 @@ def test_pdf_pages_are_labeled_in_prompt_order(tmp_path):
     ]
     combined = "\n".join(sections)
     assert "=== PDF: rfq.pdf ===" in combined
+    assert "=== PDF TEXT: rfq.pdf ===" in combined
+    assert "Page one" in combined
+    assert "Page two" in combined
     assert "Image 1: PDF rfq.pdf, page 1 of 2" in combined
     assert "Image 2: PDF rfq.pdf, page 2 of 2" in combined
+
+
+def test_scanned_pdf_without_text_keeps_vision_only_sections(tmp_path):
+    fitz = pytest.importorskip("fitz")
+    doc = fitz.open()
+    doc.new_page()
+    path = tmp_path / "scan.pdf"
+    doc.save(path)
+    doc.close()
+
+    sections, images = load_attachments([path])
+
+    combined = "\n".join(sections)
+    assert len(images) == 1
+    assert "=== PDF: scan.pdf ===" in combined
+    assert "=== PDF TEXT: scan.pdf ===" not in combined
+    assert "Image 1: PDF scan.pdf, page 1 of 1" in combined
 
 
 def test_multiple_attachments_all_loaded(tmp_path):

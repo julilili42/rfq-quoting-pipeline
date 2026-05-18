@@ -32,10 +32,13 @@ def test_build_prompt_puts_own_company_context_before_mail_body():
         "Bitte Angebot",
         ["=== PDF: Anfrage.pdf ==="],
         "own company: ElringKlinger",
+        "emails: kunde@example.com",
     )
 
     assert "=== OUR COMPANY / DO NOT EXTRACT AS CUSTOMER ===" in prompt
+    assert "=== LOCAL CANDIDATE HINTS ===" in prompt
     assert prompt.index("own company: ElringKlinger") < prompt.index("=== MAIL BODY ===")
+    assert prompt.index("=== LOCAL CANDIDATE HINTS ===") < prompt.index("=== MAIL BODY ===")
     assert prompt.index("=== MAIL BODY ===") < prompt.index("=== PDF: Anfrage.pdf ===")
 
 

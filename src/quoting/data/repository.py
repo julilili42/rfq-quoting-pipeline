@@ -160,13 +160,13 @@ def _record_from_row(row: dict) -> StammdatenRecord:
         werkstoff=_optional_str(row.get("werkstoff")),
         abmessungen=_optional_str(row.get("abmessungen")),
         einheit=str(row.get("einheit") or "ST").strip() or "ST",
-        basispreis_eur=_optional_float(row.get("basispreis_eur"), default=0.0),
-        zkalk_offset_eur=_optional_float(row.get("zkalk_offset_eur"), default=0.0),
+        basispreis_eur=_required_float(row.get("basispreis_eur"), default=0.0),
+        zkalk_offset_eur=_required_float(row.get("zkalk_offset_eur"), default=0.0),
         preis_min_eur=_optional_float(row.get("preis_min_eur")),
         preis_max_eur=_optional_float(row.get("preis_max_eur")),
         sales_group=_optional_str(row.get("sales_group")),
         material_group=_optional_str(row.get("material_group")),
-        n_offers=_optional_int(row.get("n_offers"), default=0),
+        n_offers=_required_int(row.get("n_offers"), default=0),
     )
 
 
@@ -183,7 +183,7 @@ def _optional_float(value: object, *, default: float | None = None) -> float | N
     if value is None or value == "":
         return default
     try:
-        result = float(value)
+        result = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return default
     if result != result:  # NaN check without importing math
@@ -191,11 +191,22 @@ def _optional_float(value: object, *, default: float | None = None) -> float | N
     return result
 
 
+def _required_float(value: object, *, default: float) -> float:
+    """Like :func:`_optional_float` but with a non-optional ``default``."""
+    parsed = _optional_float(value, default=default)
+    return parsed if parsed is not None else default
+
+
 def _optional_int(value: object, *, default: int | None = None) -> int | None:
     raw = _optional_float(value)
     if raw is None:
         return default
     return int(raw)
+
+
+def _required_int(value: object, *, default: int) -> int:
+    parsed = _optional_int(value, default=default)
+    return parsed if parsed is not None else default
 
 
 def _mock_records() -> list[StammdatenRecord]:

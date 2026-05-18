@@ -59,16 +59,19 @@ def test_thinking_budget_is_set_when_configured():
     client.generate(prompt="MAIL")
 
     cfg = gen_call.call_args.kwargs["config"]
+    assert cfg.response_mime_type == "application/json"
     assert cfg.thinking_config is not None
     assert cfg.thinking_config.thinking_budget == 0
 
 
-def test_negative_thinking_budget_omits_generate_config():
+def test_negative_thinking_budget_omits_thinking_config_only():
     client, gen_call = _make_client(thinking_budget=-1)
 
     client.generate(prompt="MAIL")
 
-    assert gen_call.call_args.kwargs["config"] is None
+    cfg = gen_call.call_args.kwargs["config"]
+    assert cfg.response_mime_type == "application/json"
+    assert cfg.thinking_config is None
 
 
 def test_usage_metadata_is_mapped_to_token_usage():

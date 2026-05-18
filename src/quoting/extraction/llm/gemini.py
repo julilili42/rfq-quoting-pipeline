@@ -38,12 +38,14 @@ class GeminiClient(LLMClient):
                     mime_type=img["mime_type"],
                 ))
 
-        config_kwargs: dict[str, Any] = {}
+        config_kwargs: dict[str, Any] = {
+            "response_mime_type": "application/json",
+        }
         if self._thinking_budget >= 0:
             config_kwargs["thinking_config"] = types.ThinkingConfig(
                 thinking_budget=self._thinking_budget,
             )
-        config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
+        config = types.GenerateContentConfig(**config_kwargs)
 
         response = self._client.models.generate_content(
             model=self._model,
