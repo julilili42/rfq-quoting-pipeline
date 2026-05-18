@@ -45,7 +45,7 @@ class Matcher(Protocol):
 class PythonMatcher:
     """Default matcher: rapidfuzz-based three-tier matching."""
 
-    def __init__(self, fuzzy_threshold: int = 85, semantic_threshold: int = 70):
+    def __init__(self, fuzzy_threshold: int, semantic_threshold: int):
         self.fuzzy_threshold = fuzzy_threshold
         self.semantic_threshold = semantic_threshold
 
