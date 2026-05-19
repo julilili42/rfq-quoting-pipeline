@@ -31,6 +31,7 @@ passing it to the constructor::
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -124,6 +125,7 @@ class QuotingPipeline:
         *,
         is_final: bool = False,
         company_profile: Any | None = None,
+        snapshot_sink: Callable[[str, Any], None] | None = None,
     ) -> PipelineResult:
         """Run all four steps in sequence."""
         if not mail.has_content:
@@ -140,7 +142,11 @@ class QuotingPipeline:
         log.info("Body length : %d chars", len(mail.body))
         log.info("Attachments : %d", len(mail.attachments))
         log.info("Work dir    : %s", work_dir)
-        ctx = StepContext(work_dir=work_dir, progress=progress or noop_progress)
+        ctx = StepContext(
+            work_dir=work_dir,
+            progress=progress or noop_progress,
+            snapshot_sink=snapshot_sink,
+        )
         start = time.time()
         anfrage = self.extract(mail, ctx)
         matches = self.match(anfrage, ctx)
@@ -186,7 +192,7 @@ class QuotingPipeline:
                 f"{len(anfrage.positionen)} Positionen (Fast-Path)",
             )
             ctx.extra["extraction_path"] = "fast_path"
-            ctx.persist("01_extracted.json", anfrage.model_dump(mode="json"))
+            ctx.persist("extracted", anfrage.model_dump(mode="json"))
             for pos in anfrage.positionen:
                 log.info(
                     "  Pos %d [%s]: %s x%s - %s",
@@ -199,7 +205,7 @@ class QuotingPipeline:
         cleared = sanitize_own_customer_fields(anfrage, load_own_party_context())
         if cleared:
             log.info("Extraction cleared own customer field(s): %s", ", ".join(cleared))
-            ctx.persist("01_extracted.json", anfrage.model_dump(mode="json"))
+            ctx.persist("extracted", anfrage.model_dump(mode="json"))
         return anfrage
 
     def match(self, anfrage: Anfrage, ctx: StepContext) -> list[MatchResult]:

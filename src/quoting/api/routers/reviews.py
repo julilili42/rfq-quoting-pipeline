@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import shutil
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field, ValidationError
@@ -25,15 +24,12 @@ from quoting.matching import match_positions
 from quoting.output import build_draft_pdf
 from quoting.pipeline import QuotingPipeline
 from quoting.reviews import (
-    ReviewFiles,
     draft_pdf_filename,
     find_draft_pdf,
     find_final_pdf,
-    load_mail_meta,
+    get_default_repository,
     load_saved_quotation,
-    read_json_list,
     scan_reviews,
-    write_json,
 )
 
 log = logging.getLogger("quoting.frontend_router")
@@ -50,30 +46,28 @@ def _format_mail_dict(mail_meta: dict) -> dict:
     }
 
 
-def _load_review_data(
-    folder: Path, review_id: str, pipeline: QuotingPipeline
-) -> tuple:
+def _load_review_data(review_id: str, pipeline: QuotingPipeline) -> tuple:
     """Load anfrage, matches, and overrides for a review."""
     try:
-        anfrage = rs.load_or_extract_anfrage(folder, pipeline)
+        anfrage = rs.load_or_extract_anfrage(review_id, pipeline)
     except Exception as exc:
         log.exception("load_review_data: anfrage load failed for %s", review_id)
         raise HTTPException(422, f"Anfrage konnte nicht geladen werden: {exc}") from exc
 
     try:
-        matches = rs.load_or_recompute_matches(folder, anfrage, pipeline)
+        matches = rs.load_or_recompute_matches(review_id, anfrage, pipeline)
     except Exception as exc:
         log.exception("load_review_data: match recompute failed for %s", review_id)
         raise HTTPException(422, f"Matching fehlgeschlagen: {exc}") from exc
 
-    overrides = read_json_list(folder / ReviewFiles.MANUAL_OVERRIDES)
+    overrides = get_default_repository().load_overrides(review_id)
     overrides = filter_redundant_custom_price_overrides(overrides, matches)
     return anfrage, matches, overrides
 
 
 @router.get("/reviews")
 def list_reviews() -> list[dict]:
-    summaries = scan_reviews(_common.REVIEW_DIR)
+    summaries = scan_reviews()
     return [
         {
             "review_id": s.review_id,
@@ -102,19 +96,20 @@ def list_reviews() -> list[dict]:
 
 @router.get("/reviews/{review_id}")
 def get_review_detail(review_id: str) -> dict:
-    folder = _common.review_dir(review_id)
+    _common.require_review(review_id)
     pipeline = _common.get_pipeline()
+    repo = get_default_repository()
 
-    anfrage = rs.load_or_extract_anfrage(folder, pipeline)
-    original_anfrage = rs.try_load_original_anfrage_from_disk(folder) or anfrage
-    matches = rs.load_or_recompute_matches(folder, anfrage, pipeline)
-    quotation = load_saved_quotation(folder)
+    anfrage = rs.load_or_extract_anfrage(review_id, pipeline)
+    original_anfrage = rs.try_load_original_anfrage(review_id) or anfrage
+    matches = rs.load_or_recompute_matches(review_id, anfrage, pipeline)
+    quotation = load_saved_quotation(review_id)
 
-    overrides = read_json_list(folder / ReviewFiles.MANUAL_OVERRIDES)
+    overrides = repo.load_overrides(review_id)
     overrides = filter_redundant_custom_price_overrides(overrides, matches)
 
-    mail_meta = load_mail_meta(folder) or {}
-    progress = read_progress(folder) or {}
+    mail_meta = repo.load_mail(review_id) or {}
+    progress = read_progress(review_id) or {}
 
     return {
         "review_id": review_id,
@@ -125,16 +120,20 @@ def get_review_detail(review_id: str) -> dict:
         "quotation": quotation.to_dict() if quotation else None,
         "manual_overrides": overrides,
         "mail": _format_mail_dict(mail_meta),
-        "has_draft_pdf": find_draft_pdf(folder, review_id) is not None,
-        "has_final_pdf": find_final_pdf(folder, review_id) is not None,
+        "has_draft_pdf": find_draft_pdf(review_id) is not None,
+        "has_final_pdf": find_final_pdf(review_id) is not None,
     }
 
 
 @router.delete("/reviews/{review_id}", status_code=204)
 def delete_review(review_id: str) -> Response:
-    folder = _common.review_dir(review_id)
+    _common.require_review(review_id)
+    repo = get_default_repository()
+    folder = repo.artifact_dir(review_id)
     try:
-        shutil.rmtree(folder)
+        if folder.exists():
+            shutil.rmtree(folder)
+        repo.delete_review(review_id)
     except OSError as exc:
         log.exception("delete_review: could not delete %s", review_id)
         raise HTTPException(500, f"Review konnte nicht gelöscht werden: {exc}") from exc
@@ -143,8 +142,8 @@ def delete_review(review_id: str) -> Response:
 
 @router.get("/reviews/{review_id}/mail")
 def get_review_mail(review_id: str) -> dict:
-    folder = _common.review_dir(review_id)
-    meta = load_mail_meta(folder) or {}
+    _common.require_review(review_id)
+    meta = get_default_repository().load_mail(review_id) or {}
     return _format_mail_dict(meta)
 
 
@@ -155,7 +154,8 @@ class AnfragePayload(BaseModel):
 
 @router.put("/reviews/{review_id}/anfrage")
 def put_anfrage(review_id: str, payload: dict) -> dict:
-    folder = _common.review_dir(review_id)
+    _common.require_review(review_id)
+    repo = get_default_repository()
 
     try:
         anfrage = Anfrage.model_validate(payload)
@@ -163,13 +163,13 @@ def put_anfrage(review_id: str, payload: dict) -> dict:
         raise HTTPException(400, f"Invalid Anfrage payload: {exc}") from exc
 
     pipeline = _common.get_pipeline()
-    previous = rs.try_load_anfrage_from_disk(folder)
+    previous = rs.try_load_anfrage(review_id)
     anfrage = rs.enrich_exact_article_edits(anfrage, previous, pipeline)
 
-    write_json(folder / ReviewFiles.ANFRAGE_REVIEWED, anfrage.model_dump(mode="json"))
-    if (folder / ReviewFiles.MATCHES_REVIEWED).exists():
-        matches = rs.load_or_recompute_matches(folder, anfrage, pipeline)
-        write_json(folder / ReviewFiles.MATCHES_REVIEWED, [m.to_dict() for m in matches])
+    repo.save_anfrage_reviewed(review_id, anfrage.model_dump(mode="json"))
+    if repo.has_matches_reviewed(review_id):
+        matches = rs.load_or_recompute_matches(review_id, anfrage, pipeline)
+        repo.save_matches_reviewed(review_id, [m.to_dict() for m in matches])
     else:
         try:
             matches = match_positions(
@@ -181,22 +181,22 @@ def put_anfrage(review_id: str, payload: dict) -> dict:
         except Exception as exc:
             log.exception("put_anfrage: match recompute failed for %s", review_id)
             raise HTTPException(422, f"Matching fehlgeschlagen: {exc}") from exc
-        write_json(folder / "02_matches.json", [m.to_dict() for m in matches])
+        repo.save_matches_initial(review_id, [m.to_dict() for m in matches])
 
-    rs.invalidate_approval(folder)
+    rs.invalidate_approval(review_id)
 
     return anfrage.model_dump(mode="json")
 
 
 @router.put("/reviews/{review_id}/overrides")
 def put_overrides(review_id: str, payload: list[dict]) -> list[dict]:
-    folder = _common.review_dir(review_id)
+    _common.require_review(review_id)
 
     if not isinstance(payload, list):
         raise HTTPException(400, "Overrides payload must be a list")
 
-    write_json(folder / ReviewFiles.MANUAL_OVERRIDES, payload)
-    rs.invalidate_approval(folder)
+    get_default_repository().save_overrides(review_id, payload)
+    rs.invalidate_approval(review_id)
 
     return payload
 
@@ -205,8 +205,9 @@ def put_overrides(review_id: str, payload: list[dict]) -> list[dict]:
 def regenerate_quotation(review_id: str) -> dict:
     folder = _common.review_dir(review_id)
     pipeline = _common.get_pipeline()
+    repo = get_default_repository()
 
-    anfrage, matches, overrides = _load_review_data(folder, review_id, pipeline)
+    anfrage, matches, overrides = _load_review_data(review_id, pipeline)
     company_profile = load_user_settings().company
     quotation = build_quotation_with_overrides(
         anfrage, matches, overrides, pipeline.settings.preise_path, review_id
@@ -219,7 +220,14 @@ def regenerate_quotation(review_id: str) -> dict:
         log.exception("regenerate: PDF build failed for %s", review_id)
         raise HTTPException(422, f"PDF-Erstellung fehlgeschlagen: {exc}") from exc
 
-    write_json(folder / ReviewFiles.QUOTATION_REVIEWED, quotation.to_dict())
+    repo.register_document(
+        review_id,
+        kind="draft_pdf",
+        path=pdf_path,
+        filename=pdf_path.name,
+        content_type="application/pdf",
+    )
+    repo.save_quotation_reviewed(review_id, quotation.to_dict())
     return quotation.to_dict()
 
 
@@ -234,8 +242,9 @@ class FinalizeRequest(BaseModel):
 def finalize_quotation(review_id: str, payload: FinalizeRequest) -> dict:
     folder = _common.review_dir(review_id)
     pipeline = _common.get_pipeline()
+    repo = get_default_repository()
 
-    anfrage, matches, overrides = _load_review_data(folder, review_id, pipeline)
+    anfrage, matches, overrides = _load_review_data(review_id, pipeline)
     user_settings = load_user_settings()
     company_profile = user_settings.company
     quotation = build_quotation_with_overrides(
@@ -268,7 +277,7 @@ def finalize_quotation(review_id: str, payload: FinalizeRequest) -> dict:
 
     try:
         record = transition(
-            folder,
+            review_id,
             target="approved",
             actor=payload.actor,
             warning_acknowledged=bool(
@@ -284,4 +293,11 @@ def finalize_quotation(review_id: str, payload: FinalizeRequest) -> dict:
         log.exception("finalize: approval transition failed for %s; rolled back PDF", review_id)
         raise HTTPException(500, f"Status-Übergang fehlgeschlagen: {exc}") from exc
 
+    repo.register_document(
+        review_id,
+        kind="final_pdf",
+        path=final_path,
+        filename=final_path.name,
+        content_type="application/pdf",
+    )
     return {"final_pdf_path": record.final_pdf_path or final_path.name}

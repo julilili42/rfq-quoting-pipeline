@@ -64,16 +64,15 @@ from quoting.api.services.review_service import (
     mail_from_meta as _mail_from_meta,  # noqa: F401  (re-export)
 )
 from quoting.api.services.review_service import (
-    try_load_anfrage_from_disk as _try_load_anfrage_from_disk,  # noqa: F401  (re-export)
+    try_load_anfrage as _try_load_anfrage,  # noqa: F401  (re-export)
 )
 from quoting.api.services.review_service import (
-    try_load_original_anfrage_from_disk as _try_load_original_anfrage_from_disk,  # noqa: F401
+    try_load_original_anfrage as _try_load_original_anfrage,  # noqa: F401
 )
 
 REVIEW_DIR = _common.REVIEW_DIR
 _pipeline = _common._pipeline  # noqa: SLF001
 _get_pipeline = _common.get_pipeline
-_review_dir = _common.review_dir
 
 
 router = APIRouter(prefix="/api", tags=["frontend"])

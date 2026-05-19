@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
+
+from quoting.reviews import get_default_repository
 
 _log = logging.getLogger("quoting.progress_store")
 
@@ -28,21 +28,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def progress_path(review_dir: Path) -> Path:
-    return review_dir / "progress.json"
-
-
-def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    tmp.replace(path)
-
-
-def init_progress(review_dir: Path, review_id: str) -> dict[str, Any]:
+def init_progress(review_id: str) -> dict[str, Any]:
     now = _now_iso()
     data: dict[str, Any] = {
         "review_id": review_id,
@@ -64,32 +50,25 @@ def init_progress(review_dir: Path, review_id: str) -> dict[str, Any]:
         "result": None,
         "error": None,
     }
-    write_progress(review_dir, data)
+    write_progress(review_id, data)
     return data
 
 
-def read_progress(review_dir: Path) -> dict[str, Any] | None:
-    path = progress_path(review_dir)
-    if not path.exists():
-        return None
-
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
+def read_progress(review_id: str) -> dict[str, Any] | None:
+    return get_default_repository().load_progress(review_id)
 
 
-def write_progress(review_dir: Path, data: dict[str, Any]) -> None:
-    _atomic_write_json(progress_path(review_dir), data)
+def write_progress(review_id: str, data: dict[str, Any]) -> None:
+    get_default_repository().save_progress(review_id, data)
 
 
 def update_step(
-    review_dir: Path,
+    review_id: str,
     step_name: str,
     status: str,
     detail: str = "",
 ) -> None:
-    data = read_progress(review_dir)
+    data = read_progress(review_id)
     if data is None:
         return
 
@@ -146,14 +125,14 @@ def update_step(
         data["current_detail"] = detail
         data["error"] = detail or f"Step failed: {step_name}"
 
-    write_progress(review_dir, data)
+    write_progress(review_id, data)
 
 
-def complete_progress(review_dir: Path, result: dict[str, Any]) -> None:
-    data = read_progress(review_dir)
+def complete_progress(review_id: str, result: dict[str, Any]) -> None:
+    data = read_progress(review_id)
     if data is None:
-        _log.warning("complete_progress: progress.json missing for %s — creating synthetic record", review_dir.name)
-        data = {"review_id": review_dir.name, "status": "running", "steps": [], "result": None, "error": None}
+        _log.warning("complete_progress: progress payload missing for %s — creating synthetic record", review_id)
+        data = {"review_id": review_id, "status": "running", "steps": [], "result": None, "error": None}
 
     now = _now_iso()
 
@@ -170,14 +149,14 @@ def complete_progress(review_dir: Path, result: dict[str, Any]) -> None:
     data["error"] = None
     data["updated_at"] = now
 
-    write_progress(review_dir, data)
+    write_progress(review_id, data)
 
 
-def fail_progress(review_dir: Path, error: str) -> None:
-    data = read_progress(review_dir)
+def fail_progress(review_id: str, error: str) -> None:
+    data = read_progress(review_id)
     if data is None:
-        _log.warning("fail_progress: progress.json missing for %s — creating synthetic record", review_dir.name)
-        data = {"review_id": review_dir.name, "status": "running", "steps": [], "result": None, "error": None}
+        _log.warning("fail_progress: progress payload missing for %s — creating synthetic record", review_id)
+        data = {"review_id": review_id, "status": "running", "steps": [], "result": None, "error": None}
 
     now = _now_iso()
 
@@ -193,4 +172,4 @@ def fail_progress(review_dir: Path, error: str) -> None:
     data["error"] = error
     data["updated_at"] = now
 
-    write_progress(review_dir, data)
+    write_progress(review_id, data)

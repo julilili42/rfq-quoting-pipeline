@@ -11,18 +11,14 @@ States
 
 Transitions are linear; you can move backwards by resetting (which clears
 the approval and restarts at ``draft_generated``).
-
-Each state change is persisted next to the review folder so the dashboard
-and Outlook plugin can read it without any in-memory coupling.
 """
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
-from quoting.reviews import read_json, write_json
+from quoting.reviews import get_default_repository
 
 ApprovalState = Literal[
     "draft_generated",
@@ -75,25 +71,20 @@ class ApprovalRecord:
         )
 
 
-def approval_path(review_dir: Path) -> Path:
-    return review_dir / "approval.json"
-
-
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def load_approval(review_dir: Path) -> ApprovalRecord:
-    return ApprovalRecord.from_dict(read_json(approval_path(review_dir)))
+def load_approval(review_id: str) -> ApprovalRecord:
+    return ApprovalRecord.from_dict(get_default_repository().load_approval(review_id))
 
 
-def save_approval(review_dir: Path, record: ApprovalRecord) -> None:
-    review_dir.mkdir(parents=True, exist_ok=True)
-    write_json(approval_path(review_dir), record.to_dict())
+def save_approval(review_id: str, record: ApprovalRecord) -> None:
+    get_default_repository().save_approval(review_id, record.to_dict())
 
 
 def transition(
-    review_dir: Path,
+    review_id: str,
     target: ApprovalState,
     *,
     actor: str | None = None,
@@ -103,7 +94,7 @@ def transition(
     exception_reason: str | None = None,
 ) -> ApprovalRecord:
     """Move the review to a new state, recording who/when in history."""
-    record = load_approval(review_dir)
+    record = load_approval(review_id)
 
     if target != record.state and target not in VALID_TRANSITIONS.get(record.state, set()):
         raise ValueError(f"Invalid transition {record.state!r} → {target!r}")
@@ -130,20 +121,20 @@ def transition(
     if changed_fields is not None:
         record.changed_fields = list(changed_fields)
 
-    save_approval(review_dir, record)
+    save_approval(review_id, record)
     return record
 
 
-def reset_approval(review_dir: Path) -> ApprovalRecord:
+def reset_approval(review_id: str) -> ApprovalRecord:
     """Hard reset — used when the user wants to re-run the pipeline."""
     record = ApprovalRecord(state="draft_generated")
-    save_approval(review_dir, record)
+    save_approval(review_id, record)
     return record
 
 
-def mark_field_changed(review_dir: Path, field_path: str) -> None:
+def mark_field_changed(review_id: str, field_path: str) -> None:
     """Add a field to the changelog without changing state."""
-    record = load_approval(review_dir)
+    record = load_approval(review_id)
     if field_path not in record.changed_fields:
         record.changed_fields.append(field_path)
-        save_approval(review_dir, record)
+        save_approval(review_id, record)

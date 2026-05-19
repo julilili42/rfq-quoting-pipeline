@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from quoting.api import _common
-from quoting.reviews import load_mail_meta
+from quoting.reviews import get_default_repository
 from quoting.reviews.source_highlights import (
     HighlightResult,
     TargetKind,
@@ -27,25 +27,18 @@ router = APIRouter()
 _PREVIEW_ROW_CAP = 500
 
 
-def _resolve_review_attachment(folder: Path, filename: str) -> Path:
+def _resolve_review_attachment(review_id: str, filename: str) -> Path:
     safe_name = Path(filename).name
     if not safe_name or safe_name != filename or safe_name in {".", ".."}:
         raise HTTPException(400, "Invalid filename")
 
-    meta = load_mail_meta(folder) or {}
-    allowed = {
-        Path(a["name"]).name
-        for a in (meta.get("attachments") or [])
-        if isinstance(a, dict) and a.get("name")
-    }
-    if safe_name not in allowed:
+    doc = get_default_repository().current_document(
+        review_id, kind="attachment", filename=safe_name
+    )
+    path = _document_path(doc)
+    if path is None:
         raise HTTPException(404, f"Attachment '{safe_name}' not found")
-
-    candidate = folder / safe_name
-    if not candidate.is_file():
-        raise HTTPException(404, f"Attachment file '{safe_name}' missing on disk")
-
-    return candidate
+    return path
 
 
 class PdfHighlightRequest(BaseModel):
@@ -83,8 +76,8 @@ def _pdf_highlight_response(result: HighlightResult) -> PdfHighlightResponse:
 
 @router.get("/reviews/{review_id}/attachment/{filename}")
 def get_review_attachment(review_id: str, filename: str) -> FileResponse:
-    folder = _common.review_dir(review_id)
-    return _common.file_response_inline(_resolve_review_attachment(folder, filename))
+    _common.require_review(review_id)
+    return _common.file_response_inline(_resolve_review_attachment(review_id, filename))
 
 
 @router.post(
@@ -96,8 +89,8 @@ def get_pdf_source_highlight(
     filename: str,
     payload: PdfHighlightRequest,
 ) -> PdfHighlightResponse:
-    folder = _common.review_dir(review_id)
-    path = _resolve_review_attachment(folder, filename)
+    _common.require_review(review_id)
+    path = _resolve_review_attachment(review_id, filename)
     if path.suffix.lower() != ".pdf":
         raise HTTPException(415, "Attachment is not a PDF")
 
@@ -113,26 +106,19 @@ def get_pdf_source_highlight(
 
 @router.get("/reviews/{review_id}/original")
 def get_review_original(review_id: str) -> FileResponse:
-    folder = _common.review_dir(review_id)
+    _common.require_review(review_id)
 
     supported = {".pdf", ".msg", ".eml", ".xlsx", ".xls", ".csv", ".tsv"}
-    preferred: list[Path] = []
-    fallback: list[Path] = []
-
-    for path in folder.iterdir():
-        if not path.is_file() or path.suffix.lower() not in supported:
-            continue
-
-        name = path.name.lower()
-        if name.startswith("angebot") or "draft" in name or "_final" in name:
-            fallback.append(path)
-        else:
-            preferred.append(path)
-
-    candidate = next(iter(preferred + fallback), None)
+    candidate = next(
+        (
+            path
+            for path in _original_document_paths(review_id)
+            if path.suffix.lower() in supported
+        ),
+        None,
+    )
     if candidate is None:
         raise HTTPException(404, "No original input file found for this review")
-
     return _common.file_response_inline(candidate)
 
 
@@ -145,20 +131,36 @@ class TablePreview(BaseModel):
     active_sheet: str | None = None
 
 
-def _find_tabular_original(folder: Path) -> Path | None:
+def _find_tabular_original(review_id: str) -> Path | None:
     supported = {".csv", ".tsv", ".xlsx", ".xls"}
+    return next(
+        (
+            path
+            for path in _original_document_paths(review_id)
+            if path.suffix.lower() in supported
+        ),
+        None,
+    )
 
-    for path in folder.iterdir():
-        if not path.is_file() or path.suffix.lower() not in supported:
-            continue
 
-        name = path.name.lower()
-        if name.startswith("angebot") or "draft" in name or "_final" in name:
-            continue
-
+def _document_path(doc: dict[str, Any] | None) -> Path | None:
+    if not doc:
+        return None
+    path = Path(str(doc.get("storage_path") or ""))
+    if path.exists() and path.is_file():
         return path
-
     return None
+
+
+def _original_document_paths(review_id: str) -> list[Path]:
+    repo = get_default_repository()
+    paths: list[Path] = []
+    for kind in ("attachment", "original"):
+        for doc in repo.list_documents(review_id, kind=kind):
+            path = _document_path(doc)
+            if path is not None:
+                paths.append(path)
+    return paths
 
 
 def _normalise_cell(value: Any) -> Any:
@@ -262,8 +264,8 @@ def preview_original_table(
     review_id: str,
     sheet: str | None = Query(None, description="XLSX sheet name, default: first"),
 ) -> TablePreview:
-    folder = _common.review_dir(review_id)
-    path = _find_tabular_original(folder)
+    _common.require_review(review_id)
+    path = _find_tabular_original(review_id)
 
     if path is None:
         raise HTTPException(415, "Original is not a tabular file")

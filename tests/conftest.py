@@ -1,10 +1,28 @@
 """Shared pytest fixtures."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from quoting.core import Anfrage, Position
 from quoting.matching import MatchResult
+
+
+@pytest.fixture
+def sqlite_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Isolated SQLite review repository under tmp_path."""
+    from quoting.reviews.sqlite_repository import (
+        get_default_repository,
+        reset_default_repository,
+    )
+
+    monkeypatch.setenv("QUOTING_DB_PATH", str(tmp_path / "quoting.sqlite"))
+    monkeypatch.setenv("QUOTING_ARTIFACT_ROOT", str(tmp_path / "artifacts" / "reviews"))
+    reset_default_repository()
+    repo = get_default_repository()
+    yield repo
+    reset_default_repository()
 
 
 def _make_position(**over) -> Position:

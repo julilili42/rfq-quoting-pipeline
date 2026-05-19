@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from quoting.reviews import ReviewFiles, read_json
+from quoting.reviews import default_artifact_root, get_default_repository
 
 
 # --------------------------------------------------------------------------- models
@@ -102,16 +102,18 @@ def _safe_int(value: object) -> int | None:
     return int(raw) if raw is not None else None
 
 
-def _safe_datetime(value: object, fallback_path: Path) -> datetime:
+def _safe_datetime(value: object, fallback_path: Path | None = None) -> datetime:
     if isinstance(value, str) and value.strip():
         try:
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             pass
-    try:
-        return datetime.fromtimestamp(fallback_path.stat().st_mtime)
-    except OSError:
-        return datetime.fromtimestamp(0)
+    if fallback_path is not None:
+        try:
+            return datetime.fromtimestamp(fallback_path.stat().st_mtime)
+        except OSError:
+            pass
+    return datetime.fromtimestamp(0)
 
 
 def llm_model_name(settings: Any) -> str:
@@ -191,11 +193,11 @@ def check_writable_dir(path: Path, label: str) -> CheckResult:
         return CheckResult(name=label, status="error", detail=f"Nicht beschreibbar: {e}")
 
 
-def check_review_count(path: Path) -> CheckResult:
-    if not path.exists():
+def check_review_count() -> CheckResult:
+    count = get_default_repository().review_count()
+    if count == 0:
         return CheckResult(name="Vorhandene Reviews", status="ok", detail="Noch keine Reviews")
-    dirs = [p for p in path.iterdir() if p.is_dir()]
-    return CheckResult(name="Vorhandene Reviews", status="ok", detail=f"{len(dirs)} Review{'s' if len(dirs) != 1 else ''}")
+    return CheckResult(name="Vorhandene Reviews", status="ok", detail=f"{count} Review{'s' if count != 1 else ''}")
 
 
 def check_disk_space(path: Path) -> CheckResult:
@@ -235,21 +237,16 @@ def check_settings_file(path: Path) -> CheckResult:
 
 # --------------------------------------------------------------------------- aggregations
 def recent_pipeline_failures(
-    reviews_root: Path,
     settings: Any,
     *,
     limit: int = 5,
 ) -> PipelineFailureSummary:
-    if not reviews_root.exists():
-        return PipelineFailureSummary(total_failed=0, recent=[])
-
+    repo = get_default_repository()
     failures: list[tuple[float, PipelineFailure]] = []
-    for folder in reviews_root.iterdir():
-        if not folder.is_dir():
-            continue
-        progress_path = folder / ReviewFiles.PROGRESS
-        progress = read_json(progress_path)
-        if not isinstance(progress, dict):
+    for row in repo.list_reviews():
+        review_id = str(row["review_id"])
+        progress = repo.load_progress(review_id)
+        if progress is None:
             continue
         error = str(progress.get("error") or "").strip()
         if progress.get("status") != "failed" and not error:
@@ -271,10 +268,8 @@ def recent_pipeline_failures(
         if not detail and isinstance(failed_step, dict):
             detail = str(failed_step.get("detail") or "").strip()
 
-        mail = read_json(folder / ReviewFiles.MAIL)
-        if not isinstance(mail, dict):
-            mail = {}
-        updated = _safe_datetime(progress.get("updated_at"), progress_path)
+        mail = repo.load_mail(review_id) or {}
+        updated = _safe_datetime(progress.get("updated_at"))
         try:
             progress_percent = int(progress.get("progress_percent") or 0)
         except (TypeError, ValueError):
@@ -283,7 +278,7 @@ def recent_pipeline_failures(
         failures.append((
             updated.timestamp(),
             PipelineFailure(
-                review_id=folder.name,
+                review_id=review_id,
                 subject=str(mail.get("subject") or "(ohne Betreff)"),
                 sender=str(mail.get("from") or mail.get("sender") or ""),
                 current_step=current_step,
@@ -378,7 +373,8 @@ def compute_debug_info(project_root: Path) -> DebugInfo:
 
     settings = load_settings()
     data_dir = settings.data_dir
-    failures = recent_pipeline_failures(data_dir / "reviews", settings)
+    artifact_root = default_artifact_root()
+    failures = recent_pipeline_failures(settings)
     quality = stammdaten_quality(settings.stammdaten_path)
 
     checks: list[CheckResult] = [
@@ -386,9 +382,9 @@ def compute_debug_info(project_root: Path) -> DebugInfo:
         check_llm_key(settings),
         check_llm_model(settings),
         check_stammdaten(settings.stammdaten_path),
-        check_writable_dir(data_dir / "reviews", "Reviews-Verzeichnis"),
+        check_writable_dir(artifact_root, "Review-Artefakte"),
         check_writable_dir(settings.output_dir, "Output-Verzeichnis"),
-        check_review_count(data_dir / "reviews"),
+        check_review_count(),
         check_disk_space(data_dir),
         check_thresholds(settings),
         check_settings_file(data_dir / "settings.json"),

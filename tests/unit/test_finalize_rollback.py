@@ -1,7 +1,7 @@
 """finalize_quotation must roll back the final PDF when the approval transition fails.
 
 Without the rollback the filesystem ends up holding a freshly-built final PDF
-while ``approval.json`` still says the review is not approved — a state the
+while the approval payload still says the review is not approved — a state the
 Outlook workflow cannot recover from gracefully.
 """
 from __future__ import annotations
@@ -19,15 +19,15 @@ from quoting.api.routers.reviews import FinalizeRequest, finalize_quotation
 from quoting.api.services.quality_gate_service import QualityGateResult, QualityIssue
 
 
-def _prepare_review(tmp_path: Path) -> Path:
-    folder = tmp_path / "review-finalize"
-    folder.mkdir()
-    save_approval(folder, ApprovalRecord(state="reviewed"))
-    return folder
+@pytest.fixture
+def review(sqlite_repo) -> tuple[str, Path]:
+    review_id = "review-finalize"
+    sqlite_repo.create_review(review_id)
+    save_approval(review_id, ApprovalRecord(state="reviewed"))
+    return review_id, sqlite_repo.artifact_dir(review_id)
 
 
-def _patch_handler_dependencies(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(_common, "REVIEW_DIR", tmp_path)
+def _patch_handler_dependencies(monkeypatch) -> None:
     monkeypatch.setattr(_common, "_pipeline", MagicMock())
 
     monkeypatch.setattr(
@@ -52,9 +52,9 @@ def _patch_handler_dependencies(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(reviews_router, "build_draft_pdf", fake_build)
 
 
-def test_finalize_rolls_back_pdf_when_transition_fails(tmp_path, monkeypatch):
-    folder = _prepare_review(tmp_path)
-    _patch_handler_dependencies(monkeypatch, tmp_path)
+def test_finalize_rolls_back_pdf_when_transition_fails(review, monkeypatch):
+    review_id, folder = review
+    _patch_handler_dependencies(monkeypatch)
 
     def failing_transition(*_args, **_kwargs):
         raise RuntimeError("simulated approval crash")
@@ -66,36 +66,36 @@ def test_finalize_rolls_back_pdf_when_transition_fails(tmp_path, monkeypatch):
 
     with pytest.raises(HTTPException) as exc_info:
         finalize_quotation(
-            "review-finalize",
+            review_id,
             FinalizeRequest(actor="user", filename="Angebot_Test.pdf"),
         )
 
     assert exc_info.value.status_code == 500
     assert not (folder / "Angebot_Test.pdf").exists()
-    assert load_approval(folder).state == "reviewed"
+    assert load_approval(review_id).state == "reviewed"
 
 
-def test_finalize_keeps_pdf_and_marks_approved_on_success(tmp_path, monkeypatch):
-    folder = _prepare_review(tmp_path)
-    _patch_handler_dependencies(monkeypatch, tmp_path)
+def test_finalize_keeps_pdf_and_marks_approved_on_success(review, monkeypatch):
+    review_id, folder = review
+    _patch_handler_dependencies(monkeypatch)
 
     response = finalize_quotation(
-        "review-finalize",
+        review_id,
         FinalizeRequest(actor="user", filename="Angebot_Test.pdf"),
     )
 
     assert response["final_pdf_path"] == "Angebot_Test.pdf"
     assert (folder / "Angebot_Test.pdf").exists()
 
-    record = load_approval(folder)
+    record = load_approval(review_id)
     assert record.state == "approved"
     assert record.final_pdf_path == "Angebot_Test.pdf"
     assert record.approved_by == "user"
 
 
-def test_finalize_rejects_quality_issues_without_acknowledgement(tmp_path, monkeypatch):
-    folder = _prepare_review(tmp_path)
-    _patch_handler_dependencies(monkeypatch, tmp_path)
+def test_finalize_rejects_quality_issues_without_acknowledgement(review, monkeypatch):
+    review_id, folder = review
+    _patch_handler_dependencies(monkeypatch)
 
     monkeypatch.setattr(
         reviews_router,
@@ -116,18 +116,18 @@ def test_finalize_rejects_quality_issues_without_acknowledgement(tmp_path, monke
 
     with pytest.raises(HTTPException) as exc_info:
         finalize_quotation(
-            "review-finalize",
+            review_id,
             FinalizeRequest(actor="user", filename="Angebot_Test.pdf"),
         )
 
     assert exc_info.value.status_code == 409
     assert not (folder / "Angebot_Test.pdf").exists()
-    assert load_approval(folder).state == "reviewed"
+    assert load_approval(review_id).state == "reviewed"
 
 
-def test_finalize_allows_acknowledged_exception_without_reason(tmp_path, monkeypatch):
-    _prepare_review(tmp_path)
-    _patch_handler_dependencies(monkeypatch, tmp_path)
+def test_finalize_allows_acknowledged_exception_without_reason(review, monkeypatch):
+    review_id, _ = review
+    _patch_handler_dependencies(monkeypatch)
 
     monkeypatch.setattr(
         reviews_router,
@@ -147,7 +147,7 @@ def test_finalize_allows_acknowledged_exception_without_reason(tmp_path, monkeyp
     )
 
     response = finalize_quotation(
-        "review-finalize",
+        review_id,
         FinalizeRequest(
             actor="user",
             filename="Angebot_Test.pdf",
@@ -156,7 +156,7 @@ def test_finalize_allows_acknowledged_exception_without_reason(tmp_path, monkeyp
     )
 
     assert response["final_pdf_path"] == "Angebot_Test.pdf"
-    record = load_approval(tmp_path / "review-finalize")
+    record = load_approval(review_id)
     assert record.state == "approved"
     assert record.warning_acknowledged is True
     assert record.exception_reason is None

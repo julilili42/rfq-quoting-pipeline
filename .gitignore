@@ -86,6 +86,8 @@ Poppler/
 
 
 data/reviews/
+data/artifacts/reviews/
+data/quoting.sqlite*
 
 # Local user settings — contains PII; commit data/settings.example.json instead.
 data/settings.json

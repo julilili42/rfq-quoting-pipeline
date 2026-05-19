@@ -7,6 +7,7 @@ persisting intermediate state. Keeps step signatures clean — a step's
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -22,10 +23,20 @@ class StepContext:
     work_dir: Path
     progress: ProgressCallback = field(default=noop_progress)
     extra: dict = field(default_factory=dict)
+    snapshot_sink: Callable[[str, Any], None] | None = None
 
-    def persist(self, filename: str, data: Any) -> Path:
-        """Write a JSON snapshot of intermediate state to the work dir."""
-        path = self.work_dir / filename
+    def persist(self, name: str, data: Any) -> Path:
+        """Persist a JSON snapshot of intermediate state.
+
+        ``name`` is a logical payload name (no extension). When a
+        ``snapshot_sink`` is configured it receives the raw name; when
+        not, the data is written to ``<work_dir>/<name>.json`` for ad-hoc
+        runs and integration tests.
+        """
+        if self.snapshot_sink is not None:
+            self.snapshot_sink(name, data)
+            return self.work_dir / name
+        path = self.work_dir / f"{name}.json"
         save_json(data, path)
         return path
 

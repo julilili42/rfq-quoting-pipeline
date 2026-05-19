@@ -36,7 +36,7 @@ class PricingStep:
             ctx.report(self.name, "failed", str(exc))
             raise
 
-        ctx.persist("03_quotation.json", quotation.to_dict())
+        ctx.persist("quotation", quotation.to_dict())
         ctx.report(
             self.name,
             "completed",

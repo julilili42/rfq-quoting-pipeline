@@ -1,14 +1,9 @@
-"""Reset / cleanup helpers for review folders.
+"""Reset / cleanup helpers for reviews.
 
-Both the API and the Streamlit UI used to roll their own variants of
-"throw away every pipeline artifact but keep the original mail and its
-attachments". This module is the single canonical implementation.
-
-The function only touches files on disk and the approval / progress
-state machines. Re-running the pipeline against the surviving mail is
-the *caller's* responsibility — the API does it via ``BackgroundTasks``,
-the UI does it inline. Centralising that step is harder than it sounds
-because the two callers have very different execution models.
+Review state lives in SQLite. The artifact directory only contains
+binary files such as uploaded originals and generated PDFs; reset keeps
+the originals, drops generated artifacts from disk, and clears derived
+database payloads.
 """
 from __future__ import annotations
 
@@ -16,53 +11,46 @@ import shutil
 from pathlib import Path
 
 from ..core import get_logger
-from .store import saved_attachment_paths
+from .sqlite_repository import Payloads, get_default_repository
 
 log = get_logger()
 
 
-_KEEP_FILES: set[str] = {"mail.json"}
+def reset_review_artifacts(review_id: str) -> None:
+    """Wipe pipeline outputs while preserving uploaded originals."""
+    repo = get_default_repository()
+    folder = repo.artifact_dir(review_id)
 
+    keep_files = _registered_original_paths(review_id)
+    if folder.exists():
+        for entry in folder.iterdir():
+            if entry in keep_files:
+                continue
+            try:
+                if entry.is_file():
+                    entry.unlink()
+                elif entry.is_dir():
+                    shutil.rmtree(entry)
+            except Exception as exc:
+                log.warning("Could not delete %s during reset: %s", entry, exc)
 
-def reset_review_artifacts(review_dir: Path, review_id: str) -> None:
-    """Wipe every pipeline output but preserve the original mail.
-
-    Specifically:
-
-    * ``mail.json`` is preserved (the canonical input record).
-    * Every attachment file referenced from ``mail.json`` is preserved.
-    * Every other file or sub-folder under ``review_dir`` is deleted.
-    * ``progress.json`` is re-initialised to a fresh "running" state.
-    * ``approval.json`` is reset to ``draft_generated``.
-
-    Failures during deletion are silently ignored: the next pipeline
-    run will overwrite anything stale, and refusing to reset because
-    one stray file is locked would only frustrate the user.
-    """
-    if not review_dir.exists():
-        return
-
-    keep_files: set[Path] = set()
-    mail_json = review_dir / "mail.json"
-    if mail_json.exists():
-        keep_files.add(mail_json)
-    keep_files.update(saved_attachment_paths(review_dir))
-
-    for entry in review_dir.iterdir():
-        if entry in keep_files:
-            continue
-        try:
-            if entry.is_file():
-                entry.unlink()
-            elif entry.is_dir():
-                shutil.rmtree(entry)
-        except Exception as exc:
-            log.warning("Could not delete %s during reset: %s", entry, exc)
-            continue
+    repo.reset_review_state(review_id, keep={Payloads.MAIL})
+    repo.delete_documents_except(review_id, keep_kinds={"attachment", "original"})
 
     # Imported lazily so this module stays importable from anywhere.
     from quoting.api.approval_store import reset_approval
     from quoting.api.progress_store import init_progress
 
-    init_progress(review_dir, review_id)
-    reset_approval(review_dir)
+    init_progress(review_id)
+    reset_approval(review_id)
+
+
+def _registered_original_paths(review_id: str) -> set[Path]:
+    repo = get_default_repository()
+    keep: set[Path] = set()
+    for kind in ("attachment", "original"):
+        for doc in repo.list_documents(review_id, kind=kind):
+            path = Path(str(doc.get("storage_path") or ""))
+            if path.name:
+                keep.add(path)
+    return keep

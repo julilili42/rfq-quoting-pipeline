@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 from types import SimpleNamespace
 
 from quoting.api import frontend_router
 from quoting.extraction.llm.base import LLMResponse, TokenUsage
+from quoting.reviews import Payloads
 
 
 class _OkClient:
@@ -57,41 +57,41 @@ def test_probe_llm_provider_returns_scrubbed_error(monkeypatch):
     assert "***" in result.detail
 
 
-def test_recent_pipeline_failures_reads_latest_and_scrubs_secret(tmp_path):
+def test_recent_pipeline_failures_reads_latest_and_scrubs_secret(sqlite_repo):
     secret = "test-google-key"
     settings = SimpleNamespace(google_api_key=secret, nexus_api_key=None)
 
-    older = tmp_path / "older-review"
-    older.mkdir()
-    (older / "progress.json").write_text(
-        json.dumps({
+    sqlite_repo.create_review("older-review")
+    sqlite_repo.save_payload(
+        "older-review",
+        Payloads.PROGRESS,
+        {
             "status": "failed",
             "current_step": "Extraktion",
             "error": "old failure",
             "updated_at": "2026-05-01T10:00:00+00:00",
             "progress_percent": 20,
-        }),
-        encoding="utf-8",
+        },
     )
 
-    newer = tmp_path / "newer-review"
-    newer.mkdir()
-    (newer / "mail.json").write_text(
-        json.dumps({"subject": "RFQ 123", "from": "buyer@example.test"}),
-        encoding="utf-8",
+    sqlite_repo.create_review("newer-review")
+    sqlite_repo.save_mail(
+        "newer-review",
+        {"subject": "RFQ 123", "from": "buyer@example.test"},
     )
-    (newer / "progress.json").write_text(
-        json.dumps({
+    sqlite_repo.save_payload(
+        "newer-review",
+        Payloads.PROGRESS,
+        {
             "status": "failed",
             "current_step": "Matching",
             "error": f"provider rejected {secret}",
             "updated_at": "2026-05-02T10:00:00+00:00",
             "progress_percent": 60,
-        }),
-        encoding="utf-8",
+        },
     )
 
-    summary = frontend_router._recent_pipeline_failures(tmp_path, settings)
+    summary = frontend_router._recent_pipeline_failures(settings)
 
     assert summary.total_failed == 2
     assert summary.recent[0].review_id == "newer-review"

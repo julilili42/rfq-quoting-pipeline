@@ -4,12 +4,12 @@ from quoting.api.frontend_router import (
     _filter_redundant_custom_price_overrides,
     _load_or_recompute_matches,
     _remove_position_price_overrides,
-    _try_load_original_anfrage_from_disk,
+    _try_load_original_anfrage,
 )
 from quoting.core import Anfrage
 from quoting.data import InMemoryStammdatenRepository, StammdatenRecord
 from quoting.matching import MatchResult
-from quoting.reviews import read_json, write_json
+from quoting.reviews import Payloads
 
 
 class _PipelineStub:
@@ -78,12 +78,12 @@ def test_same_article_does_not_overwrite_manual_description(make_position):
 
 
 def test_custom_article_match_persists_review_local_article(
-    tmp_path,
+    sqlite_repo,
     monkeypatch,
     make_position,
 ):
-    review_dir = tmp_path / "review-1"
-    review_dir.mkdir()
+    review_id = "review-1"
+    sqlite_repo.create_review(review_id)
     anfrage = Anfrage(
         positionen=[
             make_position(
@@ -96,9 +96,9 @@ def test_custom_article_match_persists_review_local_article(
             )
         ]
     )
-    write_json(review_dir / "anfrage_reviewed.json", anfrage.model_dump(mode="json"))
-    write_json(
-        review_dir / "matches_reviewed.json",
+    sqlite_repo.save_anfrage_reviewed(review_id, anfrage.model_dump(mode="json"))
+    sqlite_repo.save_matches_reviewed(
+        review_id,
         [
             {
                 "pos_nr": 1,
@@ -110,8 +110,8 @@ def test_custom_article_match_persists_review_local_article(
             }
         ],
     )
-    write_json(
-        review_dir / "manual_overrides.json",
+    sqlite_repo.save_overrides(
+        review_id,
         [
             {
                 "target": "pos",
@@ -134,11 +134,10 @@ def test_custom_article_match_persists_review_local_article(
         ],
     )
 
-    monkeypatch.setattr(_common, "REVIEW_DIR", tmp_path)
     monkeypatch.setattr(_common, "_pipeline", _PipelineStub())
 
     response = frontend_router.create_custom_article_match(
-        "review-1",
+        review_id,
         frontend_router.CustomArticleRequest(
             pos_nr=1,
             artikel_nr=" CUST-001 ",
@@ -157,20 +156,20 @@ def test_custom_article_match_persists_review_local_article(
         "unit_price_eur": 12.35,
     }
 
-    saved_anfrage = read_json(review_dir / "anfrage_reviewed.json")
+    saved_anfrage = sqlite_repo.load_payload(review_id, Payloads.ANFRAGE_REVIEWED)
     saved_position = saved_anfrage["positionen"][0]
     assert saved_position["artikelnummer"] == "CUST-001"
     assert saved_position["bezeichnung"] == "Custom Dichtung"
     assert saved_position["werkstoff"] == "PTFE"
     assert saved_position["abmessungen"] == "10 x 20"
 
-    saved_match = read_json(review_dir / "matches_reviewed.json")[0]
+    saved_match = sqlite_repo.load_payload(review_id, Payloads.MATCHES_REVIEWED)[0]
     assert saved_match["status"] == "exact"
     assert saved_match["matched_artikelnr"] == "CUST-001"
     assert saved_match["matched_row"]["custom"] is True
     assert saved_match["matched_row"]["basispreis_eur"] == 12.35
 
-    overrides = read_json(review_dir / "manual_overrides.json")
+    overrides = sqlite_repo.load_overrides(review_id)
     assert overrides == [
         {
             "target": "pos",
@@ -271,12 +270,12 @@ def test_redundant_custom_price_override_is_hidden_from_review_detail():
     ]
 
 
-def test_load_matches_filters_deleted_position_matches(tmp_path, make_position):
-    review_dir = tmp_path / "review-1"
-    review_dir.mkdir()
+def test_load_matches_filters_deleted_position_matches(sqlite_repo, make_position):
+    review_id = "review-1"
+    sqlite_repo.create_review(review_id)
     anfrage = Anfrage(positionen=[make_position(pos_nr=1)])
-    write_json(
-        review_dir / "matches_reviewed.json",
+    sqlite_repo.save_matches_reviewed(
+        review_id,
         [
             {
                 "pos_nr": 99,
@@ -297,21 +296,21 @@ def test_load_matches_filters_deleted_position_matches(tmp_path, make_position):
         ],
     )
 
-    matches = _load_or_recompute_matches(review_dir, anfrage, _PipelineStub())  # type: ignore[arg-type]
+    matches = _load_or_recompute_matches(review_id, anfrage, _PipelineStub())  # type: ignore[arg-type]
 
     assert [match.pos_nr for match in matches] == [1]
     assert matches[0].matched_artikelnr is None
 
 
-def test_original_anfrage_loader_ignores_reviewed_edits(tmp_path, make_position):
-    review_dir = tmp_path / "review-1"
-    review_dir.mkdir()
+def test_original_anfrage_loader_ignores_reviewed_edits(sqlite_repo, make_position):
+    review_id = "review-1"
+    sqlite_repo.create_review(review_id)
     original = Anfrage(positionen=[make_position(pos_nr=1, artikelnummer="ORIGINAL")])
     reviewed = Anfrage(positionen=[make_position(pos_nr=1, artikelnummer="EDITED")])
-    write_json(review_dir / "01_extracted.json", original.model_dump(mode="json"))
-    write_json(review_dir / "anfrage_reviewed.json", reviewed.model_dump(mode="json"))
+    sqlite_repo.save_extracted(review_id, original.model_dump(mode="json"))
+    sqlite_repo.save_anfrage_reviewed(review_id, reviewed.model_dump(mode="json"))
 
-    loaded = _try_load_original_anfrage_from_disk(review_dir)
+    loaded = _try_load_original_anfrage(review_id)
 
     assert loaded is not None
     assert loaded.positionen[0].artikelnummer == "ORIGINAL"

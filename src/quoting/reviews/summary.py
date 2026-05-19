@@ -1,26 +1,14 @@
-"""Scan ``data/reviews/`` and produce summaries for the dashboard.
-
-The dashboard reads from disk only — it does not re-run any pipeline.
-Every review folder is treated as a self-contained artifact.
-
-Status detection
-----------------
-- ``abgeschlossen`` — the review was explicitly approved
-  (``approval.json`` is ``approved`` or ``ready_to_send``).
-- ``pdf_bereit``   — the initial pipeline has produced a draft PDF, but
-  the review has not been approved yet.
-- ``in_arbeit``    — the folder exists but no PDF was produced (likely a
-  running or failed pipeline run).
-"""
+"""Build dashboard summaries from SQLite review state."""
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
-from quoting.reviews import find_draft_pdf, read_json
+from quoting.reviews.pdfs import find_draft_pdf
+from quoting.reviews.sqlite_repository import get_default_repository
 
 log = logging.getLogger(__name__)
 
@@ -59,84 +47,55 @@ class ReviewSummary:
 
     @property
     def matched(self) -> int:
-        return (
-            self.matches_exact
-            + self.matches_fuzzy
-            + self.matches_semantic
-        )
+        return self.matches_exact + self.matches_fuzzy + self.matches_semantic
 
     @property
     def match_rate(self) -> float:
         return self.matched / self.positions if self.positions else 0.0
 
 
-# --------------------------------------------------------------------- public
-def scan_reviews(reviews_root: Path) -> list[ReviewSummary]:
-    """Return all review summaries on disk, newest first.
-
-    Folders that fail to summarize are silently skipped — the dashboard
-    should never crash because of one bad folder.
-    """
-    if not reviews_root.exists():
-        return []
-
+def scan_reviews() -> list[ReviewSummary]:
+    """Return all review summaries from SQLite, newest first."""
+    repo = get_default_repository()
     summaries: list[ReviewSummary] = []
-    for entry in reviews_root.iterdir():
-        if not entry.is_dir():
-            continue
+    for row in repo.list_reviews():
+        review_id = str(row["review_id"])
         try:
-            summaries.append(_summarize(entry))
+            summaries.append(_summarize(review_id, row))
         except Exception as exc:
-            log.warning("Skipping malformed review folder %s: %s", entry.name, exc)
+            log.warning("Skipping malformed review %s: %s", review_id, exc)
             continue
-
-    summaries.sort(key=lambda s: s.updated_at, reverse=True)
     return summaries
 
 
-# --------------------------------------------------------------------- internal
-def _summarize(folder: Path) -> ReviewSummary:
-    review_id = folder.name
+def _summarize(review_id: str, row: dict) -> ReviewSummary:
+    repo = get_default_repository()
 
-    mail = read_json(folder / "mail.json") or {}
-    extraction = _read_json_first(folder, ("anfrage_reviewed.json",
-                                           "01_extracted.json")) or {}
-    quotation = _read_json_first(folder, ("quotation_reviewed.json",
-                                          "03_quotation.json")) or {}
-    legacy_state = read_json(folder / "review_state.json")
-    approval = read_json(folder / "approval.json") or {}
-    overrides = read_json(folder / "manual_overrides.json") or []
+    mail = repo.load_mail(review_id) or {}
+    extraction = repo.load_anfrage(review_id) or {}
+    quotation = repo.load_quotation(review_id) or {}
+    approval = repo.load_approval(review_id) or {}
+    overrides = repo.load_overrides(review_id)
 
     positions = extraction.get("positionen") or []
     if not isinstance(positions, list):
         positions = []
 
-    matches = _read_json_first(folder, ("matches_reviewed.json",
-                                        "02_matches.json")) or []
+    matches = repo.load_matches(review_id)
 
     confidence_counts = _count_by_key(positions, "confidence", ("high", "medium", "low"))
     match_counts = _count_by_key(
         matches, "status", ("exact", "fuzzy", "semantic", "no_match")
     )
+    pdf_path = find_draft_pdf(review_id)
 
-    pdf_path = find_draft_pdf(folder, review_id)
-
-    approval_state = approval.get("state") if isinstance(approval, dict) else None
-    has_legacy_completed_state = (
-        approval_state is None
-        and isinstance(legacy_state, dict)
-        and "review_id" in legacy_state
-    )
-
-    if approval_state in {"approved", "ready_to_send"} or has_legacy_completed_state:
+    approval_state = approval.get("state") or row.get("approval_state")
+    if approval_state in {"approved", "ready_to_send"}:
         status: ReviewStatus = "abgeschlossen"
     elif pdf_path:
         status = "pdf_bereit"
     else:
         status = "in_arbeit"
-
-    created = _safe_mtime(folder / "mail.json" if mail else folder)
-    updated = _safe_mtime(folder)
 
     extracted_articles = [
         str(p.get("artikelnummer") or "").strip()
@@ -146,11 +105,11 @@ def _summarize(folder: Path) -> ReviewSummary:
 
     return ReviewSummary(
         review_id=review_id,
-        folder=folder,
-        created_at=created,
-        updated_at=updated,
-        subject=str(mail.get("subject") or "(ohne Betreff)"),
-        sender=str(mail.get("from") or mail.get("sender") or ""),
+        folder=repo.artifact_dir(review_id),
+        created_at=_parse_datetime(row.get("created_at")),
+        updated_at=_parse_datetime(row.get("updated_at")),
+        subject=str(mail.get("subject") or row.get("subject") or "(ohne Betreff)"),
+        sender=str(mail.get("from") or mail.get("sender") or row.get("sender") or ""),
         positions=len(positions),
         confidence_high=confidence_counts["high"],
         confidence_medium=confidence_counts["medium"],
@@ -163,29 +122,9 @@ def _summarize(folder: Path) -> ReviewSummary:
         currency=str(quotation.get("waehrung") or "EUR"),
         status=status,
         pdf_path=pdf_path,
-        manual_overrides_count=len(overrides) if isinstance(overrides, list) else 0,
+        manual_overrides_count=len(overrides),
         extracted_articles=extracted_articles,
     )
-
-
-def _read_json_first(folder: Path, names: tuple[str, ...]) -> Any:
-    """Try ``folder/name`` for each name, then rglob as last resort."""
-    for name in names:
-        data = read_json(folder / name)
-        if data is not None:
-            return data
-        # also accept nested under pipeline/
-        data = read_json(folder / "pipeline" / name)
-        if data is not None:
-            return data
-
-    for name in names:
-        for path in folder.rglob(name):
-            data = read_json(path)
-            if data is not None:
-                return data
-
-    return None
 
 
 def _count_by_key(items: list, key: str, expected: tuple[str, ...]) -> dict[str, int]:
@@ -199,10 +138,10 @@ def _count_by_key(items: list, key: str, expected: tuple[str, ...]) -> dict[str,
     return counts
 
 
-def _safe_mtime(path: Path | None) -> datetime:
-    if path is None or not path.exists():
-        return datetime.fromtimestamp(0)
-    try:
-        return datetime.fromtimestamp(path.stat().st_mtime)
-    except Exception:
-        return datetime.fromtimestamp(0)
+def _parse_datetime(value: object) -> datetime:
+    if isinstance(value, str) and value.strip():
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    return datetime.fromtimestamp(0)

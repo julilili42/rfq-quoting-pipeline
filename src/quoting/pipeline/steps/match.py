@@ -89,7 +89,7 @@ class MatchingStep:
         for pos, m in zip(anfrage.positionen, matches, strict=False):
             log.info("  Pos %d: %s (score %.2f)", pos.pos_nr, m.status, m.score)
 
-        ctx.persist("02_matches.json", [m.to_dict() for m in matches])
+        ctx.persist("matches", [m.to_dict() for m in matches])
 
         exact = sum(1 for m in matches if m.status == "exact")
         no_match = sum(1 for m in matches if m.status == "no_match")

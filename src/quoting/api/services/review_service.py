@@ -1,6 +1,6 @@
 """Review-level persistence and matching helpers.
 
-Pure logic that operates on a review folder + a ``QuotingPipeline``; no
+Pure logic that operates on a review id + a ``QuotingPipeline``; no
 FastAPI dependencies. Used by the reviews/stammdaten routers.
 """
 
@@ -14,11 +14,7 @@ from quoting.core import Anfrage
 from quoting.ingestion import Mail, detect_file_type, mail_from_file, parse_mail
 from quoting.matching import MatchResult, match_positions
 from quoting.pipeline import QuotingPipeline
-from quoting.reviews import (
-    ReviewFiles,
-    load_mail_meta,
-    read_json,
-)
+from quoting.reviews import get_default_repository
 
 
 def normalise_article_key(value: str | None) -> str:
@@ -35,28 +31,19 @@ def find_stammdaten_by_article(pipeline: QuotingPipeline, artikelnummer: str) ->
     return None
 
 
-def try_load_anfrage_from_disk(folder: Path) -> Anfrage | None:
-    """Return the first valid cached Anfrage from disk, or None if not found."""
-    for path in (
-        folder / ReviewFiles.ANFRAGE_REVIEWED,
-        folder / ReviewFiles.EXTRACTED,
-        folder / "pipeline" / "01_extracted.json",
-    ):
-        data = read_json(path)
-        if isinstance(data, dict) and data.get("positionen") is not None:
-            return Anfrage.model_validate(data)
+def try_load_anfrage(review_id: str) -> Anfrage | None:
+    """Return the first valid cached Anfrage, or None if not found."""
+    data = get_default_repository().load_anfrage(review_id)
+    if isinstance(data, dict) and data.get("positionen") is not None:
+        return Anfrage.model_validate(data)
     return None
 
 
-def try_load_original_anfrage_from_disk(folder: Path) -> Anfrage | None:
+def try_load_original_anfrage(review_id: str) -> Anfrage | None:
     """Return the initial extraction snapshot, ignoring reviewed edits."""
-    for path in (
-        folder / ReviewFiles.EXTRACTED,
-        folder / "pipeline" / "01_extracted.json",
-    ):
-        data = read_json(path)
-        if isinstance(data, dict) and data.get("positionen") is not None:
-            return Anfrage.model_validate(data)
+    data = get_default_repository().load_extracted(review_id)
+    if isinstance(data, dict) and data.get("positionen") is not None:
+        return Anfrage.model_validate(data)
     return None
 
 
@@ -66,14 +53,17 @@ def build_mail(input_path: Path) -> Mail:
     return mail_from_file(input_path)
 
 
-def mail_from_meta(mail_meta: dict, folder: Path) -> Mail:
-    """Reconstruct a Mail object from stored mail.json metadata."""
-    attachments = []
+def mail_from_meta(mail_meta: dict, review_id: str) -> Mail:
+    """Reconstruct a Mail object from stored input metadata."""
+    repo = get_default_repository()
+    attachments: list[Path] = []
     for att in mail_meta.get("attachments") or []:
-        if isinstance(att, dict) and att.get("name"):
-            path = folder / Path(att["name"]).name
-            if path.exists():
-                attachments.append(path)
+        if not isinstance(att, dict) or not att.get("name"):
+            continue
+        doc = repo.current_document(review_id, kind="attachment", filename=str(att["name"]))
+        path = _document_path(doc)
+        if path is not None:
+            attachments.append(path)
     return Mail(
         subject=str(mail_meta.get("subject") or ""),
         sender=str(mail_meta.get("from") or mail_meta.get("sender") or ""),
@@ -82,28 +72,33 @@ def mail_from_meta(mail_meta: dict, folder: Path) -> Mail:
     )
 
 
-def load_or_extract_anfrage(folder: Path, pipeline: QuotingPipeline) -> Anfrage:
-    cached = try_load_anfrage_from_disk(folder)
+def load_or_extract_anfrage(review_id: str, pipeline: QuotingPipeline) -> Anfrage:
+    cached = try_load_anfrage(review_id)
     if cached is not None:
         return cached
 
-    mail = mail_from_meta(load_mail_meta(folder) or {}, folder)
+    repo = get_default_repository()
+    mail = mail_from_meta(repo.load_mail(review_id) or {}, review_id)
 
     from quoting.pipeline import StepContext
 
-    return pipeline.extract(mail, StepContext(work_dir=folder))
+    folder = repo.artifact_dir(review_id)
+
+    def snapshot_sink(name: str, data: Any) -> None:
+        repo.save_payload(review_id, name, data)
+
+    return pipeline.extract(mail, StepContext(work_dir=folder, snapshot_sink=snapshot_sink))
 
 
 def load_or_recompute_matches(
-    folder: Path,
+    review_id: str,
     anfrage: Anfrage,
     pipeline: QuotingPipeline,
 ) -> list[MatchResult]:
-    data = read_json(folder / ReviewFiles.MATCHES_REVIEWED) or read_json(
-        folder / "02_matches.json"
-    )
+    repo = get_default_repository()
+    data = repo.load_matches(review_id)
 
-    if isinstance(data, list):
+    if isinstance(data, list) and data:
         saved_matches = [
             MatchResult(
                 pos_nr=int(item.get("pos_nr", 0)),
@@ -199,10 +194,10 @@ def upsert_match(matches: list[MatchResult], new_match: MatchResult) -> list[Mat
     return updated
 
 
-def invalidate_approval(folder: Path) -> None:
-    record = load_approval(folder)
+def invalidate_approval(review_id: str) -> None:
+    record = load_approval(review_id)
     if record.state in {"approved", "ready_to_send"}:
-        transition(folder, target="reviewed", actor=record.approved_by)
+        transition(review_id, target="reviewed", actor=record.approved_by)
 
 
 def clean_required_text(value: str, field_name: str) -> str:
@@ -219,3 +214,12 @@ def clean_optional_text(value: str | None) -> str | None:
         return None
     cleaned = " ".join(str(value).split())
     return cleaned or None
+
+
+def _document_path(doc: dict[str, Any] | None) -> Path | None:
+    if not doc:
+        return None
+    path = Path(str(doc.get("storage_path") or ""))
+    if path.exists() and path.is_file():
+        return path
+    return None

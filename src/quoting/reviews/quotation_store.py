@@ -1,34 +1,17 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from quoting.pricing import Quotation, QuotationItem
-from quoting.reviews.store import read_json
+from quoting.reviews.sqlite_repository import get_default_repository
 
 
-def load_saved_quotation(review_dir: Path) -> Quotation | None:
-    candidates = [
-        review_dir / "quotation_reviewed.json",
-        review_dir / "03_quotation.json",
-        review_dir / "pipeline" / "03_quotation.json",
-    ]
-    candidates.extend(sorted(review_dir.rglob("03_quotation.json")))
-
-    seen: set[Path] = set()
-    for path in candidates:
-        path = path.resolve()
-        if path in seen:
-            continue
-        seen.add(path)
-
-        data = read_json(path)
-        if isinstance(data, dict):
-            try:
-                return quotation_from_dict(data)
-            except Exception:
-                continue
-
-    return None
+def load_saved_quotation(review_id: str) -> Quotation | None:
+    data = get_default_repository().load_quotation(review_id)
+    if not isinstance(data, dict):
+        return None
+    try:
+        return quotation_from_dict(data)
+    except Exception:
+        return None
 
 
 def quotation_from_dict(data: dict) -> Quotation:

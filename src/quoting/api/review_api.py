@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import json
 import logging
 import os
 import traceback
@@ -14,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from quoting.api import _common
 from quoting.api.approval_store import (
     VALID_TRANSITIONS,
     ApprovalState,
@@ -21,14 +21,7 @@ from quoting.api.approval_store import (
     reset_approval,
     transition,
 )
-from quoting.api.frontend_router import (
-    REVIEW_DIR,
-    _mail_from_meta,
-    _review_dir,
-)
-from quoting.api.frontend_router import (
-    router as frontend_router,
-)
+from quoting.api.frontend_router import router as frontend_router
 from quoting.api.progress_store import (
     complete_progress,
     fail_progress,
@@ -36,6 +29,7 @@ from quoting.api.progress_store import (
     read_progress,
     update_step,
 )
+from quoting.api.services.review_service import mail_from_meta
 from quoting.api.settings_store import (
     AppSettings,
 )
@@ -48,13 +42,12 @@ from quoting.api.settings_store import (
 from quoting.ingestion import Mail
 from quoting.pipeline import QuotingPipeline, StepProgress
 from quoting.reviews import (
-    ReviewFiles,
     api_base_url,
     find_current_pdf,
     find_draft_pdf,
     find_final_pdf,
+    get_default_repository,
     reset_review_artifacts,
-    write_json,
 )
 
 log = logging.getLogger(__name__)
@@ -128,22 +121,30 @@ def create_review(
     background_tasks: BackgroundTasks,
 ):
     review_id = uuid.uuid4().hex[:12]
-    folder = REVIEW_DIR / review_id
+    repo = get_default_repository()
+    repo.create_review(
+        review_id,
+        subject=payload.subject,
+        sender=payload.sender,
+        body=payload.body,
+        source="outlook",
+    )
+    folder = repo.artifact_dir(review_id)
     folder.mkdir(parents=True, exist_ok=True)
 
-    init_progress(folder, review_id)
-    reset_approval(folder)
+    init_progress(review_id)
+    reset_approval(review_id)
 
     try:
-        mail = _prepare_mail_payload(payload=payload, folder=folder)
+        mail = _prepare_mail_payload(payload=payload, review_id=review_id, folder=folder)
         update_step(
-            folder,
+            review_id,
             "Mail vorbereiten",
             "completed",
             "Mail und Anhänge gespeichert",
         )
     except Exception as exc:
-        fail_progress(folder, str(exc))
+        fail_progress(review_id, str(exc))
         raise HTTPException(400, f"Could not prepare mail: {exc}") from exc
 
     background_tasks.add_task(
@@ -158,8 +159,8 @@ def create_review(
 
 @app.get("/api/reviews/{review_id}/status")
 def get_review_status(review_id: str):
-    folder = _review_dir(review_id)
-    progress = read_progress(folder)
+    _common.require_review(review_id)
+    progress = read_progress(review_id)
     if progress is None:
         raise HTTPException(404, f"Progress for review {review_id} not found")
     return progress
@@ -167,18 +168,18 @@ def get_review_status(review_id: str):
 
 @app.get("/api/reviews/{review_id}/approval")
 def get_approval(review_id: str):
-    folder = _review_dir(review_id)
-    return load_approval(folder).to_dict()
+    _common.require_review(review_id)
+    return load_approval(review_id).to_dict()
 
 
 @app.post("/api/reviews/{review_id}/approval")
 def post_approval(review_id: str, payload: ApprovalTransitionRequest):
-    folder = _review_dir(review_id)
+    _common.require_review(review_id)
     if payload.target not in VALID_TRANSITIONS:
         raise HTTPException(400, f"Unknown target state: {payload.target}")
     try:
         record = transition(
-            folder,
+            review_id,
             target=cast(ApprovalState, payload.target),
             actor=payload.actor,
             changed_fields=payload.changed_fields,
@@ -193,15 +194,16 @@ def post_approval(review_id: str, payload: ApprovalTransitionRequest):
 @app.post("/api/reviews/{review_id}/reset")
 def reset_review(review_id: str, background_tasks: BackgroundTasks):
     """Reset a review and re-run the pipeline against the saved mail."""
-    folder = _review_dir(review_id)
+    _common.require_review(review_id)
+    repo = get_default_repository()
 
-    reset_review_artifacts(folder, review_id)
+    reset_review_artifacts(review_id)
 
-    mail = _rehydrate_mail_from_disk(folder)
+    mail = _rehydrate_mail(review_id)
     background_tasks.add_task(
         _run_review_pipeline,
         review_id,
-        folder,
+        repo.artifact_dir(review_id),
         mail,
     )
 
@@ -214,18 +216,11 @@ def reset_review(review_id: str, background_tasks: BackgroundTasks):
 
 
 # --------------------------------------------------------------- PDF endpoints
-#
-# Three explicit endpoints so the Streamlit UI's iframe sees three distinct
-# URLs depending on what it wants to display. Previously a single endpoint
-# served both draft and final, which combined with base64 data-URL embedding
-# in the UI confused the browser into reusing the same iframe content for
-# both tabs.
 @app.get("/api/reviews/{review_id}/pdf")
 def get_review_pdf(review_id: str):
     """Return the most appropriate PDF — final if approved, else draft."""
-    folder = _review_dir(review_id)
-
-    pdf, _ = find_current_pdf(folder, review_id)
+    _common.require_review(review_id)
+    pdf, _ = find_current_pdf(review_id)
     if pdf is None:
         raise HTTPException(404, "PDF not generated for this review")
     return _pdf_response(pdf, review_id)
@@ -234,9 +229,8 @@ def get_review_pdf(review_id: str):
 @app.get("/api/reviews/{review_id}/pdf/draft")
 def get_review_draft_pdf(review_id: str):
     """Always return the draft PDF (with the red AI warning banner)."""
-    folder = _review_dir(review_id)
-
-    pdf = find_draft_pdf(folder, review_id)
+    _common.require_review(review_id)
+    pdf = find_draft_pdf(review_id)
     if pdf is None:
         raise HTTPException(404, "Draft PDF not generated for this review")
     return _pdf_response(pdf, review_id, suffix="draft")
@@ -245,9 +239,8 @@ def get_review_draft_pdf(review_id: str):
 @app.get("/api/reviews/{review_id}/pdf/final")
 def get_review_final_pdf(review_id: str):
     """Return the final PDF — only available after the user approves."""
-    folder = _review_dir(review_id)
-
-    pdf = find_final_pdf(folder, review_id)
+    _common.require_review(review_id)
+    pdf = find_final_pdf(review_id)
     if pdf is None:
         raise HTTPException(
             404,
@@ -272,9 +265,12 @@ def _build_review_response(review_id: str, *, status: str) -> dict:
     }
 
 
-def _decode_and_save_attachments(attachments: list, folder: Path) -> list[Path]:
+def _decode_and_save_attachments(
+    attachments: list, review_id: str, folder: Path
+) -> list[Path]:
     """Decode base64 attachments and write them to folder. Returns saved paths."""
     saved: list[Path] = []
+    repo = get_default_repository()
     for attachment in attachments:
         if not attachment.contentBase64:
             continue
@@ -287,19 +283,28 @@ def _decode_and_save_attachments(attachments: list, folder: Path) -> list[Path]:
                 400,
                 f"Bad base64 in attachment '{attachment.name}': {exc}",
             ) from exc
+        repo.register_document(
+            review_id,
+            kind="attachment",
+            path=target,
+            filename=safe_name,
+            content_type=attachment.contentType,
+        )
         saved.append(target)
     return saved
 
 
-def _prepare_mail_payload(payload: MailReviewRequest, folder: Path) -> Mail:
+def _prepare_mail_payload(
+    payload: MailReviewRequest, review_id: str, folder: Path
+) -> Mail:
     meta = payload.model_dump(by_alias=True, exclude={"attachments"})
     meta["attachments"] = [
         {k: v for k, v in attachment.model_dump().items() if k != "contentBase64"}
         for attachment in payload.attachments
     ]
-    write_json(folder / ReviewFiles.MAIL, meta)
+    get_default_repository().save_mail(review_id, meta)
 
-    saved_paths = _decode_and_save_attachments(payload.attachments, folder)
+    saved_paths = _decode_and_save_attachments(payload.attachments, review_id, folder)
 
     mail = Mail(
         subject=payload.subject,
@@ -315,20 +320,15 @@ def _prepare_mail_payload(payload: MailReviewRequest, folder: Path) -> Mail:
     return mail
 
 
-def _rehydrate_mail_from_disk(folder: Path) -> Mail:
-    """Rebuild a Mail from a persisted review folder for resets."""
-    meta_path = folder / ReviewFiles.MAIL
-    if not meta_path.exists():
-        raise HTTPException(400, "No mail.json — review cannot be reset")
+def _rehydrate_mail(review_id: str) -> Mail:
+    """Rebuild a Mail from the persisted review input payload for resets."""
+    meta = get_default_repository().load_mail(review_id)
+    if meta is None:
+        raise HTTPException(400, "No persisted mail payload — review cannot be reset")
 
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        raise HTTPException(400, f"Could not parse mail.json: {exc}") from exc
-
-    mail = _mail_from_meta(meta, folder)
+    mail = mail_from_meta(meta, review_id)
     if not mail.has_content:
-        raise HTTPException(400, "Reset failed: mail has no body and no attachments on disk.")
+        raise HTTPException(400, "Reset failed: mail has no body and no registered attachments.")
     return mail
 
 
@@ -337,9 +337,11 @@ def _run_review_pipeline(
     folder: Path,
     mail: Mail,
 ) -> None:
+    repo = get_default_repository()
+
     def on_progress(progress: StepProgress) -> None:
         update_step(
-            review_dir=folder,
+            review_id=review_id,
             step_name=progress.step_name,
             status=progress.status,
             detail=progress.detail,
@@ -354,13 +356,21 @@ def _run_review_pipeline(
             work_name="pipeline",
             progress=on_progress,
             is_final=False,
+            snapshot_sink=lambda name, data: repo.save_payload(review_id, name, data),
+        )
+        repo.register_document(
+            review_id,
+            kind="draft_pdf",
+            path=result.pdf_path,
+            filename=result.pdf_path.name,
+            content_type="application/pdf",
         )
         response = _build_review_response(review_id, status="completed")
         response["summary"] = result.summary()
-        complete_progress(folder, response)
+        complete_progress(review_id, response)
     except Exception as exc:
-        log.error("Pipeline failed for review %s: %s\n%s", folder.name, exc, traceback.format_exc())
-        fail_progress(folder, str(exc))
+        log.error("Pipeline failed for review %s: %s\n%s", review_id, exc, traceback.format_exc())
+        fail_progress(review_id, str(exc))
 
 
 def _pdf_response(pdf: Path, review_id: str, *, suffix: str | None = None) -> FileResponse:

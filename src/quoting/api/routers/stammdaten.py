@@ -11,7 +11,7 @@ from quoting.api import _common
 from quoting.api.services import review_service as rs
 from quoting.api.services.quotation_service import remove_position_price_overrides
 from quoting.matching import MatchResult
-from quoting.reviews import ReviewFiles, read_json_list, write_json
+from quoting.reviews import get_default_repository
 
 router = APIRouter()
 
@@ -122,19 +122,20 @@ class CustomArticleRequest(BaseModel):
 
 
 def _set_manual_match(review_id: str, pos_nr: int, artikel_nr: str) -> dict:
-    folder = _common.review_dir(review_id)
+    _common.require_review(review_id)
     pipeline = _common.get_pipeline()
+    repo = get_default_repository()
 
     record = pipeline.stammdaten_repo.by_artikelnr(artikel_nr)
     if record is None:
         raise HTTPException(404, f"Stammdaten article '{artikel_nr}' not found")
 
-    anfrage = rs.load_or_extract_anfrage(folder, pipeline)
+    anfrage = rs.load_or_extract_anfrage(review_id, pipeline)
 
     if not any(p.pos_nr == pos_nr for p in anfrage.positionen):
         raise HTTPException(404, f"Position {pos_nr} not found in this review")
 
-    matches = rs.load_or_recompute_matches(folder, anfrage, pipeline)
+    matches = rs.load_or_recompute_matches(review_id, anfrage, pipeline)
 
     new_match = MatchResult(
         pos_nr=pos_nr,
@@ -146,8 +147,8 @@ def _set_manual_match(review_id: str, pos_nr: int, artikel_nr: str) -> dict:
     )
 
     updated = rs.upsert_match(matches, new_match)
-    write_json(folder / ReviewFiles.MATCHES_REVIEWED, [m.to_dict() for m in updated])
-    rs.invalidate_approval(folder)
+    repo.save_matches_reviewed(review_id, [m.to_dict() for m in updated])
+    rs.invalidate_approval(review_id)
 
     return {
         "pos_nr": pos_nr,
@@ -183,8 +184,9 @@ def create_custom_article_match(
     review_id: str,
     payload: CustomArticleRequest,
 ) -> dict:
-    folder = _common.review_dir(review_id)
+    _common.require_review(review_id)
     pipeline = _common.get_pipeline()
+    repo = get_default_repository()
 
     artikel_nr = rs.clean_required_text(payload.artikel_nr, "artikel_nr")
     bezeichnung = rs.clean_required_text(payload.bezeichnung, "bezeichnung")
@@ -199,7 +201,7 @@ def create_custom_article_match(
             f"Stammdaten article '{artikel_nr}' already exists",
         )
 
-    anfrage = rs.load_or_extract_anfrage(folder, pipeline)
+    anfrage = rs.load_or_extract_anfrage(review_id, pipeline)
     positions = []
     position_found = False
 
@@ -226,7 +228,7 @@ def create_custom_article_match(
         raise HTTPException(404, f"Position {payload.pos_nr} not found in this review")
 
     updated_anfrage = anfrage.model_copy(update={"positionen": positions})
-    write_json(folder / ReviewFiles.ANFRAGE_REVIEWED, updated_anfrage.model_dump(mode="json"))
+    repo.save_anfrage_reviewed(review_id, updated_anfrage.model_dump(mode="json"))
 
     custom_row = {
         "artikel_nr": artikel_nr,
@@ -245,7 +247,7 @@ def create_custom_article_match(
         "custom": True,
     }
 
-    matches = rs.load_or_recompute_matches(folder, updated_anfrage, pipeline)
+    matches = rs.load_or_recompute_matches(review_id, updated_anfrage, pipeline)
     new_match = MatchResult(
         pos_nr=payload.pos_nr,
         status="exact",
@@ -255,15 +257,15 @@ def create_custom_article_match(
         matched_row=custom_row,
     )
     updated_matches = rs.upsert_match(matches, new_match)
-    write_json(folder / ReviewFiles.MATCHES_REVIEWED, [m.to_dict() for m in updated_matches])
+    repo.save_matches_reviewed(review_id, [m.to_dict() for m in updated_matches])
 
-    overrides = read_json_list(folder / ReviewFiles.MANUAL_OVERRIDES)
-    write_json(
-        folder / ReviewFiles.MANUAL_OVERRIDES,
+    overrides = repo.load_overrides(review_id)
+    repo.save_overrides(
+        review_id,
         remove_position_price_overrides(overrides, payload.pos_nr),
     )
 
-    rs.invalidate_approval(folder)
+    rs.invalidate_approval(review_id)
 
     return {
         "pos_nr": payload.pos_nr,

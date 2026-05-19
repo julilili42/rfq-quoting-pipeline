@@ -11,6 +11,22 @@ export type ProgressCallback = (progress: PipelineProgress) => void;
 const DEFAULT_POLL_INTERVAL_MS = 900;
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
+/**
+ * Thrown when the backend reports that a review id no longer exists.
+ * Callers should treat this as a signal to drop the locally cached
+ * workflow entry — the underlying review was deleted server-side and
+ * polling will never succeed.
+ */
+export class ReviewNotFoundError extends Error {
+  readonly reviewId: string;
+
+  constructor(reviewId: string) {
+    super(`Review ${reviewId} not found`);
+    this.name = "ReviewNotFoundError";
+    this.reviewId = reviewId;
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -40,6 +56,9 @@ export async function getReviewStatus(
     method: "GET",
   });
   const text = await response.text();
+  if (response.status === 404) {
+    throw new ReviewNotFoundError(review.review_id);
+  }
   if (!response.ok) {
     throw new Error(`Status check failed (${response.status}): ${text}`);
   }
@@ -72,6 +91,9 @@ export async function getApprovalState(
   const url = `${REVIEW_API_URL}/${reviewId}/approval`;
   const response = await fetch(withCacheBust(url), { method: "GET" });
   const text = await response.text();
+  if (response.status === 404) {
+    throw new ReviewNotFoundError(reviewId);
+  }
   if (!response.ok) {
     throw new Error(`Approval check failed (${response.status}): ${text}`);
   }

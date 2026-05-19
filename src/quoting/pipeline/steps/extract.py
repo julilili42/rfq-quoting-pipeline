@@ -56,6 +56,6 @@ class ExtractionStep:
                 pos.bezeichnung[:50],
             )
 
-        ctx.persist("01_extracted.json", anfrage.model_dump(mode="json"))
+        ctx.persist("extracted", anfrage.model_dump(mode="json"))
         ctx.report(self.name, "completed", f"{len(anfrage.positionen)} Positionen")
         return anfrage

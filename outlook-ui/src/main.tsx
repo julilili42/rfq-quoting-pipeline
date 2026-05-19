@@ -28,6 +28,7 @@ import {
   getMailSettings,
   isApproved,
   pollReviewUntilComplete,
+  ReviewNotFoundError,
   startReview,
 } from "./api/reviewApi";
 import {
@@ -102,7 +103,11 @@ function shouldShowStatusCard(
   status: string,
   loading: boolean,
   pipelineVisible: boolean,
+  pipelineFailed: boolean,
 ): boolean {
+  // Pipeline failures already render inline inside the WorkflowCard
+  // (step name + error message), so a second copy down here is noise.
+  if (pipelineFailed) return false;
   if (loading && !pipelineVisible) return true;
   return (
     status.startsWith("Fehler") ||
@@ -161,7 +166,7 @@ function App() {
         const mail = await readMailSnapshot();
         const id = deriveMailId(currentItem, mail);
         maybeMigrateLegacy(id);
-        const existingWorkflow = getWorkflow(id);
+        const existingWorkflow = await reconcileWorkflowWithBackend(id);
         setMailId(id);
         setSnapshot(mail);
         setWorkflow(existingWorkflow);
@@ -198,7 +203,7 @@ function App() {
       const mail = await readSelectedMailSnapshot(selected[0].itemId);
       const id = deriveMailId({ itemId: selected[0].itemId }, mail);
       maybeMigrateLegacy(id);
-      const existingWorkflow = getWorkflow(id);
+      const existingWorkflow = await reconcileWorkflowWithBackend(id);
       setMailId(id);
       setSnapshot(mail);
       setWorkflow(existingWorkflow);
@@ -211,6 +216,31 @@ function App() {
       setStatus(`Fehler beim Laden der Mail: ${String(error)}`);
     } finally {
       setLoading(false);
+    }
+  }
+
+  /**
+   * Returns the cached workflow for this mail, or ``null`` if the
+   * referenced review no longer exists server-side. A stale local entry
+   * is cleared so the next render shows the fresh "new" card instead of
+   * a ghost review that polls forever.
+   */
+  async function reconcileWorkflowWithBackend(
+    targetMailId: string,
+  ): Promise<MailWorkflow | null> {
+    const existing = getWorkflow(targetMailId);
+    if (!existing?.review?.review_id) return existing;
+    try {
+      await getApprovalState(existing.review.review_id);
+      return existing;
+    } catch (error) {
+      if (error instanceof ReviewNotFoundError) {
+        deleteWorkflow(targetMailId);
+        return null;
+      }
+      // Network / other errors: keep the cached entry and let the
+      // polling effects retry later.
+      return existing;
     }
   }
 
@@ -533,11 +563,19 @@ function App() {
         );
         await awaitReviewCompletion(currentReview, currentMailId, false);
       } catch (error) {
-        if (!cancelled) {
+        if (cancelled) return;
+        if (error instanceof ReviewNotFoundError) {
+          deleteWorkflow(currentMailId);
+          setWorkflow(null);
+          setPipelineProgress(null);
           setStatus(
-            `Pipeline konnte nicht abgeschlossen werden: ${String(error)}`,
+            "Vorheriger Review existiert nicht mehr — Workflow zurückgesetzt.",
           );
+          return;
         }
+        setStatus(
+          `Pipeline konnte nicht abgeschlossen werden: ${String(error)}`,
+        );
       }
     }
     void resumePolling();
@@ -587,12 +625,25 @@ function App() {
           setWorkflow(updated);
           setStatus("Freigegeben. Angebotsmail bereit.");
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof ReviewNotFoundError) {
+          // The review was deleted server-side. Drop the stale local entry
+          // so the card resets to "new" — no point polling forever.
+          if (cancelled) return;
+          deleteWorkflow(currentMailId);
+          setWorkflow(null);
+          setPipelineProgress(null);
+          setStatus(
+            "Vorheriger Review existiert nicht mehr — Workflow zurückgesetzt.",
+          );
+          if (approvalPollTimerRef.current !== null) {
+            window.clearInterval(approvalPollTimerRef.current);
+            approvalPollTimerRef.current = null;
+          }
+          return;
+        }
         /*
-         * Approval endpoint failures are non-fatal — keep polling.
-         * Errors only matter if the user is actively trying to
-         * proceed, in which case the next manual action will surface
-         * the issue.
+         * Other approval endpoint failures are non-fatal — keep polling.
          */
       }
     }
@@ -620,7 +671,15 @@ function App() {
   const pipelineVisible =
     workflowState === "review_running" &&
     (loading || (pipelineProgress !== null && pipelineProgress.status !== "completed"));
-  const showStatusCard = shouldShowStatusCard(status, loading, pipelineVisible);
+  const pipelineFailed =
+    pipelineProgress?.status === "failed" ||
+    !!pipelineProgress?.steps?.some((s) => s.status === "failed");
+  const showStatusCard = shouldShowStatusCard(
+    status,
+    loading,
+    pipelineVisible,
+    pipelineFailed,
+  );
   const batchCompleted = isCompletedBatch(batchItems);
   const batchStarted = batchItems.length > 0;
   const batchWorkflowState: MailWorkflowState = batchCompleted
@@ -642,7 +701,7 @@ function App() {
           onReloadSelection={loadMail}
           onOpenOverview={() => openUrl(REVIEW_OVERVIEW_URL)}
         />
-        {shouldShowStatusCard(status, false, false) && (
+        {shouldShowStatusCard(status, false, false, false) && (
           <StatusCard status={status} loading={loading} />
         )}
         {!batchCompleted && <OverviewLink />}

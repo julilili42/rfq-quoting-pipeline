@@ -4,23 +4,19 @@ from quoting.api import _common
 from quoting.api.routers import reviews as reviews_router
 
 
-def test_delete_review_removes_review_folder(tmp_path, monkeypatch):
-    monkeypatch.setattr(_common, "REVIEW_DIR", tmp_path)
-    review_dir = tmp_path / "review-123"
-    review_dir.mkdir()
-    (review_dir / "mail.json").write_text("{}", encoding="utf-8")
+def test_delete_review_removes_review_folder(sqlite_repo):
+    sqlite_repo.create_review("review-123", subject="Anfrage")
+    folder = sqlite_repo.artifact_dir("review-123")
+    (folder / "rfq.pdf").write_bytes(b"%PDF-test")
 
     response = reviews_router.delete_review("review-123")
 
     assert response.status_code == 204
-    assert not review_dir.exists()
+    assert not folder.exists()
+    assert sqlite_repo.get_review("review-123") is None
 
 
-def test_review_dir_rejects_path_traversal(tmp_path, monkeypatch):
-    monkeypatch.setattr(_common, "REVIEW_DIR", tmp_path / "reviews")
-    outside = tmp_path / "outside"
-    outside.mkdir()
-
+def test_review_dir_rejects_path_traversal(sqlite_repo):
     try:
         _common.review_dir("../outside")
     except HTTPException as exc:

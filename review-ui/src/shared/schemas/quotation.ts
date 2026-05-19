@@ -44,8 +44,8 @@ export type Quotation = z.infer<typeof quotationSchema>;
 /**
  * Manual override applied between pricing and rendering.
  *
- * The Streamlit UI persists these as `manual_overrides.json`. We send
- * them on every regenerate call.
+ * The backend persists these as the `manual_overrides.json` logical payload
+ * in SQLite. We send them on every regenerate call.
  */
 export const manualOverrideSchema = z.union([
   z.object({

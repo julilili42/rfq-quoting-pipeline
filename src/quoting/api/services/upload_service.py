@@ -12,7 +12,7 @@ from quoting.api import _common
 from quoting.api.progress_store import init_progress
 from quoting.api.services.review_service import build_mail
 from quoting.ingestion import detect_file_type
-from quoting.reviews import ReviewFiles, write_json
+from quoting.reviews import get_default_repository
 
 _ALLOWED_UPLOAD_TYPES = {"pdf", "xlsx", "csv", "eml", "msg"}
 
@@ -44,17 +44,26 @@ async def create_review_from_upload(file: UploadFile) -> str:
         )
 
     review_id = uuid.uuid4().hex[:12]
-    folder = _common.REVIEW_DIR / review_id
+    repo = get_default_repository()
+    repo.create_review(review_id, subject=Path(file.filename).stem, source="upload")
+    folder = repo.artifact_dir(review_id)
     folder.mkdir(parents=True, exist_ok=True)
 
-    init_progress(folder, review_id)
+    init_progress(review_id)
 
     target = folder / safe_name
     with target.open("wb") as fh:
         shutil.copyfileobj(file.file, fh)
+    repo.register_document(
+        review_id,
+        kind="attachment",
+        path=target,
+        filename=safe_name,
+        content_type=file.content_type,
+    )
 
-    write_json(
-        folder / ReviewFiles.MAIL,
+    repo.save_mail(
+        review_id,
         {
             "subject": Path(file.filename).stem,
             "from": "",
@@ -65,7 +74,19 @@ async def create_review_from_upload(file: UploadFile) -> str:
 
     try:
         mail = build_mail(target)
-        _common.get_pipeline().run(mail, output_dir=_common.REVIEW_DIR, work_name=review_id)
+        result = _common.get_pipeline().run(
+            mail,
+            output_dir=_common.REVIEW_DIR,
+            work_name=review_id,
+            snapshot_sink=lambda name, data: repo.save_payload(review_id, name, data),
+        )
+        repo.register_document(
+            review_id,
+            kind="draft_pdf",
+            path=result.pdf_path,
+            filename=result.pdf_path.name,
+            content_type="application/pdf",
+        )
     except Exception as exc:
         raise HTTPException(500, f"Pipeline failed: {exc}") from exc
 

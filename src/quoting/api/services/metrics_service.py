@@ -1,10 +1,8 @@
-"""Aggregate review-level metrics for the dashboard."""
+"""Aggregate review-level metrics for the dashboard from SQLite."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from quoting.api.progress_store import read_progress
+from quoting.reviews.sqlite_repository import get_default_repository
 
 
 def _extract_summary_metrics(summary: dict) -> tuple[int, float, float, float]:
@@ -22,7 +20,7 @@ def _extract_summary_metrics(summary: dict) -> tuple[int, float, float, float]:
 
 
 def _accumulate_review_into(
-    folder: Path,
+    review_id: str,
     progress: dict,
     agg: dict,
     per_review: list,
@@ -60,7 +58,7 @@ def _accumulate_review_into(
         agg["llm_calls"] += 1
 
     per_review.append({
-        "review_id": folder.name,
+        "review_id": review_id,
         "subject": str(summary.get("subject") or ""),
         "status": progress.get("status"),
         "updated_at": str(progress.get("updated_at") or ""),
@@ -73,7 +71,8 @@ def _accumulate_review_into(
     })
 
 
-def compute_metrics(review_dir: Path) -> dict:
+def compute_metrics() -> dict:
+    repo = get_default_repository()
     per_review: list[dict] = []
     agg: dict = dict(
         total_reviews=0, completed_reviews=0, total_positions=0,
@@ -84,17 +83,11 @@ def compute_metrics(review_dir: Path) -> dict:
         fast_path_hits=0, llm_calls=0,
     )
 
-    if not review_dir.exists():
-        agg.update(avg_duration_s=0.0, avg_match_rate=0.0)
-        return {**agg, "per_review": []}
-
-    for folder in sorted(review_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-        if not folder.is_dir():
-            continue
-        progress = read_progress(folder)
-        if progress is None:
-            continue
-        _accumulate_review_into(folder, progress, agg, per_review)
+    for row in repo.list_reviews():
+        review_id = str(row["review_id"])
+        progress = repo.load_progress(review_id)
+        if progress is not None:
+            _accumulate_review_into(review_id, progress, agg, per_review)
 
     reviews_with_duration = agg.pop("reviews_with_duration") or 1
     reviews_with_match = agg.pop("reviews_with_match") or 1

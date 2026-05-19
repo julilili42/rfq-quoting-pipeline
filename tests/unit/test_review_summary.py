@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from quoting.reviews import draft_pdf_filename, scan_reviews, write_json
+from quoting.reviews import Payloads, draft_pdf_filename, scan_reviews
 
 
-def _review_folder(tmp_path: Path, review_id: str = "review-1") -> Path:
-    folder = tmp_path / review_id
-    folder.mkdir()
-    write_json(
-        folder / "mail.json",
+def _seed_review(sqlite_repo, review_id: str = "review-1", *, with_pdf: bool = True) -> Path:
+    sqlite_repo.create_review(review_id, subject="Preisanfrage", sender="kunde@example.com")
+    folder = sqlite_repo.artifact_dir(review_id)
+    sqlite_repo.save_mail(
+        review_id,
         {
             "subject": "Preisanfrage",
             "from": "kunde@example.com",
@@ -17,17 +17,27 @@ def _review_folder(tmp_path: Path, review_id: str = "review-1") -> Path:
             "attachments": [],
         },
     )
-    write_json(folder / "01_extracted.json", {"positionen": []})
-    write_json(folder / "02_matches.json", [])
-    write_json(folder / "03_quotation.json", {"gesamtsumme": 0, "waehrung": "EUR"})
-    (folder / draft_pdf_filename(review_id)).write_bytes(b"%PDF-1.4\n")
+    sqlite_repo.save_extracted(review_id, {"positionen": []})
+    sqlite_repo.save_matches_initial(review_id, [])
+    sqlite_repo.save_quotation_initial(review_id, {"gesamtsumme": 0, "waehrung": "EUR"})
+    if with_pdf:
+        pdf = folder / draft_pdf_filename(review_id)
+        pdf.write_bytes(b"%PDF-1.4\n")
+        sqlite_repo.register_document(
+            review_id,
+            kind="draft_pdf",
+            path=pdf,
+            filename=pdf.name,
+            content_type="application/pdf",
+        )
     return folder
 
 
-def test_scan_reviews_marks_approved_review_as_completed(tmp_path):
-    folder = _review_folder(tmp_path)
-    write_json(
-        folder / "approval.json",
+def test_scan_reviews_marks_approved_review_as_completed(sqlite_repo):
+    _seed_review(sqlite_repo)
+    sqlite_repo.save_payload(
+        "review-1",
+        Payloads.APPROVAL,
         {
             "state": "approved",
             "approved_by": "Tester",
@@ -35,26 +45,24 @@ def test_scan_reviews_marks_approved_review_as_completed(tmp_path):
         },
     )
 
-    [summary] = scan_reviews(tmp_path)
+    [summary] = scan_reviews()
 
     assert summary.status == "abgeschlossen"
 
 
-def test_scan_reviews_keeps_unapproved_draft_in_review_bucket(tmp_path):
-    folder = _review_folder(tmp_path)
-    write_json(folder / "approval.json", {"state": "draft_generated"})
-    write_json(folder / "review_state.json", {"review_id": "review-1"})
+def test_scan_reviews_keeps_unapproved_draft_in_review_bucket(sqlite_repo):
+    _seed_review(sqlite_repo)
+    sqlite_repo.save_payload("review-1", Payloads.APPROVAL, {"state": "draft_generated"})
 
-    [summary] = scan_reviews(tmp_path)
+    [summary] = scan_reviews()
 
     assert summary.status == "pdf_bereit"
 
 
-def test_scan_reviews_uses_in_progress_for_review_without_pdf(tmp_path):
-    folder = _review_folder(tmp_path)
-    (folder / draft_pdf_filename("review-1")).unlink()
-    write_json(folder / "approval.json", {"state": "draft_generated"})
+def test_scan_reviews_uses_in_progress_for_review_without_pdf(sqlite_repo):
+    _seed_review(sqlite_repo, with_pdf=False)
+    sqlite_repo.save_payload("review-1", Payloads.APPROVAL, {"state": "draft_generated"})
 
-    [summary] = scan_reviews(tmp_path)
+    [summary] = scan_reviews()
 
     assert summary.status == "in_arbeit"

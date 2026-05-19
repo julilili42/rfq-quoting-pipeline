@@ -1,9 +1,4 @@
-"""Shared dependencies for the frontend router and its sub-routers.
-
-Keeping ``REVIEW_DIR`` and the cached ``QuotingPipeline`` here lets every
-sub-router agree on the same configuration, and lets tests monkeypatch a
-single location.
-"""
+"""Shared dependencies for the frontend router and its sub-routers."""
 
 from __future__ import annotations
 
@@ -13,9 +8,11 @@ from fastapi import HTTPException
 from fastapi.responses import FileResponse
 
 from quoting.pipeline import QuotingPipeline
+from quoting.reviews import default_artifact_root, get_default_repository
+from quoting.reviews.sqlite_repository import SQLiteReviewRepository
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-REVIEW_DIR = PROJECT_ROOT / "data" / "reviews"
+REVIEW_DIR = default_artifact_root()
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
@@ -29,15 +26,24 @@ def get_pipeline() -> QuotingPipeline:
     return _pipeline
 
 
-def review_dir(review_id: str) -> Path:
-    root = REVIEW_DIR.resolve()
-    folder = (REVIEW_DIR / review_id).resolve()
-    try:
-        folder.relative_to(root)
-    except ValueError as exc:
-        raise HTTPException(404, f"Review {review_id} not found") from exc
-    if not folder.exists() or not folder.is_dir():
+def get_review_repo() -> SQLiteReviewRepository:
+    return get_default_repository()
+
+
+def require_review(review_id: str) -> str:
+    """Validate ``review_id`` exists and return it. Raises 404 otherwise."""
+    if "/" in review_id or "\\" in review_id or review_id in {".", ".."}:
         raise HTTPException(404, f"Review {review_id} not found")
+    if not get_default_repository().exists(review_id):
+        raise HTTPException(404, f"Review {review_id} not found")
+    return review_id
+
+
+def review_dir(review_id: str) -> Path:
+    """Return the on-disk artifact directory for an existing review."""
+    require_review(review_id)
+    folder = get_default_repository().artifact_dir(review_id)
+    folder.mkdir(parents=True, exist_ok=True)
     return folder
 
 

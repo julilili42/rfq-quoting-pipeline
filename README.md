@@ -134,3 +134,21 @@ With `uv`:
 uv run pytest
 uv run pytest tests/unit
 ```
+
+## Persistence
+
+New review state is stored in SQLite at:
+
+```text
+data/quoting.sqlite
+```
+
+Binary artifacts such as attachments and generated PDFs are stored under:
+
+```text
+data/artifacts/reviews/{review_id}/
+```
+
+The old `data/reviews/{review_id}` JSON sidecar layout is no longer used.
+Runtime state now lives in SQLite; files under `data/artifacts/reviews` are
+binary artifacts referenced by the database.

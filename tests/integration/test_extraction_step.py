@@ -76,7 +76,7 @@ def test_happy_path_returns_anfrage(tmp_path, ctx, monkeypatch):
     assert len(anfrage.positionen) == 1
     assert anfrage.positionen[0].artikelnummer == "001GLP108015"
     assert ctx.extra["token_usage"] == usage
-    assert (tmp_path / "01_extracted.json").exists()
+    assert (tmp_path / "extracted.json").exists()
 
 
 def test_llm_failure_raises_extraction_error(tmp_path, ctx, monkeypatch):

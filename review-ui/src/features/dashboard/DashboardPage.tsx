@@ -284,7 +284,7 @@ function DeleteReviewsDialog({
           <DialogDescription>
             {selectedCount} ausgewählte Anfrage
             {selectedCount === 1 ? "" : "n"} werden dauerhaft aus der
-            Review-Übersicht und aus <code>data/reviews</code> entfernt.
+            Review-Übersicht und dem Review-Speicher entfernt.
           </DialogDescription>
         </DialogHeader>
 
