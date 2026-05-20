@@ -14,8 +14,7 @@ Public surface
 * :class:`InMemoryStammdatenRepository` — simple constructor-injected
   store; useful for tests.
 * :func:`build_repository` — picks the right implementation for a path
-  (or falls back to a small mock dataset when the file is missing,
-  matching the historical behaviour of ``load_stammdaten``).
+  (or falls back to a small mock dataset when the file is missing).
 """
 
 from __future__ import annotations

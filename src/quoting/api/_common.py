@@ -18,7 +18,6 @@ from quoting.api.use_cases.errors import (
     UseCaseUnprocessable,
 )
 from quoting.pipeline import QuotingPipeline
-from quoting.reviews import default_artifact_root
 from quoting.reviews.sqlite_repository import SQLiteReviewRepository
 
 if TYPE_CHECKING:
@@ -26,7 +25,6 @@ if TYPE_CHECKING:
     from quoting.api.services.review_workflow_service import ReviewWorkflowService
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-REVIEW_DIR = default_artifact_root()
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 

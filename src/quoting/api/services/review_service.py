@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from quoting.api.approval_store import ApprovalStore
-from quoting.api.container import get_app_container
 from quoting.core import Anfrage
 from quoting.ingestion import Mail
 from quoting.matching import MatchResult, match_positions
@@ -151,27 +150,6 @@ class ReviewDataService:
             )
 
 
-def default_review_data_service() -> ReviewDataService:
-    repo = get_app_container().review_repo()
-    return ReviewDataService(repo=repo, approval_store=ApprovalStore(repo))
-
-
-def load_or_extract_anfrage(review_id: str, pipeline: QuotingPipeline) -> Anfrage:
-    return default_review_data_service().load_or_extract_anfrage(review_id, pipeline)
-
-
-def load_or_recompute_matches(
-    review_id: str,
-    anfrage: Anfrage,
-    pipeline: QuotingPipeline,
-) -> list[MatchResult]:
-    return default_review_data_service().load_or_recompute_matches(
-        review_id,
-        anfrage,
-        pipeline,
-    )
-
-
 def enrich_exact_article_edits(
     anfrage: Anfrage,
     previous: Anfrage | None,
@@ -227,10 +205,6 @@ def upsert_match(matches: list[MatchResult], new_match: MatchResult) -> list[Mat
     if not any(m.pos_nr == new_match.pos_nr for m in matches):
         updated.append(new_match)
     return updated
-
-
-def invalidate_approval(review_id: str) -> None:
-    default_review_data_service().invalidate_approval(review_id)
 
 
 def clean_required_text(value: str, field_name: str) -> str:
