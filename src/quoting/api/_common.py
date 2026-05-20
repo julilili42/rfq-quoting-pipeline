@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
 
 from quoting.api.container import AppContainer, get_app_container
+from quoting.api.use_cases.errors import (
+    UseCaseBadRequest,
+    UseCaseConflict,
+    UseCaseError,
+    UseCaseFailure,
+    UseCaseUnprocessable,
+)
 from quoting.pipeline import QuotingPipeline
 from quoting.reviews import default_artifact_root
 from quoting.reviews.sqlite_repository import SQLiteReviewRepository
@@ -23,6 +31,7 @@ REVIEW_DIR = default_artifact_root()
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 _pipeline: QuotingPipeline | None = None
+T = TypeVar("T")
 
 
 def get_container() -> AppContainer:
@@ -52,6 +61,24 @@ def get_review_workflow_service(
 
 def get_review_read_service() -> ReviewReadService:
     return get_container().review_read_service()
+
+
+def raise_http_for_use_case_error(exc: UseCaseError) -> None:
+    status_code = {
+        UseCaseBadRequest: 400,
+        UseCaseConflict: 409,
+        UseCaseUnprocessable: 422,
+        UseCaseFailure: 500,
+    }.get(type(exc), 500)
+    raise HTTPException(status_code=status_code, detail=exc.detail) from exc
+
+
+def run_use_case(action: Callable[[], T]) -> T:
+    try:
+        return action()
+    except UseCaseError as exc:
+        raise_http_for_use_case_error(exc)
+        raise
 
 
 def require_review(review_id: str) -> str:

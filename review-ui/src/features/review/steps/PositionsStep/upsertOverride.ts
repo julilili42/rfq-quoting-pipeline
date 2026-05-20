@@ -2,7 +2,7 @@ import type { ManualOverride } from "@/shared/schemas/quotation";
 
 /**
  * Replace an override targeting the same pos/article, or append a new one.
- * Mirrors `quoting/ui/review_agent.upsert_override`.
+ * Mirrors `quoting/pricing/overrides.upsert_override`.
  */
 export function upsertOverride(
   list: ManualOverride[],

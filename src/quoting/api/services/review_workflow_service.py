@@ -6,17 +6,13 @@ regenerating the draft PDF, and finalizing a quotation.
 """
 from __future__ import annotations
 
-import base64
 import logging
-import shutil
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import HTTPException
-from pydantic import ValidationError
 
 from quoting.api.approval_store import (
     VALID_TRANSITIONS,
@@ -25,9 +21,6 @@ from quoting.api.approval_store import (
     ApprovalStore,
 )
 from quoting.api.progress_store import ProgressStore
-
-if TYPE_CHECKING:
-    from quoting.api.pipeline_coordinator import PipelineCoordinator
 from quoting.api.services.quality_gate_service import (
     QualityGateResult,
     evaluate_quality_gate,
@@ -35,28 +28,34 @@ from quoting.api.services.quality_gate_service import (
 from quoting.api.services.quotation_service import (
     build_quotation_with_overrides,
     filter_redundant_custom_price_overrides,
-    resolve_filename_template,
-    sanitize_pdf_filename,
 )
 from quoting.api.services.review_read_service import ReviewReadService
-from quoting.api.services.review_service import (
-    ReviewDataService,
-    enrich_exact_article_edits,
-)
+from quoting.api.services.review_service import ReviewDataService
 from quoting.api.settings_store import AppSettings, load_user_settings
+from quoting.api.use_cases.dtos import IncomingMailReview
+from quoting.api.use_cases.review_workflow import (
+    CreateReviewFromMailUseCase,
+    DeleteReviewUseCase,
+    FinalizeQuotationUseCase,
+    GetReviewDetailUseCase,
+    RegenerateQuotationUseCase,
+    ResetReviewUseCase,
+    SaveOverridesUseCase,
+    UpdateAnfrageUseCase,
+    format_mail_dict,
+)
+from quoting.api.use_cases.review_workflow import (
+    build_review_response as build_review_response_payload,
+)
 from quoting.core import Anfrage
-from quoting.ingestion import Mail
-from quoting.matching import MatchResult, match_positions
+from quoting.matching import MatchResult
 from quoting.output import build_draft_pdf
 from quoting.pipeline import QuotingPipeline
 from quoting.pricing import Quotation
-from quoting.reviews import (
-    api_base_url,
-    draft_pdf_filename,
-    final_pdf_filename,
-    reset_review_artifacts,
-)
 from quoting.reviews.sqlite_repository import SQLiteReviewRepository
+
+if TYPE_CHECKING:
+    from quoting.api.pipeline_coordinator import PipelineCoordinator
 
 log = logging.getLogger("quoting.frontend_router")
 
@@ -72,43 +71,6 @@ QualityGateEvaluator = Callable[
 PdfBuilder = Callable[..., None]
 SettingsLoader = Callable[[], AppSettings]
 ApprovalTransition = Callable[..., ApprovalRecord]
-
-
-@dataclass(frozen=True)
-class IncomingMailAttachment:
-    name: str
-    content_type: str | None = None
-    size: int | None = None
-    id: str | None = None
-    content_base64: str | None = None
-
-    def meta_dict(self) -> dict:
-        result: dict[str, Any] = {"name": self.name}
-        if self.content_type is not None:
-            result["contentType"] = self.content_type
-        if self.size is not None:
-            result["size"] = self.size
-        if self.id is not None:
-            result["id"] = self.id
-        return result
-
-
-@dataclass(frozen=True)
-class IncomingMailReview:
-    subject: str
-    sender: str
-    body: str
-    attachments: list[IncomingMailAttachment]
-    outlook_item_id: str | None = None
-
-
-def format_mail_dict(mail_meta: dict) -> dict:
-    return {
-        "subject": str(mail_meta.get("subject") or ""),
-        "from": str(mail_meta.get("from") or mail_meta.get("sender") or ""),
-        "body": str(mail_meta.get("body") or ""),
-        "attachments": list(mail_meta.get("attachments") or []),
-    }
 
 
 def load_review_data(
@@ -199,62 +161,23 @@ class ReviewWorkflowService:
         self,
         payload: IncomingMailReview,
     ) -> dict:
-        coordinator = self._require_coordinator()
-        review_id = uuid.uuid4().hex[:12]
-        self.repo.create_review(
-            review_id,
-            subject=payload.subject,
-            sender=payload.sender,
-            body=payload.body,
-            source="outlook",
-            outlook_item_id=payload.outlook_item_id,
-        )
-        folder = self.repo.artifact_dir(review_id)
-        folder.mkdir(parents=True, exist_ok=True)
-
-        self.progress_store_for_review.init(review_id)
-        self.approvals.reset(review_id)
-
-        try:
-            # _prepare_mail_payload validates the mail has content and
-            # persists attachments to disk. The worker reads the mail
-            # back out of SQLite when extract runs.
-            self._prepare_mail_payload(payload, review_id, folder)
-            self.progress_store_for_review.update_step(
-                review_id,
-                "Mail vorbereiten",
-                "completed",
-                "Mail und Anhänge gespeichert",
-            )
-        except Exception as exc:
-            self.progress_store_for_review.fail(review_id, str(exc))
-            raise HTTPException(400, f"Could not prepare mail: {exc}") from exc
-
-        coordinator.start_pipeline(review_id)
-        return self.build_review_response(review_id, status="running")
-
-    def reset_review(self, review_id: str) -> dict:
-        """Reset a review and re-run the pipeline against the saved mail."""
-        coordinator = self._require_coordinator()
-        reset_review_artifacts(
-            review_id,
+        return CreateReviewFromMailUseCase(
             repo=self.repo,
             progress_store=self.progress_store_for_review,
             approval_store=self.approvals,
-        )
+            coordinator=self._require_coordinator(),
+            review_ui_base_url=self.review_ui_base_url,
+        ).execute(payload)
 
-        # Sanity-check that the saved mail is still usable before we
-        # enqueue work. The handler would raise StepInputMissing
-        # otherwise, but doing it here gives the API a clean 400.
-        self._rehydrate_mail(review_id)
-        coordinator.start_pipeline(review_id)
-
-        base = api_base_url()
-        return {
-            "review_id": review_id,
-            "status": "running",
-            "status_url": f"{base}/api/reviews/{review_id}/status",
-        }
+    def reset_review(self, review_id: str) -> dict:
+        """Reset a review and re-run the pipeline against the saved mail."""
+        return ResetReviewUseCase(
+            repo=self.repo,
+            progress_store=self.progress_store_for_review,
+            approval_store=self.approvals,
+            review_data=self.review_data_service,
+            coordinator=self._require_coordinator(),
+        ).execute(review_id)
 
     def get_progress(self, review_id: str) -> dict[str, Any]:
         progress = self.progress_store_for_review.read(review_id)
@@ -338,18 +261,11 @@ class ReviewWorkflowService:
         return {"review_id": review_id}
 
     def build_review_response(self, review_id: str, *, status: str) -> dict:
-        base = api_base_url()
-        return {
-            "review_id": review_id,
-            "review_url": f"{self.review_ui_base_url}?review_id={review_id}",
-            "draft_pdf_url": f"{base}/api/reviews/{review_id}/pdf/draft",
-            "draft_pdf_filename": draft_pdf_filename(review_id),
-            "final_pdf_url": f"{base}/api/reviews/{review_id}/pdf/final",
-            "final_pdf_filename": final_pdf_filename(review_id),
-            "status_url": f"{base}/api/reviews/{review_id}/status",
-            "approval_url": f"{base}/api/reviews/{review_id}/approval",
-            "status": status,
-        }
+        return build_review_response_payload(
+            review_id,
+            status=status,
+            review_ui_base_url=self.review_ui_base_url,
+        )
 
     def list_reviews(self, summaries: list[Any] | None = None) -> list[dict]:
         summaries = summaries if summaries is not None else self.review_reads.scan_reviews()
@@ -379,125 +295,43 @@ class ReviewWorkflowService:
         ]
 
     def get_detail(self, review_id: str) -> dict:
-        anfrage = self.review_data_service.load_or_extract_anfrage(review_id, self.pipeline)
-        original_anfrage = (
-            self.review_data_service.try_load_original_anfrage(review_id) or anfrage
-        )
-        matches = self.review_data_service.load_or_recompute_matches(
-            review_id,
-            anfrage,
-            self.pipeline,
-        )
-        quotation = self.review_reads.load_saved_quotation(review_id)
-
-        overrides = self.repo.load_overrides(review_id)
-        overrides = filter_redundant_custom_price_overrides(overrides, matches)
-
-        mail_meta = self.repo.load_mail(review_id) or {}
-        progress = self.repo.load_progress(review_id) or {}
-
-        return {
-            "review_id": review_id,
-            "created_at": progress.get("created_at"),
-            "anfrage": anfrage.model_dump(mode="json"),
-            "original_anfrage": original_anfrage.model_dump(mode="json"),
-            "matches": [m.to_dict() for m in matches],
-            "quotation": quotation.to_dict() if quotation else None,
-            "manual_overrides": overrides,
-            "mail": format_mail_dict(mail_meta),
-            "has_draft_pdf": self.review_reads.find_draft_pdf(review_id) is not None,
-            "has_final_pdf": self.review_reads.find_final_pdf(review_id) is not None,
-        }
+        return GetReviewDetailUseCase(
+            repo=self.repo,
+            pipeline=self.pipeline,
+            review_data=self.review_data_service,
+            review_reads=self.review_reads,
+        ).execute(review_id)
 
     def delete_review(self, review_id: str) -> None:
-        folder = self.repo.artifact_dir(review_id)
-        try:
-            if folder.exists():
-                shutil.rmtree(folder)
-            self.repo.delete_review(review_id)
-        except OSError as exc:
-            log.exception("delete_review: could not delete %s", review_id)
-            raise HTTPException(500, f"Review konnte nicht gelöscht werden: {exc}") from exc
+        DeleteReviewUseCase(repo=self.repo).execute(review_id)
 
     def get_mail(self, review_id: str) -> dict:
         meta = self.repo.load_mail(review_id) or {}
         return format_mail_dict(meta)
 
     def update_anfrage(self, review_id: str, payload: dict) -> dict:
-        try:
-            anfrage = Anfrage.model_validate(payload)
-        except ValidationError as exc:
-            raise HTTPException(400, f"Invalid Anfrage payload: {exc}") from exc
-
-        previous = self.review_data_service.try_load_anfrage(review_id)
-        anfrage = enrich_exact_article_edits(anfrage, previous, self.pipeline)
-
-        self.repo.save_anfrage_reviewed(review_id, anfrage.model_dump(mode="json"))
-        if self.repo.has_matches_reviewed(review_id):
-            matches = self.review_data_service.load_or_recompute_matches(
-                review_id,
-                anfrage,
-                self.pipeline,
-            )
-            self.repo.save_matches_reviewed(review_id, [m.to_dict() for m in matches])
-        else:
-            try:
-                matches = match_positions(
-                    anfrage.positionen,
-                    self.pipeline.stammdaten,
-                    fuzzy_threshold=self.pipeline.settings.fuzzy_threshold,
-                    semantic_threshold=self.pipeline.settings.semantic_threshold,
-                )
-            except Exception as exc:
-                log.exception("put_anfrage: match recompute failed for %s", review_id)
-                raise HTTPException(422, f"Matching fehlgeschlagen: {exc}") from exc
-            self.repo.save_matches_initial(review_id, [m.to_dict() for m in matches])
-
-        self.review_data_service.invalidate_approval(review_id)
-        return anfrage.model_dump(mode="json")
+        return UpdateAnfrageUseCase(
+            repo=self.repo,
+            pipeline=self.pipeline,
+            review_data=self.review_data_service,
+        ).execute(review_id, payload)
 
     def save_overrides(self, review_id: str, payload: list[dict]) -> list[dict]:
-        if not isinstance(payload, list):
-            raise HTTPException(400, "Overrides payload must be a list")
-
-        self.repo.save_overrides(review_id, payload)
-        self.review_data_service.invalidate_approval(review_id)
-        return payload
+        return SaveOverridesUseCase(
+            repo=self.repo,
+            review_data=self.review_data_service,
+        ).execute(review_id, payload)
 
     def regenerate_quotation(self, review_id: str) -> dict:
-        folder = self._review_dir(review_id)
-        anfrage, matches, overrides = self._load_review_data(review_id)
-        company_profile = self.settings_loader().company
-        quotation = self.quotation_builder(
-            anfrage,
-            matches,
-            overrides,
-            self.pipeline.settings.preise_path,
-            review_id,
-        )
-
-        pdf_path = folder / draft_pdf_filename(review_id)
-        try:
-            self.pdf_builder(
-                anfrage,
-                quotation,
-                pdf_path,
-                is_final=False,
-                company_profile=company_profile,
-            )
-        except Exception as exc:
-            log.exception("regenerate: PDF build failed for %s", review_id)
-            raise HTTPException(422, f"PDF-Erstellung fehlgeschlagen: {exc}") from exc
-
-        self.repo.register_document(
-            review_id,
-            kind="draft_pdf",
-            path=pdf_path,
-            filename=pdf_path.name,
-            content_type="application/pdf",
-        )
-        self.repo.save_quotation_reviewed(review_id, quotation.to_dict())
-        return quotation.to_dict()
+        return RegenerateQuotationUseCase(
+            repo=self.repo,
+            pipeline=self.pipeline,
+            settings_loader=self.settings_loader,
+            review_data_loader=self.review_data_loader,
+            review_data=self.review_data_service,
+            quotation_builder=self.quotation_builder,
+            pdf_builder=self.pdf_builder,
+        ).execute(review_id)
 
     def finalize_quotation(
         self,
@@ -508,156 +342,21 @@ class ReviewWorkflowService:
         warning_acknowledged: bool,
         exception_reason: str | None,
     ) -> dict:
-        folder = self._review_dir(review_id)
-        anfrage, matches, overrides = self._load_review_data(review_id)
-        user_settings = self.settings_loader()
-        company_profile = user_settings.company
-        quotation = self.quotation_builder(
-            anfrage,
-            matches,
-            overrides,
-            self.pipeline.settings.preise_path,
-            review_id,
-        )
-        quality_gate = self.quality_gate_evaluator(anfrage, matches, quotation, overrides)
-        if quality_gate.requires_acknowledgement and not warning_acknowledged:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": "Freigabe benötigt eine bewusste Bestätigung offener Prüfpunkte.",
-                    "quality_gate": quality_gate.to_dict(),
-                },
-            )
-
-        if filename:
-            final_filename = sanitize_pdf_filename(filename)
-        else:
-            template = user_settings.workflow.final_pdf_filename_template or "Angebot_[Kunde].pdf"
-            final_filename = resolve_filename_template(template, anfrage, review_id)
-
-        final_path = folder / final_filename
-        try:
-            self.pdf_builder(
-                anfrage,
-                quotation,
-                final_path,
-                is_final=True,
-                company_profile=company_profile,
-            )
-        except Exception as exc:
-            log.exception("finalize: PDF build failed for %s", review_id)
-            raise HTTPException(422, f"Final-PDF konnte nicht erstellt werden: {exc}") from exc
-
-        try:
-            transition = self.approval_transition or self.approvals.transition
-            record = transition(
-                review_id,
-                target="approved",
-                actor=actor,
-                warning_acknowledged=bool(
-                    warning_acknowledged and quality_gate.requires_acknowledgement
-                ),
-                exception_reason=exception_reason,
-                final_pdf_path=final_path.name,
-            )
-        except Exception as exc:
-            # Roll back the just-written final PDF so the filesystem doesn't
-            # diverge from the approval state.
-            final_path.unlink(missing_ok=True)
-            log.exception("finalize: approval transition failed for %s; rolled back PDF", review_id)
-            raise HTTPException(500, f"Status-Übergang fehlgeschlagen: {exc}") from exc
-
-        self.repo.register_document(
-            review_id,
-            kind="final_pdf",
-            path=final_path,
-            filename=final_path.name,
-            content_type="application/pdf",
-        )
-        return {"final_pdf_path": record.final_pdf_path or final_path.name}
-
-    def _load_review_data(self, review_id: str) -> tuple[Anfrage, list[MatchResult], list[dict]]:
-        loader = self.review_data_loader
-        if loader is not None:
-            return loader(review_id, self.pipeline)
-        return load_review_data(
-            review_id,
-            self.pipeline,
+        return FinalizeQuotationUseCase(
             repo=self.repo,
-            review_data_service=self.review_data_service,
+            pipeline=self.pipeline,
+            settings_loader=self.settings_loader,
+            review_data_loader=self.review_data_loader,
+            review_data=self.review_data_service,
+            quotation_builder=self.quotation_builder,
+            quality_gate_evaluator=self.quality_gate_evaluator,
+            pdf_builder=self.pdf_builder,
+            approval_store=self.approvals,
+            approval_transition=self.approval_transition,
+        ).execute(
+            review_id,
+            actor=actor,
+            filename=filename,
+            warning_acknowledged=warning_acknowledged,
+            exception_reason=exception_reason,
         )
-
-    def _review_dir(self, review_id: str) -> Path:
-        folder = self.repo.artifact_dir(review_id)
-        folder.mkdir(parents=True, exist_ok=True)
-        return folder
-
-    def _decode_and_save_attachments(
-        self,
-        attachments: list[IncomingMailAttachment],
-        review_id: str,
-        folder: Path,
-    ) -> list[Path]:
-        """Decode base64 attachments and write them to folder. Returns saved paths."""
-        saved: list[Path] = []
-        for attachment in attachments:
-            if not attachment.content_base64:
-                continue
-            safe_name = Path(attachment.name).name or f"attachment_{len(saved)}"
-            target = folder / safe_name
-            try:
-                target.write_bytes(base64.b64decode(attachment.content_base64))
-            except Exception as exc:
-                raise HTTPException(
-                    400,
-                    f"Bad base64 in attachment '{attachment.name}': {exc}",
-                ) from exc
-            self.repo.register_document(
-                review_id,
-                kind="attachment",
-                path=target,
-                filename=safe_name,
-                content_type=attachment.content_type,
-            )
-            saved.append(target)
-        return saved
-
-    def _prepare_mail_payload(
-        self,
-        payload: IncomingMailReview,
-        review_id: str,
-        folder: Path,
-    ) -> Mail:
-        meta = {
-            "subject": payload.subject,
-            "from": payload.sender,
-            "body": payload.body,
-            "attachments": [attachment.meta_dict() for attachment in payload.attachments],
-        }
-        self.repo.save_mail(review_id, meta)
-
-        saved_paths = self._decode_and_save_attachments(payload.attachments, review_id, folder)
-
-        mail = Mail(
-            subject=payload.subject,
-            sender=payload.sender,
-            body=payload.body,
-            attachments=saved_paths,
-        )
-        if not mail.has_content:
-            raise HTTPException(
-                status_code=400,
-                detail="Mail has neither body text nor attachments — nothing to extract.",
-            )
-        return mail
-
-    def _rehydrate_mail(self, review_id: str) -> Mail:
-        """Rebuild a Mail from the persisted review input payload for resets."""
-        meta = self.repo.load_mail(review_id)
-        if meta is None:
-            raise HTTPException(400, "No persisted mail payload — review cannot be reset")
-
-        mail = self.review_data_service.mail_from_meta(meta, review_id)
-        if not mail.has_content:
-            raise HTTPException(400, "Reset failed: mail has no body and no registered attachments.")
-        return mail

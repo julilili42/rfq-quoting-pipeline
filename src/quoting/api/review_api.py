@@ -16,8 +16,6 @@ from quoting.api.container import get_app_container
 from quoting.api.frontend_router import router as frontend_router
 from quoting.api.job_worker import JobWorker
 from quoting.api.services.review_workflow_service import (
-    IncomingMailAttachment,
-    IncomingMailReview,
     ReviewWorkflowService,
 )
 from quoting.api.settings_store import (
@@ -29,6 +27,7 @@ from quoting.api.settings_store import (
 from quoting.api.settings_store import (
     save_settings as save_app_settings,
 )
+from quoting.api.use_cases.dtos import IncomingMailAttachment, IncomingMailReview
 from quoting.reviews import api_base_url
 
 log = logging.getLogger("quoting.api")
@@ -130,7 +129,9 @@ def _workflow_service() -> ReviewWorkflowService:
 @app.post("/api/reviews")
 def create_review(payload: MailReviewRequest):
     service = _workflow_service()
-    return service.create_review_from_mail(_mail_review_input(payload))
+    return _common.run_use_case(
+        lambda: service.create_review_from_mail(_mail_review_input(payload))
+    )
 
 
 @app.get("/api/reviews/{review_id}/status")
@@ -162,7 +163,7 @@ def post_approval(review_id: str, payload: ApprovalTransitionRequest):
 def reset_review(review_id: str):
     """Reset a review and re-run the pipeline against the saved mail."""
     _common.require_review(review_id)
-    return _workflow_service().reset_review(review_id)
+    return _common.run_use_case(lambda: _workflow_service().reset_review(review_id))
 
 
 # --------------------------------------------------------------- PDF endpoints

@@ -78,8 +78,14 @@ export function ReviewDetailPage() {
     return () => setActiveReview(null);
   }, [reviewId, setActiveReview]);
 
-  const review = useReview(reviewId);
   const status = useReviewStatus(reviewId);
+  const pipelineStatus = status.data?.status ?? null;
+  const isPipelineRunning =
+    pipelineStatus === "running" || pipelineStatus === "failed";
+  const shouldLoadDetail =
+    Boolean(reviewId) &&
+    (status.isError || pipelineStatus === "completed");
+  const review = useReview(reviewId, { enabled: shouldLoadDetail });
   const approval = useApproval(reviewId);
   const settings = useSettings();
   const detail = review.data;
@@ -95,9 +101,6 @@ export function ReviewDetailPage() {
     detail,
     syncReviewChanges,
   ]);
-
-  const isPipelineRunning =
-    status.data?.status === "running" || status.data?.status === "failed";
 
   useEffect(() => {
     if (focusMode || isPipelineRunning || !detail || settings.isLoading) return;
@@ -129,10 +132,24 @@ export function ReviewDetailPage() {
     );
   }
 
-  if (review.isLoading) {
+  if (isPipelineRunning && status.data) {
     return (
       <PageContainer>
-        <LoadingState label="Lade Review…" />
+        <ReviewHero
+          reviewId={reviewId}
+          createdAt={status.data.created_at ?? null}
+          isApproved={false}
+          approvedAt={null}
+        />
+        <PipelineProgress progress={status.data} />
+      </PageContainer>
+    );
+  }
+
+  if (status.isLoading || review.isLoading || !review.isFetched) {
+    return (
+      <PageContainer>
+        <LoadingState label={status.isLoading ? "Lade Status…" : "Lade Review…"} />
       </PageContainer>
     );
   }
@@ -166,20 +183,6 @@ export function ReviewDetailPage() {
       <StepErrorBoundary>
         <Outlet context={{ detail, focusMode: true }} />
       </StepErrorBoundary>
-    );
-  }
-
-  if (isPipelineRunning && status.data) {
-    return (
-      <PageContainer>
-        <ReviewHero
-          reviewId={reviewId}
-          createdAt={detail?.created_at ?? null}
-          isApproved={approved}
-          approvedAt={approvedAt}
-        />
-        <PipelineProgress progress={status.data} />
-      </PageContainer>
     );
   }
 

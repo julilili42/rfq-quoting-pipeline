@@ -30,6 +30,7 @@ export const pipelineProgressSchema = z
     current_step: z.string(),
     current_detail: z.string().default(""),
     progress_percent: z.number().min(0).max(100),
+    created_at: z.string().nullable().optional(),
     updated_at: z.string(),
     steps: z.array(pipelineStepSchema),
     result: z.record(z.unknown()).nullable().optional(),

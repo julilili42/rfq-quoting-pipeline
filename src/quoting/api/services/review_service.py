@@ -13,7 +13,7 @@ from typing import Any
 from quoting.api.approval_store import ApprovalStore
 from quoting.api.container import get_app_container
 from quoting.core import Anfrage
-from quoting.ingestion import Mail, detect_file_type, mail_from_file, parse_mail
+from quoting.ingestion import Mail
 from quoting.matching import MatchResult, match_positions
 from quoting.pipeline import QuotingPipeline
 from quoting.reviews.sqlite_repository import SQLiteReviewRepository
@@ -31,12 +31,6 @@ def find_stammdaten_by_article(pipeline: QuotingPipeline, artikelnummer: str) ->
         if normalise_article_key(record.artikel_nr) == needle:
             return record
     return None
-
-
-def build_mail(input_path: Path) -> Mail:
-    if detect_file_type(input_path) in ("eml", "msg"):
-        return parse_mail(input_path)
-    return mail_from_file(input_path)
 
 
 @dataclass
@@ -160,18 +154,6 @@ class ReviewDataService:
 def default_review_data_service() -> ReviewDataService:
     repo = get_app_container().review_repo()
     return ReviewDataService(repo=repo, approval_store=ApprovalStore(repo))
-
-
-def try_load_anfrage(review_id: str) -> Anfrage | None:
-    return default_review_data_service().try_load_anfrage(review_id)
-
-
-def try_load_original_anfrage(review_id: str) -> Anfrage | None:
-    return default_review_data_service().try_load_original_anfrage(review_id)
-
-
-def mail_from_meta(mail_meta: dict, review_id: str) -> Mail:
-    return default_review_data_service().mail_from_meta(mail_meta, review_id)
 
 
 def load_or_extract_anfrage(review_id: str, pipeline: QuotingPipeline) -> Anfrage:

@@ -99,13 +99,13 @@ def mark_review_opened(review_id: str) -> dict:
 @router.get("/reviews/{review_id}", response_model=ReviewDetail)
 def get_review_detail(review_id: str) -> dict:
     _common.require_review(review_id)
-    return _workflow_service().get_detail(review_id)
+    return _common.run_use_case(lambda: _workflow_service().get_detail(review_id))
 
 
 @router.delete("/reviews/{review_id}", status_code=204)
 def delete_review(review_id: str) -> Response:
     _common.require_review(review_id)
-    _workflow_service().delete_review(review_id)
+    _common.run_use_case(lambda: _workflow_service().delete_review(review_id))
     return Response(status_code=204)
 
 
@@ -123,19 +123,25 @@ class AnfragePayload(BaseModel):
 @router.put("/reviews/{review_id}/anfrage", response_model=Anfrage)
 def put_anfrage(review_id: str, payload: dict) -> dict:
     _common.require_review(review_id)
-    return _workflow_service().update_anfrage(review_id, payload)
+    return _common.run_use_case(
+        lambda: _workflow_service().update_anfrage(review_id, payload)
+    )
 
 
 @router.put("/reviews/{review_id}/overrides", response_model=list[ManualOverridePayload])
 def put_overrides(review_id: str, payload: list[dict]) -> list[dict]:
     _common.require_review(review_id)
-    return _workflow_service().save_overrides(review_id, payload)
+    return _common.run_use_case(
+        lambda: _workflow_service().save_overrides(review_id, payload)
+    )
 
 
 @router.post("/reviews/{review_id}/regenerate", response_model=QuotationModel)
 def regenerate_quotation(review_id: str) -> dict:
     _common.require_review(review_id)
-    return _workflow_service().regenerate_quotation(review_id)
+    return _common.run_use_case(
+        lambda: _workflow_service().regenerate_quotation(review_id)
+    )
 
 
 class FinalizeRequest(BaseModel):
@@ -148,10 +154,12 @@ class FinalizeRequest(BaseModel):
 @router.post("/reviews/{review_id}/finalize", response_model=FinalizeResponse)
 def finalize_quotation(review_id: str, payload: FinalizeRequest) -> dict:
     _common.require_review(review_id)
-    return _workflow_service().finalize_quotation(
-        review_id,
-        actor=payload.actor,
-        filename=payload.filename,
-        warning_acknowledged=payload.warning_acknowledged,
-        exception_reason=payload.exception_reason,
+    return _common.run_use_case(
+        lambda: _workflow_service().finalize_quotation(
+            review_id,
+            actor=payload.actor,
+            filename=payload.filename,
+            warning_acknowledged=payload.warning_acknowledged,
+            exception_reason=payload.exception_reason,
+        )
     )

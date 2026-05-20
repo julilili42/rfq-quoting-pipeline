@@ -12,8 +12,7 @@ from fastapi import HTTPException
 
 from quoting.core import Anfrage
 from quoting.matching import MatchResult
-from quoting.pricing import Quotation, build_quotation
-from quoting.ui.review_agent import apply_manual_overrides
+from quoting.pricing import Quotation, apply_manual_overrides, build_quotation
 
 log = logging.getLogger("quoting.frontend_router")
 
