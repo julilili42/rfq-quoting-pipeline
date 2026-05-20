@@ -149,6 +149,26 @@ class SQLiteReviewRepository:
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_current_name
                     ON documents(review_id, kind, filename, is_current)
                     WHERE is_current = 1;
+
+                CREATE TABLE IF NOT EXISTS jobs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    review_id TEXT NOT NULL,
+                    step TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    max_attempts INTEGER NOT NULL DEFAULT 3,
+                    last_error TEXT,
+                    payload_json TEXT,
+                    created_at TEXT NOT NULL,
+                    claimed_at TEXT,
+                    completed_at TEXT,
+                    FOREIGN KEY (review_id) REFERENCES reviews(review_id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_jobs_pending
+                    ON jobs(id)
+                    WHERE status = 'pending';
+                CREATE INDEX IF NOT EXISTS idx_jobs_review_id
+                    ON jobs(review_id);
                 """
             )
             self._add_column_if_missing(
