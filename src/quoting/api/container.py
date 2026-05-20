@@ -9,6 +9,8 @@ from quoting.reviews.sqlite_repository import SQLiteReviewRepository, get_defaul
 
 if TYPE_CHECKING:
     from quoting.api.approval_store import ApprovalStore
+    from quoting.api.job_queue import JobQueue
+    from quoting.api.pipeline_coordinator import PipelineCoordinator
     from quoting.api.progress_store import ProgressStore
     from quoting.api.services.review_read_service import ReviewReadService
     from quoting.api.services.review_service import ReviewDataService
@@ -21,6 +23,7 @@ if TYPE_CHECKING:
         ReviewWorkflowService,
         SettingsLoader,
     )
+    from quoting.api.step_handlers import StepHandlers
 
 
 @dataclass
@@ -28,6 +31,9 @@ class AppContainer:
     """Lazily owns long-lived API dependencies."""
 
     _pipeline: QuotingPipeline | None = None
+    _job_queue: JobQueue | None = None
+    _step_handlers: StepHandlers | None = None
+    _pipeline_coordinator: PipelineCoordinator | None = None
 
     def pipeline(self) -> QuotingPipeline:
         if self._pipeline is None:
@@ -72,6 +78,67 @@ class AppContainer:
 
         return ReviewReadService(repo or self.review_repo())
 
+    def job_queue(
+        self,
+        repo: SQLiteReviewRepository | None = None,
+    ) -> JobQueue:
+        if self._job_queue is None:
+            from quoting.api.job_queue import JobQueue
+
+            self._job_queue = JobQueue(repo or self.review_repo())
+        return self._job_queue
+
+    def step_handlers(self) -> StepHandlers:
+        if self._step_handlers is None:
+            from quoting.api.step_handlers import StepHandlers
+
+            repo = self.review_repo()
+            self._step_handlers = StepHandlers(
+                repo=repo,
+                pipeline=self.pipeline(),
+                progress_store=self.progress_store(repo),
+            )
+        return self._step_handlers
+
+    def pipeline_coordinator(
+        self,
+        *,
+        review_ui_base_url: str = "http://localhost:8501",
+    ) -> PipelineCoordinator:
+        """Build (and cache) the coordinator that drives review pipelines.
+
+        The coordinator is a singleton owned by the FastAPI lifespan; the
+        worker dispatches against ``coordinator.worker_handlers()`` and
+        ``ReviewWorkflowService`` enqueues new runs via
+        ``coordinator.start_pipeline``.
+        """
+        if self._pipeline_coordinator is None:
+            from quoting.api.pipeline_coordinator import PipelineCoordinator
+
+            repo = self.review_repo()
+
+            def build_completion_payload(review_id: str) -> dict:
+                from quoting.reviews import api_base_url
+
+                base = api_base_url()
+                return {
+                    "review_id": review_id,
+                    "review_url": f"{review_ui_base_url}?review_id={review_id}",
+                    "draft_pdf_url": f"{base}/api/reviews/{review_id}/pdf/draft",
+                    "final_pdf_url": f"{base}/api/reviews/{review_id}/pdf/final",
+                    "status_url": f"{base}/api/reviews/{review_id}/status",
+                    "approval_url": f"{base}/api/reviews/{review_id}/approval",
+                    "status": "completed",
+                }
+
+            self._pipeline_coordinator = PipelineCoordinator(
+                handlers=self.step_handlers(),
+                queue=self.job_queue(repo),
+                progress=self.progress_store(repo),
+                completion_payload_builder=build_completion_payload,
+            )
+        return self._pipeline_coordinator
+
     def review_workflow_service(
         self,
         *,
@@ -109,6 +176,7 @@ class AppContainer:
             review_data=review_data,
             review_read_service=review_reads,
             approval_transition=approval_transition,
+            coordinator=self.pipeline_coordinator(review_ui_base_url=review_ui_base_url),
         )
 
 

@@ -9,12 +9,11 @@ from __future__ import annotations
 import base64
 import logging
 import shutil
-import traceback
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -26,6 +25,9 @@ from quoting.api.approval_store import (
     ApprovalStore,
 )
 from quoting.api.progress_store import ProgressStore
+
+if TYPE_CHECKING:
+    from quoting.api.pipeline_coordinator import PipelineCoordinator
 from quoting.api.services.quality_gate_service import (
     QualityGateResult,
     evaluate_quality_gate,
@@ -46,7 +48,7 @@ from quoting.core import Anfrage
 from quoting.ingestion import Mail
 from quoting.matching import MatchResult, match_positions
 from quoting.output import build_draft_pdf
-from quoting.pipeline import QuotingPipeline, StepProgress
+from quoting.pipeline import QuotingPipeline
 from quoting.pricing import Quotation
 from quoting.reviews import (
     api_base_url,
@@ -69,7 +71,6 @@ QualityGateEvaluator = Callable[
 ]
 PdfBuilder = Callable[..., None]
 SettingsLoader = Callable[[], AppSettings]
-PipelineScheduler = Callable[[str, Path, Mail], None]
 ApprovalTransition = Callable[..., ApprovalRecord]
 
 
@@ -151,6 +152,7 @@ class ReviewWorkflowService:
     review_data: ReviewDataService | None = None
     review_read_service: ReviewReadService | None = None
     approval_transition: ApprovalTransition | None = None
+    coordinator: PipelineCoordinator | None = None
 
     @property
     def approvals(self) -> ApprovalStore:
@@ -179,12 +181,25 @@ class ReviewWorkflowService:
             self.review_read_service = ReviewReadService(self.repo)
         return self.review_read_service
 
+    def _require_coordinator(self) -> PipelineCoordinator:
+        """Return the configured coordinator or fail loudly.
+
+        The container is expected to wire the coordinator before any
+        request handler is reached. Tests that don't exercise the
+        pipeline-creation path can leave it unset.
+        """
+        if self.coordinator is None:
+            raise RuntimeError(
+                "ReviewWorkflowService has no PipelineCoordinator configured — "
+                "the JobWorker lifespan must initialise one at app startup."
+            )
+        return self.coordinator
+
     def create_review_from_mail(
         self,
         payload: IncomingMailReview,
-        *,
-        schedule_pipeline: PipelineScheduler,
     ) -> dict:
+        coordinator = self._require_coordinator()
         review_id = uuid.uuid4().hex[:12]
         self.repo.create_review(
             review_id,
@@ -201,7 +216,10 @@ class ReviewWorkflowService:
         self.approvals.reset(review_id)
 
         try:
-            mail = self._prepare_mail_payload(payload, review_id, folder)
+            # _prepare_mail_payload validates the mail has content and
+            # persists attachments to disk. The worker reads the mail
+            # back out of SQLite when extract runs.
+            self._prepare_mail_payload(payload, review_id, folder)
             self.progress_store_for_review.update_step(
                 review_id,
                 "Mail vorbereiten",
@@ -212,16 +230,12 @@ class ReviewWorkflowService:
             self.progress_store_for_review.fail(review_id, str(exc))
             raise HTTPException(400, f"Could not prepare mail: {exc}") from exc
 
-        schedule_pipeline(review_id, folder, mail)
+        coordinator.start_pipeline(review_id)
         return self.build_review_response(review_id, status="running")
 
-    def reset_review(
-        self,
-        review_id: str,
-        *,
-        schedule_pipeline: PipelineScheduler,
-    ) -> dict:
+    def reset_review(self, review_id: str) -> dict:
         """Reset a review and re-run the pipeline against the saved mail."""
+        coordinator = self._require_coordinator()
         reset_review_artifacts(
             review_id,
             repo=self.repo,
@@ -229,8 +243,11 @@ class ReviewWorkflowService:
             approval_store=self.approvals,
         )
 
-        mail = self._rehydrate_mail(review_id)
-        schedule_pipeline(review_id, self.repo.artifact_dir(review_id), mail)
+        # Sanity-check that the saved mail is still usable before we
+        # enqueue work. The handler would raise StepInputMissing
+        # otherwise, but doing it here gives the API a clean 400.
+        self._rehydrate_mail(review_id)
+        coordinator.start_pipeline(review_id)
 
         base = api_base_url()
         return {
@@ -319,50 +336,6 @@ class ReviewWorkflowService:
         review_id = str(review["review_id"])
         self.repo.set_outlook_item_id(review_id, None)
         return {"review_id": review_id}
-
-    def run_review_pipeline(
-        self,
-        review_id: str,
-        folder: Path,
-        mail: Mail,
-    ) -> None:
-        def on_progress(progress: StepProgress) -> None:
-            self.progress_store_for_review.update_step(
-                review_id=review_id,
-                step_name=progress.step_name,
-                status=progress.status,
-                detail=progress.detail,
-            )
-
-        try:
-            # Initial pipeline run is always a draft (with red warning).
-            # Final/approved PDFs get re-rendered later by the UI.
-            result = self.pipeline.run(
-                mail,
-                output_dir=folder,
-                work_name="pipeline",
-                progress=on_progress,
-                is_final=False,
-                snapshot_sink=lambda name, data: self.repo.save_payload(review_id, name, data),
-            )
-            self.repo.register_document(
-                review_id,
-                kind="draft_pdf",
-                path=result.pdf_path,
-                filename=result.pdf_path.name,
-                content_type="application/pdf",
-            )
-            response = self.build_review_response(review_id, status="completed")
-            response["summary"] = result.summary()
-            self.progress_store_for_review.complete(review_id, response)
-        except Exception as exc:
-            log.error(
-                "Pipeline failed for review %s: %s\n%s",
-                review_id,
-                exc,
-                traceback.format_exc(),
-            )
-            self.progress_store_for_review.fail(review_id, str(exc))
 
     def build_review_response(self, review_id: str, *, status: str) -> dict:
         base = api_base_url()

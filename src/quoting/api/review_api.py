@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import logging
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from quoting.api import _common
+from quoting.api.container import get_app_container
 from quoting.api.frontend_router import router as frontend_router
+from quoting.api.job_worker import JobWorker
 from quoting.api.services.review_workflow_service import (
     IncomingMailAttachment,
     IncomingMailReview,
@@ -26,10 +31,37 @@ from quoting.api.settings_store import (
 )
 from quoting.reviews import api_base_url
 
+log = logging.getLogger("quoting.api")
+
 STREAMLIT_BASE_URL = os.getenv("STREAMLIT_BASE_URL", "http://localhost:8501")
 
 
-app = FastAPI(title="Quoting Pipeline API")
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Start the pipeline job worker for the lifetime of the app.
+
+    The worker pulls jobs off the SQLite queue and dispatches them to
+    the per-step handlers exposed by the :class:`PipelineCoordinator`.
+    On shutdown it's stopped cleanly so the next process start sees a
+    consistent queue.
+    """
+    container = get_app_container()
+    coordinator = container.pipeline_coordinator(review_ui_base_url=STREAMLIT_BASE_URL)
+    worker = JobWorker(
+        queue=container.job_queue(),
+        handlers=coordinator.worker_handlers(),
+    )
+    worker.start()
+    app.state.job_worker = worker
+    log.info("JobWorker started")
+    try:
+        yield
+    finally:
+        worker.stop(timeout=5.0)
+        log.info("JobWorker stopped")
+
+
+app = FastAPI(title="Quoting Pipeline API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -96,20 +128,9 @@ def _workflow_service() -> ReviewWorkflowService:
 
 
 @app.post("/api/reviews")
-def create_review(
-    payload: MailReviewRequest,
-    background_tasks: BackgroundTasks,
-):
+def create_review(payload: MailReviewRequest):
     service = _workflow_service()
-    return service.create_review_from_mail(
-        _mail_review_input(payload),
-        schedule_pipeline=lambda review_id, folder, mail: background_tasks.add_task(
-            service.run_review_pipeline,
-            review_id,
-            folder,
-            mail,
-        ),
-    )
+    return service.create_review_from_mail(_mail_review_input(payload))
 
 
 @app.get("/api/reviews/{review_id}/status")
@@ -138,19 +159,10 @@ def post_approval(review_id: str, payload: ApprovalTransitionRequest):
 
 
 @app.post("/api/reviews/{review_id}/reset")
-def reset_review(review_id: str, background_tasks: BackgroundTasks):
+def reset_review(review_id: str):
     """Reset a review and re-run the pipeline against the saved mail."""
     _common.require_review(review_id)
-    service = _workflow_service()
-    return service.reset_review(
-        review_id,
-        schedule_pipeline=lambda next_review_id, folder, mail: background_tasks.add_task(
-            service.run_review_pipeline,
-            next_review_id,
-            folder,
-            mail,
-        ),
-    )
+    return _workflow_service().reset_review(review_id)
 
 
 # --------------------------------------------------------------- PDF endpoints
