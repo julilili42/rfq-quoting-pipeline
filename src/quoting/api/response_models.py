@@ -135,7 +135,16 @@ class ReviewDetail(BaseModel):
     mail: MailMeta
     has_draft_pdf: bool
     has_final_pdf: bool
+    requirements_acknowledged: list[int] = Field(default_factory=list)
 
 
 class FinalizeResponse(BaseModel):
     final_pdf_path: str
+
+
+class ReplyBodyResponse(BaseModel):
+    """LLM-generated cover-letter body for the Outlook reply."""
+
+    body: str
+    language: Literal["de", "en"]
+    model: str

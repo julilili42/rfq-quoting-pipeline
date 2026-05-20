@@ -1,5 +1,5 @@
 import * as Accordion from "@radix-ui/react-accordion";
-import { ChevronDown, Replace, Trash2 } from "lucide-react";
+import { AlertCircle, ChevronDown, Replace, Trash2 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { Fragment, useEffect, useState } from "react";
 
@@ -9,7 +9,7 @@ import { Input } from "@/shared/components/ui/input";
 import { SourceEyeButton } from "@/shared/components/ui/SourceEyeButton";
 import { cn } from "@/shared/lib/cn";
 import { formatEur } from "@/shared/lib/format";
-import type { Position } from "@/shared/schemas/anfrage";
+import type { Anforderung, Position } from "@/shared/schemas/anfrage";
 import type { SourceNavigationTarget } from "@/shared/types/sourceNavigation";
 import type { MatchResult } from "@/shared/schemas/matchResult";
 import type { ManualOverride, QuotationItem } from "@/shared/schemas/quotation";
@@ -44,6 +44,8 @@ interface PositionCardProps {
   discountDisabled?: boolean;
   /** Auto-open the accordion on mount — used right after "add position". */
   defaultOpen?: boolean;
+  /** RFQ-side requirements bound to this position via pos_nr. */
+  anforderungen?: Anforderung[];
   onPositionChange: (next: Position) => void;
   onUnitPriceChange: (override: ManualOverride | null) => void;
   onDiscountDisabledChange?: (disabled: boolean) => void;
@@ -78,6 +80,7 @@ export function PositionCard({
   unitPriceOverride,
   discountDisabled = false,
   defaultOpen = false,
+  anforderungen = [],
   onPositionChange,
   onUnitPriceChange,
   onDiscountDisabledChange,
@@ -175,9 +178,10 @@ export function PositionCard({
 
   return (
     <Accordion.Item
+      id={`pos-${position.pos_nr}`}
       value={`pos-${position.pos_nr}`}
       className={cn(
-        "rounded-lg border bg-surface shadow-card transition-colors [&[data-state=open]>h3]:border-b [&[data-state=open]>h3]:border-border",
+        "scroll-mt-24 rounded-lg border bg-surface shadow-card transition-colors [&[data-state=open]>h3]:border-b [&[data-state=open]>h3]:border-border",
         confirmingDelete ? "border-danger/40" : "border-border hover:border-foreground/20",
       )}
     >
@@ -191,6 +195,17 @@ export function PositionCard({
             <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
               Pos {position.pos_nr}
             </span>
+            {anforderungen.length > 0 && (
+              <span
+                className="inline-flex shrink-0 items-center gap-1 rounded border border-warning/30 bg-warning-soft px-1.5 py-0.5 text-[10px] font-medium text-warning"
+                title={anforderungen.map((a) => a.text).join("\n")}
+              >
+                <AlertCircle className="h-3 w-3" aria-hidden="true" />
+                {anforderungen.length === 1
+                  ? "1 Hinweis"
+                  : `${anforderungen.length} Hinweise`}
+              </span>
+            )}
             {position.confidence === "low" && (
               <span
                 className="shrink-0 rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"

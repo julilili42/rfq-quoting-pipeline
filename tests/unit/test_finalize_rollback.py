@@ -12,8 +12,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 
-from quoting.api import _common
 from quoting.api.approval_store import ApprovalRecord, ApprovalStore
+from quoting.api.container import get_app_container
 from quoting.api.routers import reviews as reviews_router
 from quoting.api.routers.reviews import FinalizeRequest, finalize_quotation
 from quoting.api.services.quality_gate_service import QualityGateResult, QualityIssue
@@ -28,7 +28,7 @@ def review(sqlite_repo) -> tuple[str, Path]:
 
 
 def _patch_handler_dependencies(monkeypatch) -> None:
-    monkeypatch.setattr(_common, "_pipeline", MagicMock())
+    get_app_container().set_pipeline(MagicMock())
 
     monkeypatch.setattr(
         reviews_router,

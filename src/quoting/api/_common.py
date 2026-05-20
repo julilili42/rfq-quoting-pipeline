@@ -28,7 +28,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
-_pipeline: QuotingPipeline | None = None
 T = TypeVar("T")
 
 
@@ -37,8 +36,6 @@ def get_container() -> AppContainer:
 
 
 def get_pipeline() -> QuotingPipeline:
-    if _pipeline is not None:
-        return _pipeline
     return get_container().pipeline()
 
 

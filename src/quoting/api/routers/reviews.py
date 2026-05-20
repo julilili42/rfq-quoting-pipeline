@@ -11,6 +11,7 @@ from quoting.api.response_models import (
     MailMeta,
     ManualOverridePayload,
     QuotationModel,
+    ReplyBodyResponse,
     ReviewDetail,
     ReviewListItem,
 )
@@ -25,8 +26,11 @@ from quoting.api.services.review_workflow_service import (
 )
 from quoting.api.settings_store import load_user_settings
 from quoting.core import Anfrage
+from quoting.extraction.llm import build_llm
 from quoting.output import build_draft_pdf
+from quoting.output.reply_body_prompt import generate_reply_body
 from quoting.pipeline import QuotingPipeline
+from quoting.pricing import Quotation, QuotationItem
 
 router = APIRouter()
 
@@ -136,6 +140,29 @@ def put_overrides(review_id: str, payload: list[dict]) -> list[dict]:
     )
 
 
+class RequirementsAckRequest(BaseModel):
+    indices: list[int] = Field(default_factory=list)
+
+
+@router.put("/reviews/{review_id}/requirements-ack")
+def put_requirements_ack(review_id: str, payload: RequirementsAckRequest) -> dict:
+    """Persist which extracted requirements have been acknowledged by the user."""
+    _common.require_review(review_id)
+    repo = _common.get_review_repo()
+
+    anfrage_dict = repo.load_anfrage(review_id) or {}
+    total = len(anfrage_dict.get("anforderungen", []) or [])
+    for idx in payload.indices:
+        if idx < 0 or idx >= total:
+            raise HTTPException(
+                422,
+                f"Index {idx} is out of range (0..{total - 1 if total else -1})",
+            )
+
+    repo.save_requirements_acknowledged(review_id, payload.indices)
+    return {"indices": repo.load_requirements_acknowledged(review_id)}
+
+
 @router.post("/reviews/{review_id}/regenerate", response_model=QuotationModel)
 def regenerate_quotation(review_id: str) -> dict:
     _common.require_review(review_id)
@@ -149,6 +176,63 @@ class FinalizeRequest(BaseModel):
     filename: str | None = None
     warning_acknowledged: bool = False
     exception_reason: str | None = Field(default=None, max_length=1000)
+
+
+def _quotation_from_dict(data: dict) -> Quotation:
+    items = [QuotationItem(**item) for item in data.get("items", [])]
+    payload = {k: v for k, v in data.items() if k != "items"}
+    return Quotation(items=items, **payload)
+
+
+@router.get("/reviews/{review_id}/reply-body", response_model=ReplyBodyResponse)
+def get_reply_body(review_id: str) -> ReplyBodyResponse:
+    """Generate a short, contextual cover-letter body for the Outlook reply."""
+    _common.require_review(review_id)
+    repo = _common.get_review_repo()
+
+    anfrage_dict = repo.load_anfrage(review_id)
+    quotation_dict = repo.load_quotation(review_id)
+    mail = repo.load_mail(review_id) or {}
+    if not anfrage_dict or not quotation_dict:
+        raise HTTPException(409, "Anfrage or quotation not yet available for this review")
+
+    try:
+        anfrage = Anfrage.model_validate(anfrage_dict)
+        quotation = _quotation_from_dict(quotation_dict)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(500, f"Stored review data is malformed: {exc}") from exc
+
+    acknowledged_indices = set(repo.load_requirements_acknowledged(review_id))
+    acknowledged_requirements = [
+        req
+        for idx, req in enumerate(anfrage.anforderungen)
+        if idx in acknowledged_indices
+    ]
+
+    workflow = load_user_settings().workflow
+    style_hint = workflow.llm_email_body_style_hint or ""
+
+    pipeline = _common.get_pipeline()
+    llm = build_llm(pipeline.settings)
+    model_name = (
+        pipeline.settings.gemini_model
+        if pipeline.settings.llm_provider == "gemini"
+        else pipeline.settings.azure_model
+    )
+
+    try:
+        body, language = generate_reply_body(
+            anfrage=anfrage,
+            quotation=quotation,
+            mail_body=str(mail.get("body") or ""),
+            style_hint=style_hint,
+            llm=llm,
+            acknowledged_requirements=acknowledged_requirements,
+        )
+    except Exception as exc:
+        raise HTTPException(503, f"Reply-body generation failed: {exc}") from exc
+
+    return ReplyBodyResponse(body=body, language=language, model=model_name)
 
 
 @router.post("/reviews/{review_id}/finalize", response_model=FinalizeResponse)

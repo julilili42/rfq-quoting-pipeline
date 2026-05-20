@@ -66,6 +66,8 @@ class WorkflowPreferences:
         "vielen Dank für Ihre Anfrage. Anbei erhalten Sie unser Angebot.\n\n"
         "Mit freundlichen Grüßen\n[Absender]"
     )
+    use_llm_email_body: bool = False
+    llm_email_body_style_hint: str = ""
 
 
 @dataclass

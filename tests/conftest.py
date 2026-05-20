@@ -12,6 +12,7 @@ from quoting.matching import MatchResult
 @pytest.fixture
 def sqlite_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Isolated SQLite review repository under tmp_path."""
+    from quoting.api.container import reset_app_container
     from quoting.reviews.sqlite_repository import (
         get_default_repository,
         reset_default_repository,
@@ -20,9 +21,11 @@ def sqlite_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("QUOTING_DB_PATH", str(tmp_path / "quoting.sqlite"))
     monkeypatch.setenv("QUOTING_ARTIFACT_ROOT", str(tmp_path / "artifacts" / "reviews"))
     reset_default_repository()
+    reset_app_container()
     repo = get_default_repository()
     yield repo
     reset_default_repository()
+    reset_app_container()
 
 
 def _make_position(**over) -> Position:

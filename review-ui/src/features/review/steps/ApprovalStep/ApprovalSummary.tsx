@@ -9,6 +9,7 @@ import type { MatchStatus } from "@/shared/schemas/matchResult";
 import type { ManualOverride, QuotationItem } from "@/shared/schemas/quotation";
 
 import type { Issue, QualityGateResult } from "../../hooks/useQualityGate";
+import { RequirementsChecklist } from "./RequirementsChecklist";
 
 interface ApprovalSummaryProps {
   detail: ReviewDetail;
@@ -73,6 +74,13 @@ export function ApprovalSummary({
         </div>
 
       </header>
+
+      {!isApproved && (
+        <RequirementsChecklist
+          anforderungen={detail.anfrage.anforderungen ?? []}
+          acknowledgedIndices={detail.requirements_acknowledged ?? []}
+        />
+      )}
 
       {showIssues && (
         <IssuesBlock blockers={gate.blockers} warnings={gate.warnings} />

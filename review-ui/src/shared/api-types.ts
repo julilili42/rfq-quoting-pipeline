@@ -174,6 +174,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reviews/{review_id}/requirements-ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Requirements Ack
+         * @description Persist which extracted requirements have been acknowledged by the user.
+         */
+        put: operations["put_requirements_ack_api_reviews__review_id__requirements_ack_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reviews/{review_id}/regenerate": {
         parameters: {
             query?: never;
@@ -185,6 +205,26 @@ export interface paths {
         put?: never;
         /** Regenerate Quotation */
         post: operations["regenerate_quotation_api_reviews__review_id__regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/{review_id}/reply-body": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Reply Body
+         * @description Generate a short, contextual cover-letter body for the Outlook reply.
+         */
+        get: operations["get_reply_body_api_reviews__review_id__reply_body_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -557,6 +597,29 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * Anforderung
+         * @description RFQ-level or position-level requirement that goes beyond standard fields.
+         *
+         *     Examples: "Bitte Zeichnung beilegen", "Material-Zertifikat 3.1 erforderlich",
+         *     "Lieferung in Holzkiste", "Angebot bis Freitag erbeten".
+         */
+        Anforderung: {
+            /** Text */
+            text: string;
+            /**
+             * Kategorie
+             * @enum {string}
+             */
+            kategorie: "zeichnung" | "zertifikat" | "verpackung" | "logistik" | "termin" | "sonstige";
+            /** Pos Nr */
+            pos_nr?: number | null;
+            /**
+             * Source Quote
+             * @default
+             */
+            source_quote: string;
+        };
+        /**
          * Anfrage
          * @description Complete parsed RFQ.
          */
@@ -581,6 +644,8 @@ export interface components {
             positionen: components["schemas"]["Position"][];
             /** Unsicherheiten */
             unsicherheiten?: string[];
+            /** Anforderungen */
+            anforderungen?: components["schemas"]["Anforderung"][];
             /** Header Evidence */
             header_evidence?: {
                 [key: string]: components["schemas"]["Evidence"];
@@ -1015,6 +1080,26 @@ export interface components {
             warnungen: string[];
         };
         /**
+         * ReplyBodyResponse
+         * @description LLM-generated cover-letter body for the Outlook reply.
+         */
+        ReplyBodyResponse: {
+            /** Body */
+            body: string;
+            /**
+             * Language
+             * @enum {string}
+             */
+            language: "de" | "en";
+            /** Model */
+            model: string;
+        };
+        /** RequirementsAckRequest */
+        RequirementsAckRequest: {
+            /** Indices */
+            indices?: number[];
+        };
+        /**
          * ReviewDetail
          * @description Full payload returned by ``GET /api/reviews/{id}``.
          */
@@ -1037,6 +1122,8 @@ export interface components {
             has_draft_pdf: boolean;
             /** Has Final Pdf */
             has_final_pdf: boolean;
+            /** Requirements Acknowledged */
+            requirements_acknowledged?: number[];
         };
         /**
          * ReviewListItem
@@ -1537,6 +1624,43 @@ export interface operations {
             };
         };
     };
+    put_requirements_ack_api_reviews__review_id__requirements_ack_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequirementsAckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     regenerate_quotation_api_reviews__review_id__regenerate_post: {
         parameters: {
             query?: never;
@@ -1555,6 +1679,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QuotationModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_reply_body_api_reviews__review_id__reply_body_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplyBodyResponse"];
                 };
             };
             /** @description Validation Error */

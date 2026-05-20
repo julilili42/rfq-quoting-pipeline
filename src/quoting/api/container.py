@@ -40,6 +40,11 @@ class AppContainer:
             self._pipeline = QuotingPipeline()
         return self._pipeline
 
+    def set_pipeline(self, pipeline: QuotingPipeline | None) -> None:
+        # Must be called before step_handlers()/pipeline_coordinator() to also
+        # affect the worker path; those cache the pipeline at construction time.
+        self._pipeline = pipeline
+
     def review_repo(self) -> SQLiteReviewRepository:
         return get_default_repository()
 

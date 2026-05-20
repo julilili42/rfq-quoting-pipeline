@@ -54,6 +54,24 @@ EXTRACTION RULES
 17. LOCAL CANDIDATE HINTS are non-authoritative. Prefer them only when they
     are supported by the source text or image evidence. Never copy a candidate
     value that contradicts the source.
+18. `anforderungen`: collect explicit RFQ-side requirements that go BEYOND the
+    standard position/header fields. These are instructions Sales must honor
+    when sending the quote (drawings, certifications, packaging, delivery
+    constraints, deadlines, etc.). Each item:
+      - text: short imperative sentence (e.g. "Zeichnung zu Pos 30 beilegen").
+      - kategorie: one of
+          - "zeichnung" — drawings, datasheets, technical documents requested
+          - "zertifikat" — material certificates, EN 10204 docs, test reports
+          - "verpackung" — packaging (e.g. wooden crate, VDA, sea-worthy)
+          - "logistik" — incoterms-overrides, delivery instructions, shipping
+          - "termin" — deadlines on the QUOTE itself (e.g. "Angebot bis Freitag")
+          - "sonstige" — anything else explicit
+      - pos_nr: set ONLY if the requirement refers to a specific position;
+        otherwise null.
+      - source_quote: literal snippet (<=120 chars) proving the requirement.
+    Do NOT invent. Do NOT duplicate fields that already belong on the position
+    (e.g. `lieferzeit`, `ist_zertifikat` for certificate POSITIONS — those
+    stay where they belong; only RFQ-side handling notes go here).
 
 OUTPUT
 ======
@@ -68,6 +86,9 @@ EXAMPLE
 Input snippet:
     Pos 10   001GLP108015   Gleitstück PTFE/Graphit 108x15   500 Stk
     Pos 20   001APZ00031B   Abnahmeprüfzeugnis EN 10204 3.1    1 Stk
+
+    Bitte Zeichnung zu Pos 10 dem Angebot beilegen.
+    Lieferung bitte in Holzkiste. Angebot bis Freitag erbeten.
 
 Expected JSON (abbreviated):
 {
@@ -96,6 +117,26 @@ Expected JSON (abbreviated):
       "ist_zertifikat": true,
       "confidence": "high",
       "source_quote": "Pos 20  001APZ00031B  Abnahmeprüfzeugnis EN 10204 3.1"
+    }
+  ],
+  "anforderungen": [
+    {
+      "text": "Zeichnung zu Pos 10 beilegen",
+      "kategorie": "zeichnung",
+      "pos_nr": 10,
+      "source_quote": "Bitte Zeichnung zu Pos 10 dem Angebot beilegen."
+    },
+    {
+      "text": "Lieferung in Holzkiste",
+      "kategorie": "verpackung",
+      "pos_nr": null,
+      "source_quote": "Lieferung bitte in Holzkiste."
+    },
+    {
+      "text": "Angebot bis Freitag",
+      "kategorie": "termin",
+      "pos_nr": null,
+      "source_quote": "Angebot bis Freitag erbeten."
     }
   ]
 }

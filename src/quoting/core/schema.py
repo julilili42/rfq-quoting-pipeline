@@ -6,6 +6,27 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 Confidence = Literal["high", "medium", "low"]
+AnforderungKategorie = Literal[
+    "zeichnung",
+    "zertifikat",
+    "verpackung",
+    "logistik",
+    "termin",
+    "sonstige",
+]
+
+
+class Anforderung(BaseModel):
+    """RFQ-level or position-level requirement that goes beyond standard fields.
+
+    Examples: "Bitte Zeichnung beilegen", "Material-Zertifikat 3.1 erforderlich",
+    "Lieferung in Holzkiste", "Angebot bis Freitag erbeten".
+    """
+
+    text: str
+    kategorie: AnforderungKategorie
+    pos_nr: int | None = None
+    source_quote: str = ""
 
 
 class Evidence(BaseModel):
@@ -85,4 +106,5 @@ class Anfrage(BaseModel):
     zahlungsbedingungen: str | None = None
     positionen: list[Position]
     unsicherheiten: list[str] = Field(default_factory=list)
+    anforderungen: list[Anforderung] = Field(default_factory=list)
     header_evidence: dict[str, Evidence] = Field(default_factory=dict)

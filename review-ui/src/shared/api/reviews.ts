@@ -56,6 +56,7 @@ export interface ReviewDetail {
   mail: MailMeta;
   has_draft_pdf: boolean;
   has_final_pdf: boolean;
+  requirements_acknowledged: number[];
 }
 
 export interface PdfHighlightArea {
@@ -92,6 +93,7 @@ const reviewDetailSchema = z.object({
   mail: mailMetaSchema,
   has_draft_pdf: z.boolean(),
   has_final_pdf: z.boolean(),
+  requirements_acknowledged: z.array(z.number().int()).default([]),
 });
 
 const pdfHighlightResponseSchema = z.object({
@@ -127,6 +129,7 @@ export const reviewPath = (reviewId: string) => {
     regenerate: `${base}/regenerate`,
     finalize: `${base}/finalize`,
     reset: `${base}/reset`,
+    requirementsAck: `${base}/requirements-ack`,
     pdfHighlight: (fileName: string) =>
       `${base}/attachment/${encodeURIComponent(fileName)}/pdf/highlight`,
   };
@@ -194,6 +197,19 @@ export const reviewsApi = {
 
   reset: async (reviewId: string): Promise<void> => {
     await apiClient.post(reviewPath(reviewId).reset);
+  },
+
+  acknowledgeRequirements: async (
+    reviewId: string,
+    indices: number[],
+  ): Promise<number[]> => {
+    const data = await apiClient.put<unknown>(
+      reviewPath(reviewId).requirementsAck,
+      { indices },
+    );
+    return z
+      .object({ indices: z.array(z.number().int()) })
+      .parse(data).indices;
   },
 
   pdfHighlight: async (

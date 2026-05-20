@@ -13,6 +13,8 @@ import type { components } from "@/shared/api-types";
 export type Evidence = components["schemas"]["Evidence"];
 export type Position = components["schemas"]["Position"];
 export type Anfrage = components["schemas"]["Anfrage"];
+export type Anforderung = components["schemas"]["Anforderung"];
+export type AnforderungKategorie = Anforderung["kategorie"];
 export type Confidence = Position["confidence"];
 
 export const confidenceSchema = z.enum(["high", "medium", "low"]);
@@ -47,6 +49,24 @@ export const positionSchema = z
   })
   .passthrough();
 
+export const anforderungKategorieSchema = z.enum([
+  "zeichnung",
+  "zertifikat",
+  "verpackung",
+  "logistik",
+  "termin",
+  "sonstige",
+]);
+
+export const anforderungSchema = z
+  .object({
+    text: z.string(),
+    kategorie: anforderungKategorieSchema,
+    pos_nr: z.number().int().nullable().optional(),
+    source_quote: z.string().default(""),
+  })
+  .passthrough();
+
 export const anfrageSchema = z
   .object({
     belegnummer: z.string().nullable().optional(),
@@ -59,6 +79,7 @@ export const anfrageSchema = z
     zahlungsbedingungen: z.string().nullable().optional(),
     positionen: z.array(positionSchema).default([]),
     unsicherheiten: z.array(z.string()).default([]),
+    anforderungen: z.array(anforderungSchema).default([]),
     header_evidence: z.record(evidenceSchema).default({}),
   })
   .passthrough();

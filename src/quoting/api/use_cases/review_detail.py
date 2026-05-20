@@ -49,4 +49,5 @@ class GetReviewDetailUseCase:
             "mail": format_mail_dict(mail_meta),
             "has_draft_pdf": self.review_reads.find_draft_pdf(review_id) is not None,
             "has_final_pdf": self.review_reads.find_final_pdf(review_id) is not None,
+            "requirements_acknowledged": self.repo.load_requirements_acknowledged(review_id),
         }

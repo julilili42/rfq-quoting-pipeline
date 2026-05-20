@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, FileText, Mail, RotateCcw } from "lucide-react";
+import { AlertTriangle, FileText, Info, Mail, RotateCcw, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 
@@ -108,6 +108,10 @@ function MailVorlageForm({ initial, saving, saveSuccess, saveError, onSave }: Fo
   const { ref: subjectRegRef, ...subjectRegProps } = form.register("workflow.email_subject_template");
   const { ref: bodyRegRef, ...bodyRegProps } = form.register("workflow.email_body_template");
   const { ref: filenameRegRef, ...filenameRegProps } = form.register("workflow.final_pdf_filename_template");
+  const styleHintProps = form.register("workflow.llm_email_body_style_hint");
+
+  const useLlmBody = form.watch("workflow.use_llm_email_body");
+  const styleHint = form.watch("workflow.llm_email_body_style_hint") ?? "";
 
   function insertAt(
     fieldPath: "workflow.email_subject_template" | "workflow.email_body_template" | "workflow.final_pdf_filename_template",
@@ -194,11 +198,19 @@ function MailVorlageForm({ initial, saving, saveSuccess, saveError, onSave }: Fo
             bodyProps={{ ...bodyRegProps, ref: mergedBodyRef }}
             subjectLength={(subject ?? "").length}
             unknownEmail={unknownEmail}
+            useLlmBody={useLlmBody}
+            onToggleLlmBody={() =>
+              form.setValue("workflow.use_llm_email_body", !useLlmBody, { shouldDirty: true })
+            }
+            styleHintProps={styleHintProps}
+            styleHintLength={styleHint.length}
             onInsertSubject={(t) => insertAt("workflow.email_subject_template", subjectRef, t)}
             onInsertBody={(t) => insertAt("workflow.email_body_template", bodyRef, t)}
             onReset={() => {
               form.setValue("workflow.email_subject_template", WORKFLOW_DEFAULTS.email_subject_template, { shouldDirty: true });
               form.setValue("workflow.email_body_template", WORKFLOW_DEFAULTS.email_body_template, { shouldDirty: true });
+              form.setValue("workflow.use_llm_email_body", WORKFLOW_DEFAULTS.use_llm_email_body, { shouldDirty: true });
+              form.setValue("workflow.llm_email_body_style_hint", WORKFLOW_DEFAULTS.llm_email_body_style_hint, { shouldDirty: true });
             }}
           />
           <FilenameTemplateSection
@@ -214,6 +226,7 @@ function MailVorlageForm({ initial, saving, saveSuccess, saveError, onSave }: Fo
           subject={previewSubject}
           body={previewBody}
           filename={previewFilename}
+          bodyGeneratedByLlm={useLlmBody}
         />
       </div>
       <SaveBar isDirty={isDirty} saving={saving} saveSuccess={saveSuccess} saveError={saveError} />
@@ -226,6 +239,10 @@ function EmailTemplateSection({
   bodyProps,
   subjectLength,
   unknownEmail,
+  useLlmBody,
+  onToggleLlmBody,
+  styleHintProps,
+  styleHintLength,
   onInsertSubject,
   onInsertBody,
   onReset,
@@ -234,6 +251,10 @@ function EmailTemplateSection({
   bodyProps: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { ref: (el: HTMLTextAreaElement | null) => void };
   subjectLength: number;
   unknownEmail: string[];
+  useLlmBody: boolean;
+  onToggleLlmBody: () => void;
+  styleHintProps: React.TextareaHTMLAttributes<HTMLTextAreaElement>;
+  styleHintLength: number;
   onInsertSubject: (text: string) => void;
   onInsertBody: (text: string) => void;
   onReset: () => void;
@@ -245,7 +266,7 @@ function EmailTemplateSection({
       description="Betreff und Text der Angebotsmail in Outlook"
       onReset={onReset}
     >
-      <div className="space-y-4">
+      <div className="space-y-5">
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label className="text-xs">Betreff</Label>
@@ -256,19 +277,115 @@ function EmailTemplateSection({
           <Input {...subjectProps} placeholder="Angebot zu Ihrer Anfrage: [Betreff]" />
           <PlaceholderChips placeholders={EMAIL_PLACEHOLDERS} onInsert={onInsertSubject} />
         </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Nachrichtentext</Label>
-          <textarea
-            {...bodyProps}
-            rows={7}
-            placeholder={"Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihre Anfrage…"}
-            className="flex w-full resize-y rounded-md border border-input bg-surface px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px]"
-          />
-          <PlaceholderChips placeholders={EMAIL_PLACEHOLDERS} onInsert={onInsertBody} />
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Nachrichtentext</Label>
+            <LlmToggle checked={useLlmBody} onToggle={onToggleLlmBody} />
+          </div>
+
+          {useLlmBody ? (
+            <LlmStyleHintField
+              styleHintProps={styleHintProps}
+              styleHintLength={styleHintLength}
+            />
+          ) : (
+            <>
+              <textarea
+                {...bodyProps}
+                rows={7}
+                placeholder={"Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihre Anfrage…"}
+                className="flex w-full resize-y rounded-md border border-input bg-surface px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[120px]"
+              />
+              <PlaceholderChips placeholders={EMAIL_PLACEHOLDERS} onInsert={onInsertBody} />
+            </>
+          )}
         </div>
-        {unknownEmail.length > 0 && <UnknownPlaceholderWarning placeholders={unknownEmail} />}
+
+        {!useLlmBody && unknownEmail.length > 0 && (
+          <UnknownPlaceholderWarning placeholders={unknownEmail} />
+        )}
       </div>
     </SectionCard>
+  );
+}
+
+function LlmToggle({
+  checked,
+  onToggle,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label="KI-Begleittext aktivieren"
+      onClick={onToggle}
+      className={cn(
+        "group inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        checked
+          ? "bg-brand-soft text-brand"
+          : "bg-surface-sunk text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Sparkles className={cn("h-3 w-3", checked && "text-brand")} />
+      <span>KI-Begleittext</span>
+      <span
+        aria-hidden="true"
+        className={cn(
+          "relative inline-block h-3.5 w-6 rounded-full transition-colors",
+          checked ? "bg-brand" : "bg-border",
+        )}
+      >
+        <span
+          className={cn(
+            "absolute top-0.5 left-0.5 h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-transform",
+            checked && "translate-x-2.5",
+          )}
+        />
+      </span>
+    </button>
+  );
+}
+
+function LlmStyleHintField({
+  styleHintProps,
+  styleHintLength,
+}: {
+  styleHintProps: React.TextareaHTMLAttributes<HTMLTextAreaElement>;
+  styleHintLength: number;
+}) {
+  return (
+    <div className="rounded-md border border-brand/20 bg-brand-soft/30 p-3 space-y-2">
+      <p className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
+        <Info className="mt-0.5 h-3 w-3 shrink-0" />
+        Text wird beim Senden für jede Anfrage individuell generiert (Deutsch oder Englisch).
+      </p>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <Label className="text-[11px] text-muted-foreground">Stil-Hinweis (optional)</Label>
+          <span
+            className={cn(
+              "text-[11px] tabular-nums",
+              styleHintLength > 280 ? "font-medium text-warning" : "text-muted-foreground",
+            )}
+          >
+            {styleHintLength}/280
+          </span>
+        </div>
+        <textarea
+          {...styleHintProps}
+          rows={2}
+          maxLength={280}
+          placeholder='z.B. "formell, kurz, kein Marketing-Wording"'
+          className="flex w-full resize-y rounded-md border border-input bg-surface px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -301,21 +418,33 @@ function FilenameTemplateSection({
 }
 
 function TemplatePreviewPanel({
-  from, to, subject, body, filename,
+  from, to, subject, body, filename, bodyGeneratedByLlm,
 }: {
   from: string;
   to: string;
   subject: string;
   body: string;
   filename: string;
+  bodyGeneratedByLlm: boolean;
 }) {
+  const previewBody = bodyGeneratedByLlm
+    ? "[Beispieltext wird beim Senden für jede Anfrage neu generiert.]"
+    : body;
   return (
     <div className="xl:sticky xl:top-6 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vorschau</p>
-        <Pill tone="neutral" className="text-[10px]">Beispieldaten</Pill>
+        <Pill tone="neutral" className="text-[10px]">
+          {bodyGeneratedByLlm ? (
+            <>
+              <Sparkles className="mr-1 h-3 w-3" /> KI-Begleittext
+            </>
+          ) : (
+            "Beispieldaten"
+          )}
+        </Pill>
       </div>
-      <EmailPreview from={from} to={to} subject={subject} body={body} />
+      <EmailPreview from={from} to={to} subject={subject} body={previewBody} />
       <div className="rounded-lg border border-border bg-surface px-4 py-3">
         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Dateiname</p>
         <p className="font-mono text-sm text-foreground break-all">

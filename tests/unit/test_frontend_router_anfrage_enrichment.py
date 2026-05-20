@@ -1,4 +1,4 @@
-from quoting.api import _common
+from quoting.api.container import get_app_container
 from quoting.api.routers.stammdaten import CustomArticleRequest, create_custom_article_match
 from quoting.api.services.quotation_service import (
     filter_redundant_custom_price_overrides,
@@ -78,7 +78,6 @@ def test_same_article_does_not_overwrite_manual_description(make_position):
 
 def test_custom_article_match_persists_review_local_article(
     sqlite_repo,
-    monkeypatch,
     make_position,
 ):
     review_id = "review-1"
@@ -133,7 +132,7 @@ def test_custom_article_match_persists_review_local_article(
         ],
     )
 
-    monkeypatch.setattr(_common, "_pipeline", _PipelineStub())
+    get_app_container().set_pipeline(_PipelineStub())
 
     response = create_custom_article_match(
         review_id,

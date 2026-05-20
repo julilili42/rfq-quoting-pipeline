@@ -35,6 +35,8 @@ export const workflowPreferencesSchema = z.object({
   email_body_template: z.string().default(
     "Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihre Anfrage. Anbei erhalten Sie unser Angebot.\n\nMit freundlichen Grüßen\n[Absender]"
   ),
+  use_llm_email_body: z.boolean().default(false),
+  llm_email_body_style_hint: z.string().max(280).default(""),
 });
 
 export type WorkflowPreferences = z.infer<typeof workflowPreferencesSchema>;

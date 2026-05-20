@@ -37,6 +37,7 @@ class Payloads:
     MANUAL_OVERRIDES = "manual_overrides"
     QUOTATION = "quotation"
     QUOTATION_REVIEWED = "quotation_reviewed"
+    REQUIREMENTS_ACKNOWLEDGED = "requirements_acknowledged"
 
 
 # Legacy keys produced before payload names dropped their ``.json`` suffix
@@ -508,6 +509,29 @@ class SQLiteReviewRepository:
     def load_quotation(self, review_id: str) -> dict[str, Any] | None:
         return self.load_quotation_reviewed(review_id) or self.load_quotation_initial(
             review_id
+        )
+
+    def load_requirements_acknowledged(self, review_id: str) -> list[int]:
+        data = self.load_payload(review_id, Payloads.REQUIREMENTS_ACKNOWLEDGED)
+        if not isinstance(data, dict):
+            return []
+        indices = data.get("indices")
+        if not isinstance(indices, list):
+            return []
+        result: list[int] = []
+        for idx in indices:
+            if isinstance(idx, bool) or not isinstance(idx, int):
+                continue
+            if idx >= 0:
+                result.append(idx)
+        return sorted(set(result))
+
+    def save_requirements_acknowledged(self, review_id: str, indices: list[int]) -> None:
+        clean = sorted({int(i) for i in indices if int(i) >= 0})
+        self.save_payload(
+            review_id,
+            Payloads.REQUIREMENTS_ACKNOWLEDGED,
+            {"indices": clean},
         )
 
     # ------------------------------------------------------------- documents

@@ -169,6 +169,7 @@ export type MailTemplateSettings = {
   email_subject_template: string;
   email_body_template: string;
   company_name: string;
+  body_source: "template" | "llm";
 };
 
 export async function getMailSettings(reviewId: string): Promise<{ kundenFirma: string | null; templates: MailTemplateSettings }> {
@@ -189,15 +190,31 @@ export async function getMailSettings(reviewId: string): Promise<{ kundenFirma: 
     email_subject_template: "Angebot zu Ihrer Anfrage: [Betreff]",
     email_body_template: "<p>Sehr geehrte Damen und Herren,</p><p>vielen Dank für Ihre Anfrage. Anbei erhalten Sie unser Angebot.</p><p>Mit freundlichen Grüßen<br/>[Absender]</p>",
     company_name: "",
+    body_source: "template",
   };
 
+  let useLlmBody = false;
   if (settingsRes.ok) {
     try {
       const s = JSON.parse(await settingsRes.text());
       defaults.email_subject_template = s?.workflow?.email_subject_template ?? defaults.email_subject_template;
       defaults.email_body_template = s?.workflow?.email_body_template ?? defaults.email_body_template;
       defaults.company_name = s?.company?.company_name ?? "";
+      useLlmBody = Boolean(s?.workflow?.use_llm_email_body);
     } catch { /* ignore */ }
+  }
+
+  if (useLlmBody) {
+    try {
+      const replyRes = await fetch(`${REVIEW_API_URL}/${reviewId}/reply-body`, { method: "GET" });
+      if (replyRes.ok) {
+        const body = JSON.parse(await replyRes.text());
+        if (typeof body?.body === "string" && body.body.trim().length > 0) {
+          defaults.email_body_template = body.body;
+          defaults.body_source = "llm";
+        }
+      }
+    } catch { /* fallback to static template */ }
   }
 
   return { kundenFirma, templates: defaults };

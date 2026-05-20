@@ -80,3 +80,39 @@ export function useResetReview(reviewId: string | undefined) {
     },
   });
 }
+
+/**
+ * Persist which extracted requirements the user has acknowledged.
+ *
+ * Optimistic: updates the review-detail cache immediately so the
+ * checklist reacts without waiting for the server round-trip.
+ */
+export function useAcknowledgeRequirements(reviewId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (indices: number[]) => {
+      if (!reviewId) throw new Error("reviewId is required");
+      return reviewsApi.acknowledgeRequirements(reviewId, indices);
+    },
+    onMutate: async (indices) => {
+      if (!reviewId) return;
+      const queryKey = reviewQueryKey(reviewId);
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<{ requirements_acknowledged?: number[] }>(queryKey);
+      queryClient.setQueryData(queryKey, (old: unknown) => {
+        if (!old || typeof old !== "object") return old;
+        return { ...(old as object), requirements_acknowledged: [...indices].sort((a, b) => a - b) };
+      });
+      return { previous };
+    },
+    onError: (_err, _indices, ctx) => {
+      if (!reviewId || !ctx?.previous) return;
+      queryClient.setQueryData(reviewQueryKey(reviewId), ctx.previous);
+    },
+    onSettled: () => {
+      if (!reviewId) return;
+      queryClient.invalidateQueries({ queryKey: reviewQueryKey(reviewId) });
+    },
+  });
+}

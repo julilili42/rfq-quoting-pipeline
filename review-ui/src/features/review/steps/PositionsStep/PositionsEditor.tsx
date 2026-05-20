@@ -286,6 +286,9 @@ export function PositionsEditor({
             unitPriceOverride={unitPriceOverrideByPos.get(position.pos_nr)}
             discountDisabled={discountDisabledByPos.has(position.pos_nr)}
             defaultOpen={newlyAddedRef.current.has(position.pos_nr)}
+            anforderungen={
+              (anfrage.anforderungen ?? []).filter((a) => a.pos_nr === position.pos_nr)
+            }
             onPositionChange={(next) => handlePositionChange(next, position)}
             onUnitPriceChange={handleUnitPriceChange}
             onDiscountDisabledChange={(disabled) => handleDisableDiscountChange(position.pos_nr, disabled)}
