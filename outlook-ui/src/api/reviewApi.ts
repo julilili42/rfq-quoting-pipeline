@@ -33,11 +33,15 @@ function sleep(ms: number): Promise<void> {
 
 export async function startReview(
   mail: MailSnapshot,
+  outlookItemId?: string,
 ): Promise<CreateReviewResponse> {
+  const body = outlookItemId
+    ? { ...mail, outlook_item_id: outlookItemId }
+    : mail;
   const response = await fetch(REVIEW_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(mail),
+    body: JSON.stringify(body),
   });
 
   const text = await response.text();
@@ -102,6 +106,63 @@ export async function getApprovalState(
 
 export function isApproved(record: ApprovalRecord): boolean {
   return record.state === "approved" || record.state === "ready_to_send";
+}
+
+/**
+ * Look up the review currently bound to an Outlook itemId.
+ *
+ * Returns the server's compact status payload. Throws
+ * ReviewNotFoundError when no review is bound — callers should treat
+ * that as "this mail is in the `new` workflow state".
+ */
+export async function getOutlookItemStatus(
+  outlookItemId: string,
+): Promise<import("../serverWorkflow").OutlookItemStatus> {
+  const encoded = encodeURIComponent(outlookItemId);
+  const url = `${REVIEW_API_URL}/by-outlook-item/${encoded}`;
+  const response = await fetch(withCacheBust(url), { method: "GET" });
+  const text = await response.text();
+  if (response.status === 404) {
+    throw new ReviewNotFoundError(outlookItemId);
+  }
+  if (!response.ok) {
+    throw new Error(`Outlook-item status failed (${response.status}): ${text}`);
+  }
+  return JSON.parse(text) as import("../serverWorkflow").OutlookItemStatus;
+}
+
+export async function markReviewOpened(reviewId: string): Promise<void> {
+  const url = `${REVIEW_API_URL}/${reviewId}/mark-opened`;
+  const response = await fetch(url, { method: "POST" });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`mark-opened failed (${response.status}): ${text}`);
+  }
+}
+
+export async function detachOutlookItem(outlookItemId: string): Promise<void> {
+  const encoded = encodeURIComponent(outlookItemId);
+  const url = `${REVIEW_API_URL}/by-outlook-item/${encoded}/detach`;
+  const response = await fetch(url, { method: "POST" });
+  if (!response.ok && response.status !== 404) {
+    const text = await response.text();
+    throw new Error(`detach failed (${response.status}): ${text}`);
+  }
+}
+
+export async function transitionApprovalToReadyToSend(
+  reviewId: string,
+): Promise<void> {
+  const url = `${REVIEW_API_URL}/${reviewId}/approval`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target: "ready_to_send" }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`ready_to_send transition failed (${response.status}): ${text}`);
+  }
 }
 
 export type MailTemplateSettings = {

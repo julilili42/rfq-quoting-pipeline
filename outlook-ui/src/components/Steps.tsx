@@ -8,7 +8,7 @@
  * complete once the angebotsmail has been sent.
  */
 
-import type { MailWorkflowState } from "../mailWorkflowStorage";
+import type { MailWorkflowState } from "../serverWorkflow";
 
 type StepDef = {
   key: MailWorkflowState[];

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from quoting.api import _common
@@ -63,6 +63,37 @@ def _load_review_data(
 @router.get("/reviews", response_model=list[ReviewListItem])
 def list_reviews() -> list[dict]:
     return _workflow_service().list_reviews()
+
+
+@router.get("/reviews/by-outlook-item/{outlook_item_id}")
+def get_review_by_outlook_item(outlook_item_id: str) -> dict:
+    """Compact status payload for the review bound to ``outlook_item_id``.
+
+    Used by the Outlook add-in to render the right workflow card without
+    keeping any state in localStorage. 404 when no review is bound.
+    """
+    status = _workflow_service().get_outlook_item_status(outlook_item_id)
+    if status is None:
+        raise HTTPException(404, f"No review bound to Outlook item {outlook_item_id}")
+    return status
+
+
+@router.post("/reviews/by-outlook-item/{outlook_item_id}/detach", status_code=204)
+def detach_outlook_item(outlook_item_id: str) -> Response:
+    """Unlink the review currently bound to ``outlook_item_id``.
+
+    The review is preserved (still reachable via the overview); the
+    Outlook plugin reverts to "new" for this mail.
+    """
+    _workflow_service().detach_outlook_item(outlook_item_id)
+    return Response(status_code=204)
+
+
+@router.post("/reviews/{review_id}/mark-opened")
+def mark_review_opened(review_id: str) -> dict:
+    """Record the first time the Review-UI was opened for ``review_id``."""
+    _common.require_review(review_id)
+    return _workflow_service().mark_review_opened(review_id)
 
 
 @router.get("/reviews/{review_id}", response_model=ReviewDetail)

@@ -8,28 +8,28 @@
  *   StatusCard            ← only shown for active loading/error feedback
  *   Quoting-Übersicht link ← prominent, with arrow
  *
- * Passive "mail loaded" text stays out of the UI; the card itself is
- * the state surface.
- *
- * Approval polling
- * ----------------
- * After the user opens the Review-UI we poll the backend's
- * `/api/reviews/{id}/approval` endpoint. Once the state flips to
- * `approved` (or `ready_to_send`) we move the workflow into the
- * `approved` state, which unlocks the "Angebotsmail erstellen"
- * button in the WorkflowCard.
+ * State source of truth
+ * ---------------------
+ * All workflow state is server-authoritative. The Outlook itemId is sent
+ * with the create-review request and persisted on the review row.
+ * Subsequent loads call `/api/reviews/by-outlook-item/{id}` to recover
+ * the bound review's state (approval state, pipeline progress, opened/
+ * approved/sent timestamps). The high-level `MailWorkflowState` is
+ * derived from those server signals — there is no localStorage cache.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import {
-  getApprovalState,
+  detachOutlookItem,
   getMailSettings,
-  isApproved,
+  getOutlookItemStatus,
+  markReviewOpened,
   pollReviewUntilComplete,
   ReviewNotFoundError,
   startReview,
+  transitionApprovalToReadyToSend,
 } from "./api/reviewApi";
 import {
   BatchWorkflowCard,
@@ -49,31 +49,29 @@ import {
 import {
   type MailWorkflow,
   type MailWorkflowState,
-  deleteWorkflow,
+  type OutlookItemStatus,
+  buildWorkflowFromStatus,
   deriveMailId,
-  getWorkflow,
-  maybeMigrateLegacy,
-  upsertWorkflow,
-} from "./mailWorkflowStorage";
+} from "./serverWorkflow";
 import type {
   CreateReviewResponse,
   MailSnapshot,
   PipelineProgress,
 } from "./types";
-import { REVIEW_UI_URL } from "./config";
+import { REVIEW_API_URL, REVIEW_UI_URL } from "./config";
 
 import "./style.css";
 
 declare const Office: any;
 
 const REVIEW_OVERVIEW_URL = REVIEW_UI_URL;
-// Workflow states where polling the approval endpoint is meaningful.
-const STATES_TO_POLL_APPROVAL: MailWorkflowState[] = [
+// Workflow states where polling the by-outlook-item endpoint is meaningful.
+const STATES_TO_POLL_STATUS: MailWorkflowState[] = [
   "review_created",
   "review_opened",
 ];
 
-const APPROVAL_POLL_INTERVAL_MS = 4000;
+const STATUS_POLL_INTERVAL_MS = 4000;
 
 
 function reviewUiUrl(reviewId: string): string {
@@ -151,7 +149,39 @@ function App() {
   const [loading, setLoading] = useState(false);
 
   const pollingReviewIdRef = useRef<string | null>(null);
-  const approvalPollTimerRef = useRef<number | null>(null);
+  const statusPollTimerRef = useRef<number | null>(null);
+
+  /**
+   * Fetch the bound review's status from the server and build a
+   * MailWorkflow view-model. Returns null when no review is bound.
+   */
+  async function loadServerWorkflow(
+    targetMailId: string,
+  ): Promise<{ workflow: MailWorkflow | null; status: OutlookItemStatus | null }> {
+    try {
+      const remote = await getOutlookItemStatus(targetMailId);
+      return {
+        workflow: buildWorkflowFromStatus(targetMailId, remote),
+        status: remote,
+      };
+    } catch (error) {
+      if (error instanceof ReviewNotFoundError) {
+        return { workflow: null, status: null };
+      }
+      throw error;
+    }
+  }
+
+  async function refreshServerWorkflow(targetMailId: string): Promise<MailWorkflow | null> {
+    try {
+      const { workflow: wf } = await loadServerWorkflow(targetMailId);
+      setWorkflow(wf);
+      return wf;
+    } catch (error) {
+      setStatus(`Fehler beim Laden des Workflows: ${String(error)}`);
+      return workflow;
+    }
+  }
 
   async function loadMail() {
     setLoading(true);
@@ -165,8 +195,7 @@ function App() {
         setStatus("Lade Mail-Inhalt und Anhänge…");
         const mail = await readMailSnapshot();
         const id = deriveMailId(currentItem, mail);
-        maybeMigrateLegacy(id);
-        const existingWorkflow = await reconcileWorkflowWithBackend(id);
+        const { workflow: existingWorkflow } = await loadServerWorkflow(id);
         setMailId(id);
         setSnapshot(mail);
         setWorkflow(existingWorkflow);
@@ -202,8 +231,7 @@ function App() {
       setStatus("Lade Mail-Inhalt und Anhänge…");
       const mail = await readSelectedMailSnapshot(selected[0].itemId);
       const id = deriveMailId({ itemId: selected[0].itemId }, mail);
-      maybeMigrateLegacy(id);
-      const existingWorkflow = await reconcileWorkflowWithBackend(id);
+      const { workflow: existingWorkflow } = await loadServerWorkflow(id);
       setMailId(id);
       setSnapshot(mail);
       setWorkflow(existingWorkflow);
@@ -216,31 +244,6 @@ function App() {
       setStatus(`Fehler beim Laden der Mail: ${String(error)}`);
     } finally {
       setLoading(false);
-    }
-  }
-
-  /**
-   * Returns the cached workflow for this mail, or ``null`` if the
-   * referenced review no longer exists server-side. A stale local entry
-   * is cleared so the next render shows the fresh "new" card instead of
-   * a ghost review that polls forever.
-   */
-  async function reconcileWorkflowWithBackend(
-    targetMailId: string,
-  ): Promise<MailWorkflow | null> {
-    const existing = getWorkflow(targetMailId);
-    if (!existing?.review?.review_id) return existing;
-    try {
-      await getApprovalState(existing.review.review_id);
-      return existing;
-    } catch (error) {
-      if (error instanceof ReviewNotFoundError) {
-        deleteWorkflow(targetMailId);
-        return null;
-      }
-      // Network / other errors: keep the cached entry and let the
-      // polling effects retry later.
-      return existing;
     }
   }
 
@@ -320,14 +323,7 @@ function App() {
       });
 
       try {
-        const started = await startReview(mail);
-        upsertWorkflow(itemMailId, {
-          subject: mail.subject,
-          sender: mail.from,
-          state: "review_running",
-          review: started,
-          reviewCreatedAt: new Date().toISOString(),
-        });
+        const started = await startReview(mail, itemMailId);
         patchBatchItem(selected.itemId, {
           status: "running",
           reviewId: started.review_id,
@@ -344,12 +340,6 @@ function App() {
           },
         );
 
-        upsertWorkflow(itemMailId, {
-          subject: mail.subject,
-          sender: mail.from,
-          state: "review_created",
-          review: completed,
-        });
         completedCount += 1;
         patchBatchItem(selected.itemId, {
           status: "completed",
@@ -403,14 +393,10 @@ function App() {
           setStatus(formatProgressStatus(progress));
         },
       );
-      const updated = upsertWorkflow(targetMailId, {
-        state: "review_created",
-        review: completed,
-      });
-      setWorkflow(updated);
+      const updated = await refreshServerWorkflow(targetMailId);
       setPipelineProgress(completed.progress ?? null);
       setStatus(`Review erstellt: ${completed.review_id}.`);
-      if (openWhenReady) {
+      if (openWhenReady && updated) {
         handleOpenReview(updated);
       }
     } finally {
@@ -427,15 +413,10 @@ function App() {
     try {
       const mail = snapshot ?? (await readMailSnapshot());
       setSnapshot(mail);
-      const started = await startReview(mail);
-      const runningWorkflow = upsertWorkflow(mailId, {
-        subject: mail.subject,
-        sender: mail.from,
-        state: "review_running",
-        review: started,
-        reviewCreatedAt: new Date().toISOString(),
-      });
-      setWorkflow(runningWorkflow);
+      const started = await startReview(mail, mailId);
+      // Refresh once now so the card flips to review_running immediately;
+      // pipeline polling below will pull in the completed state later.
+      await refreshServerWorkflow(mailId);
       setStatus(`Pipeline gestartet: ${started.review_id}.`);
       await awaitReviewCompletion(started, mailId, openWhenReady);
     } catch (error) {
@@ -444,27 +425,29 @@ function App() {
     }
   }
 
-  function handleOpenReview(wf: MailWorkflow | null = workflow) {
-    if (!wf?.review || !mailId) {
+  async function handleOpenReview(wf: MailWorkflow | null = workflow) {
+    if (!wf?.reviewId || !mailId) {
       setStatus("Kein Review zur Mail vorhanden.");
       return;
     }
-    openUrl(reviewUiUrl(wf.review.review_id));
+    openUrl(reviewUiUrl(wf.reviewId));
 
-    // Once opened, transition forward but never backwards.
-    const nextState: MailWorkflowState =
-      wf.state === "review_created" ? "review_opened" : wf.state;
-
-    const updated = upsertWorkflow(mailId, {
-      state: nextState,
-      reviewOpenedAt: wf.reviewOpenedAt ?? new Date().toISOString(),
-    });
-    setWorkflow(updated);
-    setStatus(`Review-UI geöffnet (${wf.review.review_id}).`);
+    // Record the first open server-side so cross-device reloads agree.
+    if (!wf.reviewOpenedAt) {
+      try {
+        await markReviewOpened(wf.reviewId);
+        await refreshServerWorkflow(mailId);
+      } catch (error) {
+        // Non-fatal: the URL was opened, just the timestamp didn't stick.
+        // Next status poll will pick it up if the request actually landed.
+        console.warn("mark-opened failed:", error);
+      }
+    }
+    setStatus(`Review-UI geöffnet (${wf.reviewId}).`);
   }
 
   async function handleCreateDraftMail() {
-    if (!workflow?.review || !mailId) {
+    if (!workflow?.reviewId || !mailId) {
       setStatus("Kein Review zur Mail vorhanden.");
       return;
     }
@@ -476,12 +459,20 @@ function App() {
     }
     setLoading(true);
     setStatus("Öffne Angebotsmail mit finaler PDF…");
+    const reviewId = workflow.reviewId;
     try {
-      const { templates } = await getMailSettings(workflow.review.review_id).catch(
+      const { templates } = await getMailSettings(reviewId).catch(
         () => ({ kundenFirma: null, templates: undefined }),
       );
       await createDraftMail(
-        workflow.review,
+        {
+          review_id: reviewId,
+          review_url: workflow.reviewUrl ?? reviewUiUrl(reviewId),
+          draft_pdf_url: `${REVIEW_API_URL}/${reviewId}/pdf/draft`,
+          draft_pdf_filename: workflow.finalPdfFilename ?? "",
+          final_pdf_url: `${REVIEW_API_URL}/${reviewId}/pdf/final`,
+          final_pdf_filename: workflow.finalPdfFilename,
+        },
         {
           subject: workflow.subject || snapshot?.subject || "",
           kundenFirma: workflow.kundenFirma,
@@ -490,11 +481,14 @@ function App() {
         setStatus,
         templates,
       );
-      const updated = upsertWorkflow(mailId, {
-        state: "quote_sent",
-        quoteSentAt: new Date().toISOString(),
-      });
-      setWorkflow(updated);
+      // Draft mail open in Outlook → flip backend to ready_to_send. We
+      // don't roll back if this fails — the user already sees the draft.
+      try {
+        await transitionApprovalToReadyToSend(reviewId);
+      } catch (error) {
+        console.warn("ready_to_send transition failed:", error);
+      }
+      await refreshServerWorkflow(mailId);
     } catch (error) {
       setStatus(`Fehler beim Öffnen der Mail: ${String(error)}`);
     } finally {
@@ -502,12 +496,19 @@ function App() {
     }
   }
 
-  function handleResetWorkflow() {
+  async function handleResetWorkflow() {
     if (!mailId) return;
-    deleteWorkflow(mailId);
-    setWorkflow(null);
-    setPipelineProgress(null);
-    setStatus("Workflow zurückgesetzt. Neue Anfrage bereit.");
+    setLoading(true);
+    try {
+      await detachOutlookItem(mailId);
+      setWorkflow(null);
+      setPipelineProgress(null);
+      setStatus("Workflow zurückgesetzt. Neue Anfrage bereit.");
+    } catch (error) {
+      setStatus(`Fehler beim Zurücksetzen: ${String(error)}`);
+    } finally {
+      setLoading(false);
+    }
   }
 
   // ------------------------------------------------------------------
@@ -546,26 +547,33 @@ function App() {
   // ------------------------------------------------------------------
   useEffect(() => {
     if (!mailId) return;
-    if (!workflow?.review) return;
+    if (!workflow?.reviewId) return;
     if (workflow.state !== "review_running") return;
 
     const currentMailId = mailId;
-    const currentReview = workflow.review;
-    if (pollingReviewIdRef.current === currentReview.review_id) {
+    const currentReviewId = workflow.reviewId;
+    if (pollingReviewIdRef.current === currentReviewId) {
       return;
     }
 
     let cancelled = false;
     async function resumePolling() {
       try {
-        setStatus(
-          `Pipeline-Status wird fortgesetzt (${currentReview.review_id})…`,
+        setStatus(`Pipeline-Status wird fortgesetzt (${currentReviewId})…`);
+        // Build a minimal CreateReviewResponse for the existing poller.
+        await awaitReviewCompletion(
+          {
+            review_id: currentReviewId,
+            review_url: "",
+            draft_pdf_url: "",
+            draft_pdf_filename: "",
+          },
+          currentMailId,
+          false,
         );
-        await awaitReviewCompletion(currentReview, currentMailId, false);
       } catch (error) {
         if (cancelled) return;
         if (error instanceof ReviewNotFoundError) {
-          deleteWorkflow(currentMailId);
           setWorkflow(null);
           setPipelineProgress(null);
           setStatus(
@@ -583,86 +591,67 @@ function App() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mailId, workflow?.state, workflow?.review?.review_id]);
+  }, [mailId, workflow?.state, workflow?.reviewId]);
 
   // ------------------------------------------------------------------
-  // Approval polling. Runs while we're in a state where the user might
-  // be approving in the Streamlit UI; flips workflow into `approved`
-  // once the backend confirms approval.
+  // Status polling. While the user is reviewing/approving server-side,
+  // poll the by-outlook-item endpoint so the card moves into `approved`
+  // (or `quote_sent` if approval was given on another device).
   // ------------------------------------------------------------------
   useEffect(() => {
-    if (approvalPollTimerRef.current !== null) {
-      window.clearInterval(approvalPollTimerRef.current);
-      approvalPollTimerRef.current = null;
+    if (statusPollTimerRef.current !== null) {
+      window.clearInterval(statusPollTimerRef.current);
+      statusPollTimerRef.current = null;
     }
 
-    if (!mailId || !workflow?.review?.review_id) return;
-    if (!STATES_TO_POLL_APPROVAL.includes(workflow.state)) return;
+    if (!mailId || !workflow?.reviewId) return;
+    if (!STATES_TO_POLL_STATUS.includes(workflow.state)) return;
 
     let cancelled = false;
-    const reviewId = workflow.review.review_id;
     const currentMailId = mailId;
 
     async function checkOnce() {
       if (cancelled) return;
       try {
-        const record = await getApprovalState(reviewId);
+        const next = await getOutlookItemStatus(currentMailId);
         if (cancelled) return;
-        if (isApproved(record)) {
-          let kundenFirma: string | undefined;
-          try {
-            const { kundenFirma: kf } = await getMailSettings(reviewId);
-            kundenFirma = kf ?? undefined;
-          } catch { /* non-fatal */ }
-
-          const updated = upsertWorkflow(currentMailId, {
-            state: "approved",
-            approvedAt: record.approved_at ?? new Date().toISOString(),
-            approvedBy: record.approved_by ?? undefined,
-            finalPdfFilename: record.final_pdf_path ?? undefined,
-            kundenFirma,
-          });
-          setWorkflow(updated);
+        const updated = buildWorkflowFromStatus(currentMailId, next);
+        setWorkflow(updated);
+        if (updated.state === "approved") {
           setStatus("Freigegeben. Angebotsmail bereit.");
         }
       } catch (error) {
         if (error instanceof ReviewNotFoundError) {
-          // The review was deleted server-side. Drop the stale local entry
-          // so the card resets to "new" — no point polling forever.
           if (cancelled) return;
-          deleteWorkflow(currentMailId);
           setWorkflow(null);
           setPipelineProgress(null);
           setStatus(
             "Vorheriger Review existiert nicht mehr — Workflow zurückgesetzt.",
           );
-          if (approvalPollTimerRef.current !== null) {
-            window.clearInterval(approvalPollTimerRef.current);
-            approvalPollTimerRef.current = null;
+          if (statusPollTimerRef.current !== null) {
+            window.clearInterval(statusPollTimerRef.current);
+            statusPollTimerRef.current = null;
           }
           return;
         }
-        /*
-         * Other approval endpoint failures are non-fatal — keep polling.
-         */
+        /* Other endpoint failures are non-fatal — keep polling. */
       }
     }
 
-    // Fire once immediately so transitions feel snappy, then on interval.
     void checkOnce();
-    approvalPollTimerRef.current = window.setInterval(
+    statusPollTimerRef.current = window.setInterval(
       checkOnce,
-      APPROVAL_POLL_INTERVAL_MS,
+      STATUS_POLL_INTERVAL_MS,
     );
 
     return () => {
       cancelled = true;
-      if (approvalPollTimerRef.current !== null) {
-        window.clearInterval(approvalPollTimerRef.current);
-        approvalPollTimerRef.current = null;
+      if (statusPollTimerRef.current !== null) {
+        window.clearInterval(statusPollTimerRef.current);
+        statusPollTimerRef.current = null;
       }
     };
-  }, [mailId, workflow?.state, workflow?.review?.review_id]);
+  }, [mailId, workflow?.state, workflow?.reviewId]);
 
   // ------------------------------------------------------------------
   // Render.

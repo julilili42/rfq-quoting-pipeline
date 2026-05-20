@@ -55,6 +55,7 @@ class MailReviewRequest(BaseModel):
     sender: str = Field(alias="from")
     body: str
     attachments: list[MailAttachment] = []
+    outlook_item_id: str | None = None
 
 
 class ApprovalTransitionRequest(BaseModel):
@@ -202,6 +203,7 @@ def _mail_review_input(payload: MailReviewRequest) -> IncomingMailReview:
             )
             for attachment in payload.attachments
         ],
+        outlook_item_id=payload.outlook_item_id,
     )
 
 

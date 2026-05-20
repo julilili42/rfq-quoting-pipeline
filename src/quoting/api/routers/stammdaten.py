@@ -124,17 +124,18 @@ def _set_manual_match(review_id: str, pos_nr: int, artikel_nr: str) -> dict:
     _common.require_review(review_id)
     pipeline = _common.get_pipeline()
     repo = _common.get_review_repo()
+    review_data = _common.get_container().review_data_service(repo)
 
     record = pipeline.stammdaten_repo.by_artikelnr(artikel_nr)
     if record is None:
         raise HTTPException(404, f"Stammdaten article '{artikel_nr}' not found")
 
-    anfrage = rs.load_or_extract_anfrage(review_id, pipeline)
+    anfrage = review_data.load_or_extract_anfrage(review_id, pipeline)
 
     if not any(p.pos_nr == pos_nr for p in anfrage.positionen):
         raise HTTPException(404, f"Position {pos_nr} not found in this review")
 
-    matches = rs.load_or_recompute_matches(review_id, anfrage, pipeline)
+    matches = review_data.load_or_recompute_matches(review_id, anfrage, pipeline)
 
     new_match = MatchResult(
         pos_nr=pos_nr,
@@ -147,7 +148,7 @@ def _set_manual_match(review_id: str, pos_nr: int, artikel_nr: str) -> dict:
 
     updated = rs.upsert_match(matches, new_match)
     repo.save_matches_reviewed(review_id, [m.to_dict() for m in updated])
-    rs.invalidate_approval(review_id)
+    review_data.invalidate_approval(review_id)
 
     return {
         "pos_nr": pos_nr,
@@ -186,6 +187,7 @@ def create_custom_article_match(
     _common.require_review(review_id)
     pipeline = _common.get_pipeline()
     repo = _common.get_review_repo()
+    review_data = _common.get_container().review_data_service(repo)
 
     artikel_nr = rs.clean_required_text(payload.artikel_nr, "artikel_nr")
     bezeichnung = rs.clean_required_text(payload.bezeichnung, "bezeichnung")
@@ -200,7 +202,7 @@ def create_custom_article_match(
             f"Stammdaten article '{artikel_nr}' already exists",
         )
 
-    anfrage = rs.load_or_extract_anfrage(review_id, pipeline)
+    anfrage = review_data.load_or_extract_anfrage(review_id, pipeline)
     positions = []
     position_found = False
 
@@ -246,7 +248,7 @@ def create_custom_article_match(
         "custom": True,
     }
 
-    matches = rs.load_or_recompute_matches(review_id, updated_anfrage, pipeline)
+    matches = review_data.load_or_recompute_matches(review_id, updated_anfrage, pipeline)
     new_match = MatchResult(
         pos_nr=payload.pos_nr,
         status="exact",
@@ -264,7 +266,7 @@ def create_custom_article_match(
         remove_position_price_overrides(overrides, payload.pos_nr),
     )
 
-    rs.invalidate_approval(review_id)
+    review_data.invalidate_approval(review_id)
 
     return {
         "pos_nr": payload.pos_nr,

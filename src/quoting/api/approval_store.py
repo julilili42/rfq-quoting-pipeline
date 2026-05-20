@@ -42,6 +42,7 @@ class ApprovalRecord:
     state: ApprovalState = "draft_generated"
     approved_by: str | None = None
     approved_at: str | None = None
+    opened_at: str | None = None
     sent_at: str | None = None
     changed_fields: list[str] = field(default_factory=list)
     final_pdf_path: str | None = None
@@ -63,6 +64,7 @@ class ApprovalRecord:
             state=raw_state,
             approved_by=data.get("approved_by"),
             approved_at=data.get("approved_at"),
+            opened_at=data.get("opened_at"),
             sent_at=data.get("sent_at"),
             changed_fields=list(data.get("changed_fields") or []),
             final_pdf_path=data.get("final_pdf_path"),
@@ -140,6 +142,19 @@ class ApprovalStore:
         if field_path not in record.changed_fields:
             record.changed_fields.append(field_path)
             self.save(review_id, record)
+
+    def mark_opened(self, review_id: str) -> ApprovalRecord:
+        """Record the first time the Review-UI was opened for this review.
+
+        Idempotent — subsequent calls don't overwrite the timestamp. Used by
+        the Outlook plugin to distinguish "review ready, user hasn't looked
+        yet" from "review opened, awaiting approval".
+        """
+        record = self.load(review_id)
+        if record.opened_at is None:
+            record.opened_at = _now_iso()
+            self.save(review_id, record)
+        return record
 
 
 def default_approval_store() -> ApprovalStore:

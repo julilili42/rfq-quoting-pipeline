@@ -13,7 +13,7 @@ import pytest
 from fastapi import HTTPException
 
 from quoting.api import _common
-from quoting.api.approval_store import ApprovalRecord, load_approval, save_approval
+from quoting.api.approval_store import ApprovalRecord, ApprovalStore
 from quoting.api.routers import reviews as reviews_router
 from quoting.api.routers.reviews import FinalizeRequest, finalize_quotation
 from quoting.api.services.quality_gate_service import QualityGateResult, QualityIssue
@@ -23,7 +23,7 @@ from quoting.api.services.quality_gate_service import QualityGateResult, Quality
 def review(sqlite_repo) -> tuple[str, Path]:
     review_id = "review-finalize"
     sqlite_repo.create_review(review_id)
-    save_approval(review_id, ApprovalRecord(state="reviewed"))
+    ApprovalStore(sqlite_repo).save(review_id, ApprovalRecord(state="reviewed"))
     return review_id, sqlite_repo.artifact_dir(review_id)
 
 
@@ -52,7 +52,7 @@ def _patch_handler_dependencies(monkeypatch) -> None:
     monkeypatch.setattr(reviews_router, "build_draft_pdf", fake_build)
 
 
-def test_finalize_rolls_back_pdf_when_transition_fails(review, monkeypatch):
+def test_finalize_rolls_back_pdf_when_transition_fails(review, monkeypatch, sqlite_repo):
     review_id, folder = review
     _patch_handler_dependencies(monkeypatch)
 
@@ -72,10 +72,10 @@ def test_finalize_rolls_back_pdf_when_transition_fails(review, monkeypatch):
 
     assert exc_info.value.status_code == 500
     assert not (folder / "Angebot_Test.pdf").exists()
-    assert load_approval(review_id).state == "reviewed"
+    assert ApprovalStore(sqlite_repo).load(review_id).state == "reviewed"
 
 
-def test_finalize_keeps_pdf_and_marks_approved_on_success(review, monkeypatch):
+def test_finalize_keeps_pdf_and_marks_approved_on_success(review, monkeypatch, sqlite_repo):
     review_id, folder = review
     _patch_handler_dependencies(monkeypatch)
 
@@ -87,13 +87,17 @@ def test_finalize_keeps_pdf_and_marks_approved_on_success(review, monkeypatch):
     assert response["final_pdf_path"] == "Angebot_Test.pdf"
     assert (folder / "Angebot_Test.pdf").exists()
 
-    record = load_approval(review_id)
+    record = ApprovalStore(sqlite_repo).load(review_id)
     assert record.state == "approved"
     assert record.final_pdf_path == "Angebot_Test.pdf"
     assert record.approved_by == "user"
 
 
-def test_finalize_rejects_quality_issues_without_acknowledgement(review, monkeypatch):
+def test_finalize_rejects_quality_issues_without_acknowledgement(
+    review,
+    monkeypatch,
+    sqlite_repo,
+):
     review_id, folder = review
     _patch_handler_dependencies(monkeypatch)
 
@@ -122,10 +126,14 @@ def test_finalize_rejects_quality_issues_without_acknowledgement(review, monkeyp
 
     assert exc_info.value.status_code == 409
     assert not (folder / "Angebot_Test.pdf").exists()
-    assert load_approval(review_id).state == "reviewed"
+    assert ApprovalStore(sqlite_repo).load(review_id).state == "reviewed"
 
 
-def test_finalize_allows_acknowledged_exception_without_reason(review, monkeypatch):
+def test_finalize_allows_acknowledged_exception_without_reason(
+    review,
+    monkeypatch,
+    sqlite_repo,
+):
     review_id, _ = review
     _patch_handler_dependencies(monkeypatch)
 
@@ -156,7 +164,7 @@ def test_finalize_allows_acknowledged_exception_without_reason(review, monkeypat
     )
 
     assert response["final_pdf_path"] == "Angebot_Test.pdf"
-    record = load_approval(review_id)
+    record = ApprovalStore(sqlite_repo).load(review_id)
     assert record.state == "approved"
     assert record.warning_acknowledged is True
     assert record.exception_reason is None

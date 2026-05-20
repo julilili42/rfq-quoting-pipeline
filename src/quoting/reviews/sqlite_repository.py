@@ -114,6 +114,7 @@ class SQLiteReviewRepository:
                     status TEXT NOT NULL DEFAULT 'running',
                     approval_state TEXT NOT NULL DEFAULT 'draft_generated',
                     final_pdf_path TEXT,
+                    outlook_item_id TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     deleted_at TEXT
@@ -150,7 +151,34 @@ class SQLiteReviewRepository:
                     WHERE is_current = 1;
                 """
             )
+            self._add_column_if_missing(
+                conn,
+                table="reviews",
+                column="outlook_item_id",
+                column_def="outlook_item_id TEXT",
+            )
+            # Index lives after the ALTER so legacy DBs without the column
+            # don't fail the CREATE on first open.
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_reviews_outlook_item_id
+                    ON reviews(outlook_item_id)
+                    WHERE outlook_item_id IS NOT NULL AND deleted_at IS NULL
+                """
+            )
             self._rename_legacy_payloads(conn)
+
+    def _add_column_if_missing(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        table: str,
+        column: str,
+        column_def: str,
+    ) -> None:
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
 
     def _rename_legacy_payloads(self, conn: sqlite3.Connection) -> None:
         for old, new in _LEGACY_PAYLOAD_RENAMES.items():
@@ -172,6 +200,7 @@ class SQLiteReviewRepository:
         sender: str = "",
         body: str = "",
         source: str = "api",
+        outlook_item_id: str | None = None,
     ) -> None:
         now = _now_iso()
         self.artifact_dir(review_id).mkdir(parents=True, exist_ok=True)
@@ -179,17 +208,48 @@ class SQLiteReviewRepository:
             conn.execute(
                 """
                 INSERT INTO reviews
-                    (review_id, subject, sender, body, source, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'running', ?, ?)
+                    (review_id, subject, sender, body, source, status,
+                     outlook_item_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?)
                 ON CONFLICT(review_id) DO UPDATE SET
                     subject=excluded.subject,
                     sender=excluded.sender,
                     body=excluded.body,
                     source=excluded.source,
+                    outlook_item_id=excluded.outlook_item_id,
                     deleted_at=NULL,
                     updated_at=excluded.updated_at
                 """,
-                (review_id, subject, sender, body, source, now, now),
+                (review_id, subject, sender, body, source, outlook_item_id, now, now),
+            )
+
+    def get_review_by_outlook_item_id(
+        self, outlook_item_id: str
+    ) -> dict[str, Any] | None:
+        """Return the most-recently-updated review bound to this Outlook item.
+
+        Only one active review per Outlook item is expected, but if a user
+        ever resets and re-creates we prefer the freshest.
+        """
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM reviews
+                WHERE outlook_item_id=? AND deleted_at IS NULL
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (outlook_item_id,),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def set_outlook_item_id(
+        self, review_id: str, outlook_item_id: str | None
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE reviews SET outlook_item_id=?, updated_at=? WHERE review_id=?",
+                (outlook_item_id, _now_iso(), review_id),
             )
 
     def ensure_review(self, review_id: str) -> None:

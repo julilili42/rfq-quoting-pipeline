@@ -22,7 +22,7 @@ import type { MailSnapshot, PipelineProgress } from "../types";
 import type {
   MailWorkflow,
   MailWorkflowState,
-} from "../mailWorkflowStorage";
+} from "../serverWorkflow";
 
 import {
   AlertIcon,
@@ -135,9 +135,9 @@ export function WorkflowCard({
       <div className="card-stack">
         <div className="row-between">
           <StatusPill state={state} />
-          {workflow?.review?.review_id && (
+          {workflow?.reviewId && (
             <code className="review-id" title="Review-ID">
-              {workflow.review.review_id}
+              {workflow.reviewId}
             </code>
           )}
         </div>

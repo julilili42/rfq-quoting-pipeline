@@ -98,6 +98,7 @@ class IncomingMailReview:
     sender: str
     body: str
     attachments: list[IncomingMailAttachment]
+    outlook_item_id: str | None = None
 
 
 def format_mail_dict(mail_meta: dict) -> dict:
@@ -191,6 +192,7 @@ class ReviewWorkflowService:
             sender=payload.sender,
             body=payload.body,
             source="outlook",
+            outlook_item_id=payload.outlook_item_id,
         )
         folder = self.repo.artifact_dir(review_id)
         folder.mkdir(parents=True, exist_ok=True)
@@ -270,6 +272,53 @@ class ReviewWorkflowService:
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         return record.to_dict()
+
+    def mark_review_opened(self, review_id: str) -> dict:
+        record = self.approvals.mark_opened(review_id)
+        return record.to_dict()
+
+    def get_outlook_item_status(self, outlook_item_id: str) -> dict | None:
+        """Compact status payload for an Outlook-item-bound review.
+
+        Returns the minimal view the Outlook plugin needs to render the
+        right card. ``None`` when no review is bound to this item.
+        """
+        review = self.repo.get_review_by_outlook_item_id(outlook_item_id)
+        if review is None:
+            return None
+        review_id = str(review["review_id"])
+        approval = self.approvals.load(review_id)
+        progress = self.repo.load_progress(review_id) or {}
+        anfrage = self.repo.load_anfrage_reviewed(review_id) or {}
+        return {
+            "review_id": review_id,
+            "subject": review.get("subject") or "",
+            "sender": review.get("sender") or "",
+            "created_at": review.get("created_at"),
+            "approval_state": approval.state,
+            "progress_status": progress.get("status"),
+            "opened_at": approval.opened_at,
+            "approved_at": approval.approved_at,
+            "approved_by": approval.approved_by,
+            "sent_at": approval.sent_at,
+            "final_pdf_filename": approval.final_pdf_path,
+            "kunden_firma": anfrage.get("kunde_firma") if isinstance(anfrage, dict) else None,
+            "review_url": f"{self.review_ui_base_url}?review_id={review_id}",
+        }
+
+    def detach_outlook_item(self, outlook_item_id: str) -> dict | None:
+        """Unlink any review currently bound to this Outlook item.
+
+        The review itself is preserved (and still reachable via the
+        overview). Returns the detached review_id or ``None`` if no
+        review was bound.
+        """
+        review = self.repo.get_review_by_outlook_item_id(outlook_item_id)
+        if review is None:
+            return None
+        review_id = str(review["review_id"])
+        self.repo.set_outlook_item_id(review_id, None)
+        return {"review_id": review_id}
 
     def run_review_pipeline(
         self,

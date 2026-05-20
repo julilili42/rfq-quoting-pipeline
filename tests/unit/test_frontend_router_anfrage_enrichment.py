@@ -2,10 +2,9 @@ from quoting.api import _common, frontend_router
 from quoting.api.frontend_router import (
     _enrich_exact_article_edits,
     _filter_redundant_custom_price_overrides,
-    _load_or_recompute_matches,
     _remove_position_price_overrides,
-    _try_load_original_anfrage,
 )
+from quoting.api.services.review_service import ReviewDataService
 from quoting.core import Anfrage
 from quoting.data import InMemoryStammdatenRepository, StammdatenRecord
 from quoting.matching import MatchResult
@@ -296,7 +295,11 @@ def test_load_matches_filters_deleted_position_matches(sqlite_repo, make_positio
         ],
     )
 
-    matches = _load_or_recompute_matches(review_id, anfrage, _PipelineStub())  # type: ignore[arg-type]
+    matches = ReviewDataService(sqlite_repo).load_or_recompute_matches(
+        review_id,
+        anfrage,
+        _PipelineStub(),  # type: ignore[arg-type]
+    )
 
     assert [match.pos_nr for match in matches] == [1]
     assert matches[0].matched_artikelnr is None
@@ -310,7 +313,7 @@ def test_original_anfrage_loader_ignores_reviewed_edits(sqlite_repo, make_positi
     sqlite_repo.save_extracted(review_id, original.model_dump(mode="json"))
     sqlite_repo.save_anfrage_reviewed(review_id, reviewed.model_dump(mode="json"))
 
-    loaded = _try_load_original_anfrage(review_id)
+    loaded = ReviewDataService(sqlite_repo).try_load_original_anfrage(review_id)
 
     assert loaded is not None
     assert loaded.positionen[0].artikelnummer == "ORIGINAL"

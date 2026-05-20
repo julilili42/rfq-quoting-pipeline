@@ -9,7 +9,6 @@ from pathlib import Path
 from fastapi import HTTPException, UploadFile
 
 from quoting.api import _common
-from quoting.api.progress_store import init_progress
 from quoting.api.services.review_service import build_mail
 from quoting.ingestion import detect_file_type
 
@@ -48,7 +47,7 @@ async def create_review_from_upload(file: UploadFile) -> str:
     folder = repo.artifact_dir(review_id)
     folder.mkdir(parents=True, exist_ok=True)
 
-    init_progress(review_id)
+    _common.get_container().progress_store(repo).init(review_id)
 
     target = folder / safe_name
     with target.open("wb") as fh:
