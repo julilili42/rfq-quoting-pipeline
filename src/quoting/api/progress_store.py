@@ -49,6 +49,8 @@ class ProgressStore:
                     "status": "running" if step_name == "Mail vorbereiten" else "pending",
                     "detail": "Review wird vorbereitet" if step_name == "Mail vorbereiten" else "",
                     "updated_at": now if step_name == "Mail vorbereiten" else None,
+                    "started_at": now if step_name == "Mail vorbereiten" else None,
+                    "completed_at": None,
                 }
                 for step_name in PIPELINE_STEPS
             ],
@@ -87,6 +89,12 @@ class ProgressStore:
             step["status"] = mapped_status
             step["detail"] = detail
             step["updated_at"] = now
+            if mapped_status == "running" and not step.get("started_at"):
+                step["started_at"] = now
+            if mapped_status in {"completed", "skipped"}:
+                if not step.get("started_at"):
+                    step["started_at"] = now
+                step["completed_at"] = now
             break
 
         completed_count = sum(
@@ -142,6 +150,9 @@ class ProgressStore:
             if step.get("status") in {"pending", "running"}:
                 step["status"] = "completed"
                 step["updated_at"] = now
+                if not step.get("started_at"):
+                    step["started_at"] = now
+                step["completed_at"] = now
 
         data["status"] = "completed"
         data["current_step"] = "Review bereit"
@@ -166,6 +177,7 @@ class ProgressStore:
                 step["status"] = "failed"
                 step["detail"] = error
                 step["updated_at"] = now
+                step["completed_at"] = now
                 break
 
         data["status"] = "failed"

@@ -69,8 +69,7 @@ def list_reviews() -> list[dict]:
     return _workflow_service().list_reviews()
 
 
-@router.get("/reviews/by-outlook-item/{outlook_item_id}")
-def get_review_by_outlook_item(outlook_item_id: str) -> dict:
+def _review_by_outlook_item_status(outlook_item_id: str) -> dict:
     """Compact status payload for the review bound to ``outlook_item_id``.
 
     Used by the Outlook add-in to render the right workflow card without
@@ -82,8 +81,18 @@ def get_review_by_outlook_item(outlook_item_id: str) -> dict:
     return status
 
 
-@router.post("/reviews/by-outlook-item/{outlook_item_id}/detach", status_code=204)
-def detach_outlook_item(outlook_item_id: str) -> Response:
+@router.get("/reviews/by-outlook-item")
+def get_review_by_outlook_item_query(outlook_item_id: str) -> dict:
+    """Query-param variant for Outlook IDs containing slashes."""
+    return _review_by_outlook_item_status(outlook_item_id)
+
+
+@router.get("/reviews/by-outlook-item/{outlook_item_id}")
+def get_review_by_outlook_item(outlook_item_id: str) -> dict:
+    return _review_by_outlook_item_status(outlook_item_id)
+
+
+def _detach_outlook_item(outlook_item_id: str) -> Response:
     """Unlink the review currently bound to ``outlook_item_id``.
 
     The review is preserved (still reachable via the overview); the
@@ -91,6 +100,17 @@ def detach_outlook_item(outlook_item_id: str) -> Response:
     """
     _workflow_service().detach_outlook_item(outlook_item_id)
     return Response(status_code=204)
+
+
+@router.post("/reviews/by-outlook-item/detach", status_code=204)
+def detach_outlook_item_query(outlook_item_id: str) -> Response:
+    """Query-param variant for Outlook IDs containing slashes."""
+    return _detach_outlook_item(outlook_item_id)
+
+
+@router.post("/reviews/by-outlook-item/{outlook_item_id}/detach", status_code=204)
+def detach_outlook_item(outlook_item_id: str) -> Response:
+    return _detach_outlook_item(outlook_item_id)
 
 
 @router.post("/reviews/{review_id}/mark-opened")
@@ -228,6 +248,12 @@ def get_reply_body(review_id: str) -> ReplyBodyResponse:
             style_hint=style_hint,
             llm=llm,
             acknowledged_requirements=acknowledged_requirements,
+            usage_callback=lambda usage: repo.record_llm_usage(
+                review_id,
+                source="reply_body",
+                usage=usage,
+                model=model_name,
+            ),
         )
     except Exception as exc:
         raise HTTPException(503, f"Reply-body generation failed: {exc}") from exc

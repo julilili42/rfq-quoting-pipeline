@@ -118,8 +118,8 @@ export function isApproved(record: ApprovalRecord): boolean {
 export async function getOutlookItemStatus(
   outlookItemId: string,
 ): Promise<import("../serverWorkflow").OutlookItemStatus> {
-  const encoded = encodeURIComponent(outlookItemId);
-  const url = `${REVIEW_API_URL}/by-outlook-item/${encoded}`;
+  const query = new URLSearchParams({ outlook_item_id: outlookItemId });
+  const url = `${REVIEW_API_URL}/by-outlook-item?${query.toString()}`;
   const response = await fetch(withCacheBust(url), { method: "GET" });
   const text = await response.text();
   if (response.status === 404) {
@@ -141,8 +141,8 @@ export async function markReviewOpened(reviewId: string): Promise<void> {
 }
 
 export async function detachOutlookItem(outlookItemId: string): Promise<void> {
-  const encoded = encodeURIComponent(outlookItemId);
-  const url = `${REVIEW_API_URL}/by-outlook-item/${encoded}/detach`;
+  const query = new URLSearchParams({ outlook_item_id: outlookItemId });
+  const url = `${REVIEW_API_URL}/by-outlook-item/detach?${query.toString()}`;
   const response = await fetch(url, { method: "POST" });
   if (!response.ok && response.status !== 404) {
     const text = await response.text();
@@ -172,17 +172,29 @@ export type MailTemplateSettings = {
   body_source: "template" | "llm";
 };
 
-export async function getMailSettings(reviewId: string): Promise<{ kundenFirma: string | null; templates: MailTemplateSettings }> {
+function extractEmailAddress(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const bracketMatch = value.match(/<([^<>@\s]+@[^<>@\s]+\.[^<>@\s]+)>/);
+  if (bracketMatch?.[1]) return bracketMatch[1].trim();
+  const plainMatch = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return plainMatch?.[0]?.trim() ?? null;
+}
+
+export async function getMailSettings(reviewId: string): Promise<{ kundenFirma: string | null; recipientEmail: string | null; templates: MailTemplateSettings }> {
   const [detailRes, settingsRes] = await Promise.all([
     fetch(`${REVIEW_API_URL}/${reviewId}`, { method: "GET" }),
     fetch(`${API_BASE_URL}/api/settings`, { method: "GET" }),
   ]);
 
   let kundenFirma: string | null = null;
+  let recipientEmail: string | null = null;
   if (detailRes.ok) {
     try {
       const detail = JSON.parse(await detailRes.text());
       kundenFirma = detail?.anfrage?.kunde_firma ?? null;
+      recipientEmail =
+        extractEmailAddress(detail?.anfrage?.kunde_email) ??
+        extractEmailAddress(detail?.mail?.from);
     } catch { /* ignore */ }
   }
 
@@ -199,7 +211,7 @@ export async function getMailSettings(reviewId: string): Promise<{ kundenFirma: 
       const s = JSON.parse(await settingsRes.text());
       defaults.email_subject_template = s?.workflow?.email_subject_template ?? defaults.email_subject_template;
       defaults.email_body_template = s?.workflow?.email_body_template ?? defaults.email_body_template;
-      defaults.company_name = s?.company?.company_name ?? "";
+      defaults.company_name = s?.company?.contact_person || s?.company?.company_name || "";
       useLlmBody = Boolean(s?.workflow?.use_llm_email_body);
     } catch { /* ignore */ }
   }
@@ -217,7 +229,7 @@ export async function getMailSettings(reviewId: string): Promise<{ kundenFirma: 
     } catch { /* fallback to static template */ }
   }
 
-  return { kundenFirma, templates: defaults };
+  return { kundenFirma, recipientEmail, templates: defaults };
 }
 
 export async function pollReviewUntilComplete(

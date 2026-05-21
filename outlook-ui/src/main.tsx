@@ -461,8 +461,8 @@ function App() {
     setStatus("Öffne Angebotsmail mit finaler PDF…");
     const reviewId = workflow.reviewId;
     try {
-      const { templates } = await getMailSettings(reviewId).catch(
-        () => ({ kundenFirma: null, templates: undefined }),
+      const { kundenFirma, recipientEmail, templates } = await getMailSettings(reviewId).catch(
+        () => ({ kundenFirma: null, recipientEmail: null, templates: undefined }),
       );
       await createDraftMail(
         {
@@ -475,7 +475,8 @@ function App() {
         },
         {
           subject: workflow.subject || snapshot?.subject || "",
-          kundenFirma: workflow.kundenFirma,
+          kundenFirma: workflow.kundenFirma ?? kundenFirma ?? undefined,
+          recipientEmail: recipientEmail ?? undefined,
           overrideFilename: workflow.finalPdfFilename,
         },
         setStatus,
@@ -541,6 +542,39 @@ function App() {
       }
     });
   }, []);
+
+  // Refresh when the user returns from the Review-UI to Outlook. Office/webview
+  // hosts may throttle intervals while the taskpane is in the background.
+  useEffect(() => {
+    if (!isOutlook) return;
+
+    let lastRefreshAt = 0;
+    function refreshOnReturn() {
+      const now = Date.now();
+      if (now - lastRefreshAt < 500) return;
+      lastRefreshAt = now;
+
+      if (mailId && workflow?.reviewId) {
+        void refreshServerWorkflow(mailId);
+        return;
+      }
+      void loadMail();
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        refreshOnReturn();
+      }
+    }
+
+    window.addEventListener("focus", refreshOnReturn);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", refreshOnReturn);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOutlook, mailId, workflow?.reviewId]);
 
   // ------------------------------------------------------------------
   // Resume pipeline polling on reload while pipeline is still running.
@@ -617,9 +651,6 @@ function App() {
         if (cancelled) return;
         const updated = buildWorkflowFromStatus(currentMailId, next);
         setWorkflow(updated);
-        if (updated.state === "approved") {
-          setStatus("Freigegeben. Angebotsmail bereit.");
-        }
       } catch (error) {
         if (error instanceof ReviewNotFoundError) {
           if (cancelled) return;

@@ -9,7 +9,9 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi.testclient import TestClient
 
+from quoting.api.progress_store import ProgressStore
 from quoting.api.services.review_workflow_service import ReviewWorkflowService
 
 
@@ -87,3 +89,40 @@ def test_detach_unlinks_but_preserves_review(workflow_service, sqlite_repo):
 
 def test_detach_is_noop_when_nothing_bound(workflow_service):
     assert workflow_service.detach_outlook_item("unknown-item") is None
+
+
+def test_http_outlook_item_lookup_accepts_ids_with_slashes(sqlite_repo):
+    from quoting.api.review_api import app
+
+    outlook_item_id = "AQMkADQ3/with+slash=="
+    sqlite_repo.create_review(
+        "review-1",
+        subject="Anfrage 42",
+        outlook_item_id=outlook_item_id,
+    )
+    ProgressStore(sqlite_repo).init("review-1")
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/reviews/by-outlook-item",
+        params={"outlook_item_id": outlook_item_id},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["review_id"] == "review-1"
+
+
+def test_http_outlook_item_detach_accepts_ids_with_slashes(sqlite_repo):
+    from quoting.api.review_api import app
+
+    outlook_item_id = "AQMkADQ3/with+slash=="
+    sqlite_repo.create_review("review-1", outlook_item_id=outlook_item_id)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/reviews/by-outlook-item/detach",
+        params={"outlook_item_id": outlook_item_id},
+    )
+
+    assert response.status_code == 204
+    assert sqlite_repo.get_review_by_outlook_item_id(outlook_item_id) is None

@@ -7,6 +7,7 @@ declare const Office: any;
 type DraftMailContext = {
   subject: string;
   kundenFirma?: string;
+  recipientEmail?: string;
   overrideFilename?: string;
 };
 
@@ -22,8 +23,12 @@ function resolvePlaceholders(
 }
 
 function plainTextToHtml(text: string): string {
-  if (/<[a-z][\s\S]*>/i.test(text)) return text;
-  return text
+  const normalized = text
+    .replaceAll("\\r\\n", "\n")
+    .replaceAll("\\n", "\n")
+    .replaceAll("\\t", "\t");
+  if (/<[a-z][\s\S]*>/i.test(normalized)) return normalized;
+  return normalized
     .split("\n\n")
     .map(para => `<p>${para.split("\n").join("<br/>")}</p>`)
     .join("");
@@ -67,7 +72,7 @@ export async function createDraftMail(
     result.draft_pdf_filename.replace("Draft_", "").replace("_DRAFT", "_FINAL");
 
   Office.context.mailbox.displayNewMessageForm({
-    toRecipients: [],
+    toRecipients: mail.recipientEmail ? [mail.recipientEmail] : [],
     subject,
     htmlBody,
     attachments: [

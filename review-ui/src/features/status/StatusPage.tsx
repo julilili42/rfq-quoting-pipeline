@@ -18,6 +18,20 @@ function fmtPct(n: number): string {
   return (n * 100).toFixed(1) + " %";
 }
 
+function fmtDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+  if (seconds < 60) return `${seconds.toFixed(1)} s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  if (seconds < 86400) return `${(seconds / 3600).toFixed(1)} h`;
+  return `${(seconds / 86400).toFixed(1)} d`;
+}
+
+function extractionPathLabel(path: PerReviewMetric["extraction_path"]): string {
+  if (path === "fast_path") return "Fast-Path";
+  if (path === "llm") return "LLM";
+  return "—";
+}
+
 function StatCell({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
     <div className="bg-surface px-5 py-5">
@@ -34,9 +48,10 @@ function PipelineStats({ m }: { m: Metrics }) {
   const hoursSaved = (m.total_reviews * MINUTES_PER_MANUAL_REVIEW) / 60;
   const totalExtractions = m.fast_path_hits + m.llm_calls;
   const fastPathRate = totalExtractions > 0 ? m.fast_path_hits / totalExtractions : 0;
+  const hasApprovalDuration = m.reviews_with_approval_duration > 0;
 
   return (
-    <div className="mb-8 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3 lg:grid-cols-7">
+    <div className="mb-8 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
       <StatCell
         label="Angebote"
         value={m.total_reviews}
@@ -57,9 +72,14 @@ function PipelineStats({ m }: { m: Metrics }) {
         value={fmtEur(m.total_eur)}
       />
       <StatCell
-        label="Ø Dauer"
+        label="Ø Pipeline-Zeit"
         value={`${m.avg_duration_s} s`}
-        hint="pro Angebot"
+        hint="aktive Verarbeitung"
+      />
+      <StatCell
+        label="Ø bis Freigabe"
+        value={hasApprovalDuration ? fmtDuration(m.avg_approval_duration_s) : "—"}
+        hint={hasApprovalDuration ? `${m.reviews_with_approval_duration} freigegeben` : "noch keine Freigabe"}
       />
       <StatCell
         label="Fast-Path"
@@ -114,10 +134,22 @@ function PerReviewTable({ rows }: { rows: PerReviewMetric[] }) {
           <thead>
             <tr className="border-b border-border bg-muted/40 text-[11px] font-medium text-muted-foreground">
               <th className="px-4 py-3 text-left">Betreff</th>
+              <th className="px-4 py-3 text-left">Pfad</th>
               <th className="px-4 py-3 text-right">Pos.</th>
               <th className="px-4 py-3 text-right">Match-Rate</th>
               <th className="px-4 py-3 text-right">EUR</th>
-              <th className="px-4 py-3 text-right">Dauer (s)</th>
+              <th
+                className="px-4 py-3 text-right"
+                title="Summe der aktiven Verarbeitungszeiten in der Pipeline. Bei Queue-Runs aus Job claim bis complete; sonst aus gespeicherten Step-Zeiten. Ältere Reviews ohne Timing fallen auf Review-Start bis PDF-bereit zurück."
+              >
+                Pipeline-Zeit (s)
+              </th>
+              <th
+                className="px-4 py-3 text-right"
+                title="Zeit von Erstellung der Review bis zur finalen Freigabe."
+              >
+                Bis Freigabe
+              </th>
               <th className="px-4 py-3 text-right">Eingabe-T</th>
               <th className="px-4 py-3 text-right">Ausgabe-T</th>
               <th className="px-4 py-3 text-right">Gesamt-T</th>
@@ -137,11 +169,27 @@ function PerReviewTable({ rows }: { rows: PerReviewMetric[] }) {
                     {r.subject || r.review_id}
                   </Link>
                 </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={
+                      r.extraction_path === "fast_path"
+                        ? "inline-flex rounded-md bg-success-soft px-2 py-0.5 text-[11px] font-semibold text-success"
+                        : r.extraction_path === "llm"
+                          ? "inline-flex rounded-md bg-info-soft px-2 py-0.5 text-[11px] font-semibold text-info"
+                          : "text-muted-foreground"
+                    }
+                  >
+                    {extractionPathLabel(r.extraction_path)}
+                  </span>
+                </td>
                 <td className="px-4 py-3 text-right tabular-nums">{r.positions}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{fmtPct(r.match_rate)}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{fmtEur(r.total_eur)}</td>
                 <td className="px-4 py-3 text-right tabular-nums">
                   {r.duration_s > 0 ? r.duration_s.toFixed(1) : dash}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {fmtDuration(r.approval_duration_s)}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                   {r.token_usage ? fmt(r.token_usage.input_tokens) : dash}
@@ -156,7 +204,7 @@ function PerReviewTable({ rows }: { rows: PerReviewMetric[] }) {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={10} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   Noch keine abgeschlossenen Angebote vorhanden.
                 </td>
               </tr>

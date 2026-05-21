@@ -80,6 +80,9 @@ def test_prompt_contains_customer_and_position(sample_anfrage: Anfrage):
     assert "Spezialteil A" in prompt
     assert "Teil B" in prompt
     assert "Anzahl Positionen: 2" in prompt
+    assert "Anrede" in prompt
+    assert "Mit freundlichen Grüßen" in prompt
+    assert "[Absender]" in prompt
 
 
 def test_prompt_includes_style_hint_when_provided(sample_anfrage: Anfrage):
@@ -102,11 +105,13 @@ def test_prompt_english_variant(sample_anfrage: Anfrage):
     prompt = build_reply_body_prompt(sample_anfrage, quotation, style_hint="", language="en")
     assert "Customer:" in prompt
     assert "Response:" in prompt
+    assert "Dear Sir or Madam" in prompt
+    assert "Best regards" in prompt
 
 
 def test_generate_reply_body_strips_response_artifact(sample_anfrage: Anfrage):
     quotation = _quotation([_item()], 300.0)
-    llm = _StubLLM("Antwort: vielen Dank für Ihre Anfrage. Anbei das Angebot.")
+    llm = _StubLLM('"Antwort: vielen Dank für Ihre Anfrage. Anbei das Angebot."')
     body, language = generate_reply_body(
         anfrage=sample_anfrage,
         quotation=quotation,
@@ -117,6 +122,50 @@ def test_generate_reply_body_strips_response_artifact(sample_anfrage: Anfrage):
     assert body.startswith("vielen Dank")
     assert language == "de"
     assert llm.last_prompt is not None
+
+
+def test_generate_reply_body_strips_code_fence_and_quotes(sample_anfrage: Anfrage):
+    quotation = _quotation([_item()], 300.0)
+    llm = _StubLLM(
+        "```text\n"
+        "„Sehr geehrte Damen und Herren,\n\n"
+        "vielen Dank für Ihre Anfrage.\n\n"
+        "Mit freundlichen Grüßen\n"
+        "[Absender]“\n"
+        "```"
+    )
+
+    body, _ = generate_reply_body(
+        anfrage=sample_anfrage,
+        quotation=quotation,
+        mail_body="Sehr geehrte Damen, bitte um Angebot.",
+        style_hint="",
+        llm=llm,
+    )
+
+    assert body.startswith("Sehr geehrte Damen und Herren,")
+    assert body.endswith("[Absender]")
+
+
+def test_generate_reply_body_unescapes_literal_newlines(sample_anfrage: Anfrage):
+    quotation = _quotation([_item()], 300.0)
+    llm = _StubLLM(
+        "Sehr geehrter Herr Hochstein,\\n\\n"
+        "vielen Dank für Ihre Anfrage. Anbei erhalten Sie unser Angebot als PDF.\\n\\n"
+        "Mit freundlichen Grüßen\\n[Absender]"
+    )
+
+    body, _ = generate_reply_body(
+        anfrage=sample_anfrage,
+        quotation=quotation,
+        mail_body="Sehr geehrte Damen, bitte um Angebot.",
+        style_hint="",
+        llm=llm,
+    )
+
+    assert "\\n" not in body
+    assert "Hochstein,\n\nvielen Dank" in body
+    assert body.endswith("Grüßen\n[Absender]")
 
 
 def test_prompt_includes_acknowledged_requirements_de(sample_anfrage: Anfrage):
@@ -177,6 +226,23 @@ def test_generate_reply_body_passes_acks_through(sample_anfrage: Anfrage):
     )
     assert llm.last_prompt is not None
     assert "Zeichnung beilegen" in llm.last_prompt
+
+
+def test_generate_reply_body_reports_token_usage(sample_anfrage: Anfrage):
+    quotation = _quotation([_item()], 300.0)
+    llm = _StubLLM("vielen Dank für Ihre Anfrage.")
+    reported: list[TokenUsage] = []
+
+    generate_reply_body(
+        anfrage=sample_anfrage,
+        quotation=quotation,
+        mail_body="Sehr geehrte Damen, bitte um Angebot.",
+        style_hint="",
+        llm=llm,
+        usage_callback=reported.append,
+    )
+
+    assert reported == [TokenUsage(0, 0, 0)]
 
 
 def test_generate_reply_body_raises_on_empty_response(sample_anfrage: Anfrage):

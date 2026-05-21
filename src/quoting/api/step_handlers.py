@@ -132,7 +132,18 @@ class StepHandlers:
                 f"Mail for review {review_id!r} has no body and no attachments"
             )
 
-        self.pipeline.extract(mail, self._ctx(review_id))
+        ctx = self._ctx(review_id)
+        self.pipeline.extract(mail, ctx)
+        extraction_path = ctx.extra.get("extraction_path")
+        if extraction_path in {"fast_path", "llm"}:
+            self.repo.save_extraction_meta(review_id, path=str(extraction_path))
+        usage = ctx.extra.get("token_usage")
+        if usage is not None:
+            self.repo.record_llm_usage(
+                review_id,
+                source="extraction",
+                usage=usage,
+            )
 
     def match(self, review_id: str) -> None:
         if self.repo.load_matches_initial(review_id) is not None:

@@ -1,5 +1,11 @@
-import { AlertTriangle, ArrowRight, ShieldAlert } from "lucide-react";
-import type { ReactNode } from "react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  ChevronDown,
+  ShieldAlert,
+} from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import type { ReviewDetail } from "@/shared/api/reviews";
@@ -57,103 +63,171 @@ export function ApprovalSummary({
   const state = resolveGateState(gate);
   const showIssues = !isApproved && (gate.blockers.length > 0 || gate.warnings.length > 0);
   const readinessCopy = resolveReadinessCopy(state, isApproved);
+  const [expanded, setExpanded] = useState(true);
+  const toggleLabel = expanded
+    ? "Abschluss & Freigabe einklappen"
+    : "Abschluss & Freigabe ausklappen";
 
   return (
     <section
       aria-labelledby="approval-summary-heading"
-      className="rounded-lg border border-border bg-surface p-4 shadow-card"
+      className="overflow-hidden rounded-lg border border-border bg-surface shadow-card"
     >
-      <header className="mb-3">
-        <div>
-          <p className="font-display text-lg font-bold tracking-tight text-foreground">
-            {readinessCopy.title}
-          </p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {readinessCopy.description}
-          </p>
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-surface px-4 py-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <StatusMark state={state} isApproved={isApproved} />
+          <div className="min-w-0">
+            <p className="font-display text-lg font-bold tracking-tight text-foreground">
+              {readinessCopy.title}
+            </p>
+            {readinessCopy.description && (
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {readinessCopy.description}
+              </p>
+            )}
+          </div>
         </div>
-
+        <div className="flex shrink-0 items-center">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls="approval-summary-content"
+            aria-label={toggleLabel}
+            title={toggleLabel}
+            onClick={() => setExpanded((value) => !value)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-surface text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 transition-transform",
+                expanded && "rotate-180",
+              )}
+              aria-hidden="true"
+            />
+          </button>
+        </div>
       </header>
 
-      {!isApproved && (
-        <RequirementsChecklist
-          anforderungen={detail.anfrage.anforderungen ?? []}
-          acknowledgedIndices={detail.requirements_acknowledged ?? []}
-        />
-      )}
+      <div
+        id="approval-summary-content"
+        className={cn("space-y-3 p-4", !expanded && "hidden")}
+      >
+        {!isApproved && (
+          <RequirementsChecklist
+            anforderungen={detail.anfrage.anforderungen ?? []}
+            acknowledgedIndices={detail.requirements_acknowledged ?? []}
+          />
+        )}
 
-      {showIssues && (
-        <IssuesBlock blockers={gate.blockers} warnings={gate.warnings} />
-      )}
+        {showIssues && (
+          <IssuesBlock blockers={gate.blockers} warnings={gate.warnings} />
+        )}
 
-      <div className="mt-3 overflow-hidden rounded-md border border-border">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="sticky top-0 bg-muted text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="w-16 px-3 py-1.5">Pos</th>
-                <th className="min-w-56 px-3 py-1.5">Artikel</th>
-                <th className="px-3 py-1.5 text-right">Menge</th>
-                <th className="px-3 py-1.5 text-right">Stückpreis</th>
-                <th className="px-3 py-1.5 text-right">Gesamt</th>
-                <th className="px-3 py-1.5">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border bg-surface">
-              {items.length > 0 ? (
-                items.map((item) => (
-                  <SummaryRow
-                    key={`${item.pos_nr}-${item.artikel_nr}`}
-                    item={item}
-                    matchStatus={matchesByPos.get(item.pos_nr)?.status ?? "no_match"}
-                    hasOverride={hasManualOverride(item, overrides)}
-                  />
-                ))
-              ) : (
+        <div className="overflow-hidden rounded-md border border-border">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="sticky top-0 bg-muted text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <td colSpan={6} className="px-3 py-4 text-sm text-muted-foreground">
-                    Keine Preispositionen vorhanden.
-                  </td>
+                  <th className="w-16 px-3 py-1.5">Pos</th>
+                  <th className="min-w-56 px-3 py-1.5">Artikel</th>
+                  <th className="px-3 py-1.5 text-right">Menge</th>
+                  <th className="px-3 py-1.5 text-right">Stückpreis</th>
+                  <th className="px-3 py-1.5 text-right">Gesamt</th>
+                  <th className="px-3 py-1.5">Status</th>
                 </tr>
-              )}
-            </tbody>
-            <tfoot className="bg-muted/35">
-              <tr>
-                <td
-                  colSpan={4}
-                  className="border-t border-border px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                >
-                  Summe
-                </td>
-                <td className="border-t border-border px-3 py-2.5 text-right font-display text-lg font-bold tabular-nums text-foreground">
-                  {formatEur(quotation?.gesamtsumme)}
-                </td>
-                <td className="border-t border-border px-3 py-2.5" />
-              </tr>
-            </tfoot>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border bg-surface">
+                {items.length > 0 ? (
+                  items.map((item) => (
+                    <SummaryRow
+                      key={`${item.pos_nr}-${item.artikel_nr}`}
+                      item={item}
+                      matchStatus={matchesByPos.get(item.pos_nr)?.status ?? "no_match"}
+                      hasOverride={hasManualOverride(item, overrides)}
+                    />
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-4 text-sm text-muted-foreground">
+                      Keine Preispositionen vorhanden.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot className="bg-muted/35">
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="border-t border-border px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    Summe
+                  </td>
+                  <td className="border-t border-border px-3 py-2.5 text-right font-display text-lg font-bold tabular-nums text-foreground">
+                    {formatEur(quotation?.gesamtsumme)}
+                  </td>
+                  <td className="border-t border-border px-3 py-2.5" />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
+
+        {(priceWarningCount > 0 || gate.stats.unmatched > 0) && (
+          <div className="flex flex-wrap gap-2 text-xs">
+            {priceWarningCount > 0 && (
+              <SummaryPill tone="warning">{priceWarningCount} Preiswarnung(en)</SummaryPill>
+            )}
+            {gate.stats.unmatched > 0 && (
+              <SummaryPill tone="danger">
+                {gate.stats.unmatched} Position(en) ohne Treffer
+              </SummaryPill>
+            )}
+          </div>
+        )}
+
+        {approvalControls && (
+          isApproved ? (
+            approvalControls
+          ) : (
+            <div className="overflow-hidden rounded-md border border-border bg-surface">
+              <div className="bg-muted px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                Freigabe
+              </div>
+              <div className="p-3">{approvalControls}</div>
+            </div>
+          )
+        )}
       </div>
-
-      {(priceWarningCount > 0 || gate.stats.unmatched > 0) && (
-        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          {priceWarningCount > 0 && (
-            <SummaryPill tone="warning">{priceWarningCount} Preiswarnung(en)</SummaryPill>
-          )}
-          {gate.stats.unmatched > 0 && (
-            <SummaryPill tone="danger">
-              {gate.stats.unmatched} Position(en) ohne Treffer
-            </SummaryPill>
-          )}
-        </div>
-      )}
-
-      {approvalControls && (
-        <div className="mt-4 border-t border-border pt-4">
-          {approvalControls}
-        </div>
-      )}
     </section>
+  );
+}
+
+function StatusMark({ state, isApproved }: { state: GateState; isApproved: boolean }) {
+  if (isApproved) {
+    return (
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-success/25 bg-success-soft text-success">
+        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+      </span>
+    );
+  }
+  if (state === "ok") {
+    return (
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-success">
+        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+      </span>
+    );
+  }
+  if (state === "warning") {
+    return (
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-warning/25 bg-warning-soft text-warning">
+        <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+      </span>
+    );
+  }
+  return (
+    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-danger/25 bg-danger-soft text-danger">
+      <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+    </span>
   );
 }
 
@@ -173,7 +247,7 @@ function resolveReadinessCopy(state: GateState, isApproved: boolean) {
   if (state === "warning") {
     return {
       title: "Fast versandbereit",
-      description: "Es gibt keine Blocker, aber Empfehlungen sollten vor der Freigabe geprüft werden.",
+      description: "",
     };
   }
   return {
@@ -184,7 +258,7 @@ function resolveReadinessCopy(state: GateState, isApproved: boolean) {
 
 function IssuesBlock({ blockers, warnings }: { blockers: Issue[]; warnings: Issue[] }) {
   return (
-    <div className="mt-3 space-y-2">
+    <div className="space-y-2">
       {blockers.length > 0 && (
         <IssueGroup
           title={`Probleme (${blockers.length})`}

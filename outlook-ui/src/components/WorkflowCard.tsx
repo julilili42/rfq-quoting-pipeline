@@ -32,7 +32,6 @@ import {
   ExternalIcon,
   RefreshIcon,
   SendIcon,
-  SparkIcon,
   TrashIcon,
 } from "./Icons";
 
@@ -200,14 +199,6 @@ export function WorkflowCard({
               <button
                 className="btn btn-primary"
                 disabled={!isOutlook || loading || !snapshot}
-                onClick={() => onCreateReview(false)}
-              >
-                <SparkIcon className="btn-icon" />
-                Review erstellen
-              </button>
-              <button
-                className="btn btn-secondary"
-                disabled={!isOutlook || loading || !snapshot}
                 onClick={() => onCreateReview(true)}
               >
                 <ExternalIcon className="btn-icon" />
@@ -333,19 +324,6 @@ export function WorkflowCard({
           )}
         </div>
 
-        {state === "approved" && !workflow?.quoteSentAt && (
-          <div className="success-banner">
-            <CheckIcon className="btn-icon" />
-            <span>Freigegeben. Angebotsmail bereit.</span>
-          </div>
-        )}
-
-        {state === "quote_sent" && (
-          <div className="success-banner">
-            <CheckIcon className="btn-icon" />
-            <span>Angebotsmail wurde erstellt.</span>
-          </div>
-        )}
       </div>
     </section>
   );

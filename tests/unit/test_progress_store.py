@@ -38,6 +38,9 @@ def test_init_creates_all_pipeline_steps(review_id, progress_store):
     data = progress_store.init(review_id)
     step_names = [s["name"] for s in data["steps"]]
     assert step_names == PIPELINE_STEPS
+    first_step = data["steps"][0]
+    assert first_step["started_at"] == data["created_at"]
+    assert first_step["completed_at"] is None
 
 
 def test_read_progress_returns_none_when_missing(review_id, progress_store):
@@ -58,13 +61,26 @@ def test_update_step_marks_running(review_id, progress_store):
     step = next(s for s in data["steps"] if s["name"] == "Extraktion")
     assert step["status"] == "running"
     assert step["detail"] == "LLM läuft"
+    assert step["started_at"] is not None
+    assert step["completed_at"] is None
 
 
 def test_update_step_advances_percent(review_id, progress_store):
     progress_store.init(review_id)
     progress_store.update_step(review_id, "Mail vorbereiten", "completed", "")
     data = progress_store.read(review_id)
+    step = next(s for s in data["steps"] if s["name"] == "Mail vorbereiten")
     assert data["progress_percent"] > 0
+    assert step["completed_at"] is not None
+
+
+def test_update_step_completion_sets_missing_started_at(review_id, progress_store):
+    progress_store.init(review_id)
+    progress_store.update_step(review_id, "Extraktion", "completed", "Fast-Path")
+    data = progress_store.read(review_id)
+    step = next(s for s in data["steps"] if s["name"] == "Extraktion")
+    assert step["started_at"] is not None
+    assert step["completed_at"] is not None
 
 
 def test_complete_progress(review_id, progress_store):

@@ -37,6 +37,8 @@ class Payloads:
     MANUAL_OVERRIDES = "manual_overrides"
     QUOTATION = "quotation"
     QUOTATION_REVIEWED = "quotation_reviewed"
+    EXTRACTION_META = "extraction_meta"
+    LLM_USAGE = "llm_usage"
     REQUIREMENTS_ACKNOWLEDGED = "requirements_acknowledged"
 
 
@@ -53,6 +55,8 @@ _LEGACY_PAYLOAD_RENAMES = {
     "manual_overrides.json": Payloads.MANUAL_OVERRIDES,
     "03_quotation.json": Payloads.QUOTATION,
     "quotation_reviewed.json": Payloads.QUOTATION_REVIEWED,
+    "extraction_meta.json": Payloads.EXTRACTION_META,
+    "llm_usage.json": Payloads.LLM_USAGE,
 }
 
 
@@ -72,6 +76,43 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): _jsonable(item) for key, item in value.items()}
     return value
+
+
+def _usage_int(usage: Any, key: str) -> int:
+    if isinstance(usage, dict):
+        value = usage.get(key)
+    else:
+        value = getattr(usage, key, 0)
+    try:
+        return max(int(value or 0), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _llm_usage_call(*, source: str, usage: Any, model: str | None = None) -> dict[str, Any]:
+    input_tokens = _usage_int(usage, "input_tokens")
+    output_tokens = _usage_int(usage, "output_tokens")
+    total_tokens = _usage_int(usage, "total_tokens") or input_tokens + output_tokens
+    return {
+        "source": source,
+        "model": model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "created_at": _now_iso(),
+    }
+
+
+def _llm_usage_payload(calls: list[Any]) -> dict[str, Any]:
+    clean_calls = [call for call in calls if isinstance(call, dict)]
+    return {
+        "calls": clean_calls,
+        "totals": {
+            "input_tokens": sum(_usage_int(call, "input_tokens") for call in clean_calls),
+            "output_tokens": sum(_usage_int(call, "output_tokens") for call in clean_calls),
+            "total_tokens": sum(_usage_int(call, "total_tokens") for call in clean_calls),
+        },
+    }
 
 
 def default_db_path() -> Path:
@@ -510,6 +551,47 @@ class SQLiteReviewRepository:
         return self.load_quotation_reviewed(review_id) or self.load_quotation_initial(
             review_id
         )
+
+    def load_extraction_meta(self, review_id: str) -> dict[str, Any] | None:
+        data = self.load_payload(review_id, Payloads.EXTRACTION_META)
+        return data if isinstance(data, dict) else None
+
+    def save_extraction_meta(
+        self,
+        review_id: str,
+        *,
+        path: str,
+    ) -> None:
+        self.save_payload(
+            review_id,
+            Payloads.EXTRACTION_META,
+            {
+                "path": path,
+                "updated_at": _now_iso(),
+            },
+        )
+
+    def load_llm_usage(self, review_id: str) -> dict[str, Any] | None:
+        data = self.load_payload(review_id, Payloads.LLM_USAGE)
+        return data if isinstance(data, dict) else None
+
+    def record_llm_usage(
+        self,
+        review_id: str,
+        *,
+        source: str,
+        usage: Any,
+        model: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one successful LLM call's token usage to the review history."""
+        call = _llm_usage_call(source=source, usage=usage, model=model)
+        existing = self.load_llm_usage(review_id) or {}
+        calls = existing.get("calls")
+        if not isinstance(calls, list):
+            calls = []
+        payload = _llm_usage_payload([*calls, call])
+        self.save_payload(review_id, Payloads.LLM_USAGE, payload)
+        return payload
 
     def load_requirements_acknowledged(self, review_id: str) -> list[int]:
         data = self.load_payload(review_id, Payloads.REQUIREMENTS_ACKNOWLEDGED)

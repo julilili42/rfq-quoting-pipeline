@@ -39,7 +39,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/reviews/by-outlook-item/{outlook_item_id}": {
+    "/api/reviews/by-outlook-item": {
         parameters: {
             query?: never;
             header?: never;
@@ -47,15 +47,49 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Review By Outlook Item
-         * @description Compact status payload for the review bound to ``outlook_item_id``.
-         *
-         *     Used by the Outlook add-in to render the right workflow card without
-         *     keeping any state in localStorage. 404 when no review is bound.
+         * Get Review By Outlook Item Query
+         * @description Query-param variant for Outlook IDs containing slashes.
          */
+        get: operations["get_review_by_outlook_item_query_api_reviews_by_outlook_item_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/by-outlook-item/{outlook_item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Review By Outlook Item */
         get: operations["get_review_by_outlook_item_api_reviews_by_outlook_item__outlook_item_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/by-outlook-item/detach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Detach Outlook Item Query
+         * @description Query-param variant for Outlook IDs containing slashes.
+         */
+        post: operations["detach_outlook_item_query_api_reviews_by_outlook_item_detach_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -71,13 +105,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Detach Outlook Item
-         * @description Unlink the review currently bound to ``outlook_item_id``.
-         *
-         *     The review is preserved (still reachable via the overview); the
-         *     Outlook plugin reverts to "new" for this mail.
-         */
+        /** Detach Outlook Item */
         post: operations["detach_outlook_item_api_reviews_by_outlook_item__outlook_item_id__detach_post"];
         delete?: never;
         options?: never;
@@ -1362,6 +1390,39 @@ export interface operations {
             };
         };
     };
+    get_review_by_outlook_item_query_api_reviews_by_outlook_item_get: {
+        parameters: {
+            query: {
+                outlook_item_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_review_by_outlook_item_api_reviews_by_outlook_item__outlook_item_id__get: {
         parameters: {
             query?: never;
@@ -1383,6 +1444,35 @@ export interface operations {
                         [key: string]: unknown;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detach_outlook_item_query_api_reviews_by_outlook_item_detach_post: {
+        parameters: {
+            query: {
+                outlook_item_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

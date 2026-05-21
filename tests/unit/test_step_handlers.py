@@ -22,6 +22,7 @@ import pytest
 from quoting.api.progress_store import ProgressStore
 from quoting.api.step_handlers import StepHandlers, StepInputMissing
 from quoting.core import Anfrage, Position
+from quoting.extraction.llm.base import TokenUsage
 from quoting.matching import MatchResult
 from quoting.pipeline import StepContext
 from quoting.pricing import Quotation
@@ -104,6 +105,12 @@ class _FakePipeline:
     def extract(self, mail, ctx: StepContext):
         self.calls.append("extract")
         anfrage = _make_anfrage()
+        ctx.extra["extraction_path"] = "llm"
+        ctx.extra["token_usage"] = TokenUsage(
+            input_tokens=100,
+            output_tokens=25,
+            total_tokens=125,
+        )
         ctx.snapshot_sink("extracted", anfrage.model_dump(mode="json"))
         ctx.report("Extraktion", "completed", f"{len(anfrage.positionen)} Positionen")
         return anfrage
@@ -150,6 +157,28 @@ def test_extract_runs_when_no_prior_output(handlers, fake_pipeline, sqlite_repo,
 
     assert fake_pipeline.calls == ["extract"]
     assert sqlite_repo.load_extracted(review_id) is not None
+
+
+def test_extract_records_llm_token_usage(handlers, sqlite_repo, review_id):
+    sqlite_repo.save_mail(review_id, {"subject": "Anfrage", "from": "k@e.com", "body": "test"})
+
+    handlers.extract(review_id)
+
+    usage = sqlite_repo.load_llm_usage(review_id)
+    assert usage["totals"] == {
+        "input_tokens": 100,
+        "output_tokens": 25,
+        "total_tokens": 125,
+    }
+    assert usage["calls"][0]["source"] == "extraction"
+
+
+def test_extract_records_extraction_path(handlers, sqlite_repo, review_id):
+    sqlite_repo.save_mail(review_id, {"subject": "Anfrage", "from": "k@e.com", "body": "test"})
+
+    handlers.extract(review_id)
+
+    assert sqlite_repo.load_extraction_meta(review_id)["path"] == "llm"
 
 
 def test_extract_skips_when_already_done(handlers, fake_pipeline, sqlite_repo, review_id):

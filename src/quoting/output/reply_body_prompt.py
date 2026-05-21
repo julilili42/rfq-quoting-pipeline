@@ -1,16 +1,17 @@
 """LLM-generated cover-letter body for the Outlook reply.
 
-Given the reviewed Anfrage + Quotation, produces a short (3-5 sentence)
-plain-text body in DE or EN. Used by the ``GET /reviews/{id}/reply-body``
-endpoint when the user enables the toggle on the /mail-vorlage page.
+Given the reviewed Anfrage + Quotation, produces a short complete plain-text
+body in DE or EN. Used by the ``GET /reviews/{id}/reply-body`` endpoint when
+the user enables the toggle on the /mail-vorlage page.
 """
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Literal
 
 from ..core import Anforderung, Anfrage, get_logger
-from ..extraction.llm.base import LLMClient
+from ..extraction.llm.base import LLMClient, TokenUsage
 from ..pricing import Quotation
 
 log = get_logger()
@@ -115,15 +116,23 @@ def build_reply_body_prompt(
     if language == "de":
         return (
             "Du bist Vertriebs-Innendienst und schreibst eine kurze, höfliche Begleit-E-Mail "
-            "zu einem PDF-Angebot. Gib NUR den Mail-Fließtext zurück — keine Betreffzeile, "
-            "keine Anrede-Zeile, keine Signatur, keine Platzhalter wie [Absender] oder [Firma].\n"
+            "zu einem PDF-Angebot. Gib NUR den vollständigen Mail-Body zurück — keine "
+            "Betreffzeile, keine Erklärungen, keine Markdown-Formatierung.\n"
             "\n"
             "Regeln:\n"
-            "- 3 bis 5 Sätze, freundlich und sachlich.\n"
-            "- Nimm konkret Bezug auf die Anfrage (Firma, Position(en), ggf. Lieferzeit).\n"
+            "- Beginne mit einer passenden Anrede in einer eigenen Zeile. Wenn kein "
+            "Ansprechpartner sicher vorhanden ist: 'Sehr geehrte Damen und Herren,'.\n"
+            "- Schreibe 2 bis 4 kurze, natürlich klingende Sätze als Hauptteil.\n"
+            "- Nimm konkret Bezug auf die Anfrage, ohne eine unnatürliche Artikelliste zu bauen.\n"
             "- Erwähne, dass das Angebot als PDF anhängt.\n"
+            "- Nenne Lieferzeiten nur, wenn sie als Lieferzeit-Hinweis unten vorhanden sind.\n"
             "- Keine Marketing-Floskeln, keine Preisnennung im Fließtext.\n"
-            "- Plain Text, keine Aufzählungen, keine Überschriften.\n"
+            "- Schließe mit 'Mit freundlichen Grüßen' und darunter '[Absender]'.\n"
+            "- Plain Text mit Absatzumbrüchen; keine Aufzählungen, keine Überschriften, "
+            "keine umschließenden Anführungszeichen.\n"
+            "- Verwende echte Zeilenumbrüche. Schreibe niemals die Zeichenfolge \\n in den Text.\n"
+            "- Vermeide steife Formulierungen wie 'bezüglich', 'entsprechend' oder "
+            "'hiermit übersenden wir'.\n"
             f"{style_block}"
             f"{acknowledged_block}"
             "\n"
@@ -136,24 +145,32 @@ def build_reply_body_prompt(
             f"{positions_summary}\n"
             "\n"
             "Beispiel (anderer Fall):\n"
-            "vielen Dank für Ihre Anfrage zu den drei Hydraulikpumpen. Wir freuen uns, "
-            "Ihnen anbei unser Angebot als PDF zu übermitteln. Sollten Sie zur "
-            "angegebenen Lieferzeit Rückfragen haben, melden Sie sich gern.\n"
+            "Sehr geehrte Damen und Herren,\n\n"
+            "vielen Dank für Ihre Anfrage zu den drei Hydraulikpumpen. Anbei erhalten "
+            "Sie unser Angebot als PDF. Sollten Sie zur angegebenen Lieferzeit "
+            "Rückfragen haben, melden Sie sich gern.\n\n"
+            "Mit freundlichen Grüßen\n"
+            "[Absender]\n"
             "\n"
             "Antwort:"
         )
 
     return (
         "You are an inside-sales rep writing a short, polite cover note for a quotation PDF. "
-        "Return ONLY the email body — no subject line, no salutation line, no signature, "
-        "no placeholders like [Sender] or [Company].\n"
+        "Return ONLY the complete email body — no subject line, no explanations, no Markdown.\n"
         "\n"
         "Rules:\n"
-        "- 3 to 5 sentences, friendly and matter-of-fact.\n"
-        "- Reference the request specifically (company, position(s), delivery time if available).\n"
+        "- Start with a suitable salutation on its own line. If no contact is clearly known, "
+        "use 'Dear Sir or Madam,'.\n"
+        "- Write 2 to 4 short, natural body sentences.\n"
+        "- Reference the request specifically without turning the positions into a clumsy list.\n"
         "- Mention the attached PDF quotation.\n"
+        "- Mention delivery times only if they are listed below.\n"
         "- No marketing fluff, no price mentions in the body.\n"
-        "- Plain text, no bullet lists, no headings.\n"
+        "- Close with 'Best regards' followed by '[Absender]' on the next line.\n"
+        "- Plain text with paragraph breaks; no bullet lists, no headings, no surrounding quotes.\n"
+        "- Use real line breaks. Never write the literal sequence \\n in the body.\n"
+        "- Avoid stiff phrases such as 'with regard to', 'corresponding', or 'we hereby send'.\n"
         f"{style_block}"
         f"{acknowledged_block}"
         "\n"
@@ -166,17 +183,35 @@ def build_reply_body_prompt(
         f"{positions_summary}\n"
         "\n"
         "Example (different case):\n"
-        "thank you for your inquiry regarding the three hydraulic pumps. Please find our "
-        "quotation attached as a PDF. Should you have any questions about the stated lead "
-        "time, do not hesitate to get in touch.\n"
+        "Dear Sir or Madam,\n\n"
+        "Thank you for your inquiry regarding the three hydraulic pumps. Please find our "
+        "quotation attached as a PDF. If you have any questions about the stated lead time, "
+        "please do not hesitate to get in touch.\n\n"
+        "Best regards\n"
+        "[Absender]\n"
         "\n"
         "Response:"
     )
 
 
 def _strip_response(text: str) -> str:
-    """Remove leading 'Response:'/'Antwort:' artifacts and surrounding whitespace."""
+    """Remove common LLM wrapper artifacts and surrounding whitespace."""
     cleaned = text.strip()
+    cleaned = re.sub(r"^```(?:text|markdown|html)?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    cleaned = re.sub(r"^(antwort|response)\s*:\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t")
+    cleaned = cleaned.strip()
+    quote_pairs = {
+        '"': '"',
+        "'": "'",
+        "„": "“",
+        "“": "”",
+        "‘": "’",
+        "«": "»",
+    }
+    if len(cleaned) >= 2 and quote_pairs.get(cleaned[0]) == cleaned[-1]:
+        cleaned = cleaned[1:-1].strip()
     cleaned = re.sub(r"^(antwort|response)\s*:\s*", "", cleaned, flags=re.IGNORECASE)
     return cleaned.strip()
 
@@ -189,6 +224,7 @@ def generate_reply_body(
     style_hint: str,
     llm: LLMClient,
     acknowledged_requirements: list[Anforderung] | None = None,
+    usage_callback: Callable[[TokenUsage], None] | None = None,
 ) -> tuple[str, Language]:
     """Run the LLM and return ``(body_text, language)``."""
     language = detect_language(mail_body)
@@ -200,6 +236,8 @@ def generate_reply_body(
         acknowledged_requirements=acknowledged_requirements,
     )
     response = llm.generate(prompt=prompt)
+    if response.usage is not None and usage_callback is not None:
+        usage_callback(response.usage)
     body = _strip_response(response.text)
     if not body:
         raise RuntimeError("LLM returned empty reply body")
