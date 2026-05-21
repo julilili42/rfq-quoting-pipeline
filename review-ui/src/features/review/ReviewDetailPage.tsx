@@ -1,10 +1,9 @@
-import React, { useEffect, useRef } from "react";
-import { Outlet, useLocation, useParams, useSearchParams } from "react-router-dom";
+import React, { useEffect } from "react";
+import { Outlet, useParams, useSearchParams } from "react-router-dom";
 
 import { ErrorState } from "@/shared/components/feedback/ErrorState";
 import { LoadingState } from "@/shared/components/feedback/LoadingState";
 import { PageContainer } from "@/shared/components/layout/PageContainer";
-import { useSettings } from "@/features/settings/hooks/useSettings";
 import { isApproved } from "@/shared/schemas/approval";
 
 import { PipelineProgress } from "./components/PipelineProgress";
@@ -65,10 +64,8 @@ class StepErrorBoundary extends React.Component<
  */
 export function ReviewDetailPage() {
   const { reviewId } = useParams<{ reviewId: string }>();
-  const location = useLocation();
   const [searchParams] = useSearchParams();
   const focusMode = searchParams.get("focus") === "1";
-  const stepAnchorRef = useRef<HTMLDivElement>(null);
 
   const setActiveReview = useReviewUiStore((s) => s.setActiveReview);
   const syncReviewChanges = useReviewUiStore((s) => s.syncReviewChanges);
@@ -82,14 +79,11 @@ export function ReviewDetailPage() {
   const status = useReviewStatus(reviewId);
   useReviewStream(reviewId);
   const pipelineStatus = status.data?.status ?? null;
-  const isPipelineRunning =
-    pipelineStatus === "running" || pipelineStatus === "failed";
   const shouldLoadDetail =
     Boolean(reviewId) &&
     (status.isError || pipelineStatus !== null);
   const review = useReview(reviewId, { enabled: shouldLoadDetail });
   const approval = useApproval(reviewId);
-  const settings = useSettings();
   const detail = review.data;
 
   useEffect(() => {
@@ -102,28 +96,6 @@ export function ReviewDetailPage() {
   }, [
     detail,
     syncReviewChanges,
-  ]);
-
-  useEffect(() => {
-    if (focusMode || isPipelineRunning || !detail || settings.isLoading) return;
-    if (settings.data?.workflow.auto_scroll_review_steps === false) return;
-    if (!/\/reviews\/[^/]+\/(positions|approval)$/.test(location.pathname)) return;
-
-    const target = stepAnchorRef.current;
-    if (!target) return;
-
-    const timeout = window.setTimeout(() => {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 120);
-
-    return () => window.clearTimeout(timeout);
-  }, [
-    detail,
-    focusMode,
-    isPipelineRunning,
-    location.pathname,
-    settings.data?.workflow.auto_scroll_review_steps,
-    settings.isLoading,
   ]);
 
   if (!reviewId) {
@@ -205,7 +177,7 @@ export function ReviewDetailPage() {
           <PipelineProgress progress={status.data} />
         </div>
       ) : null}
-      <div ref={stepAnchorRef} className="mb-8">
+      <div className="mb-8">
         <StepIndicator />
       </div>
       <StepErrorBoundary>

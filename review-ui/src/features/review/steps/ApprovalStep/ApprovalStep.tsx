@@ -55,6 +55,7 @@ export function ApprovalStep() {
       blockerCount={gate.blockers.length}
       warningCount={gate.warnings.length}
       embedded
+      layout="stacked"
     />
   );
 

@@ -28,6 +28,7 @@ interface ApprovalPanelProps {
   blockerCount: number;
   warningCount: number;
   embedded?: boolean;
+  layout?: "inline" | "stacked";
 }
 
 function resolveFilenameTemplate(template: string, customerName: string): string {
@@ -45,6 +46,7 @@ export function ApprovalPanel({
   blockerCount,
   warningCount,
   embedded = false,
+  layout = embedded ? "inline" : "stacked",
 }: ApprovalPanelProps) {
   const hasBlockers = blockerCount > 0;
   const hasWarnings = warningCount > 0;
@@ -180,7 +182,7 @@ export function ApprovalPanel({
   const form = (
     <div
       className={cn(
-        embedded
+        embedded && layout === "inline"
           ? "grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end"
           : "space-y-3",
       )}
@@ -210,7 +212,7 @@ export function ApprovalPanel({
 
       <Button
         variant="primary"
-        className={embedded ? "w-full lg:w-auto" : undefined}
+        className={embedded && layout === "inline" ? "w-full lg:w-auto" : "w-full"}
         disabled={!canApprove || finalize.isPending}
         title={
           !actor.trim()

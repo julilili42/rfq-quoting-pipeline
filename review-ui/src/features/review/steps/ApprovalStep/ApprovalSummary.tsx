@@ -35,9 +35,10 @@ const MATCH_LABEL: Record<MatchStatus, string> = {
   no_match: "Kein Treffer",
 };
 
-const ISSUE_TARGETS: Record<Issue["step"], { slug: "positions"; hash: string }> = {
+const ISSUE_TARGETS: Record<Issue["step"], { slug: "positions" | "approval"; hash: string }> = {
   customer: { slug: "positions", hash: "customer-data" },
   positions: { slug: "positions", hash: "positions-data" },
+  approval: { slug: "approval", hash: "requirements-checklist" },
 };
 
 type GateState = "blocked" | "warning" | "ok";
@@ -62,6 +63,8 @@ export function ApprovalSummary({
 
   const state = resolveGateState(gate);
   const showIssues = !isApproved && (gate.blockers.length > 0 || gate.warnings.length > 0);
+  const showApprovalControls = Boolean(approvalControls) && (isApproved || gate.blockers.length === 0);
+  const showSidePanel = showIssues || showApprovalControls;
   const readinessCopy = resolveReadinessCopy(state, isApproved);
   const [expanded, setExpanded] = useState(true);
   const toggleLabel = expanded
@@ -110,93 +113,109 @@ export function ApprovalSummary({
 
       <div
         id="approval-summary-content"
-        className={cn("space-y-3 p-4", !expanded && "hidden")}
+        className={cn("p-4", !expanded && "hidden")}
       >
-        {!isApproved && (
-          <RequirementsChecklist
-            anforderungen={detail.anfrage.anforderungen ?? []}
-            acknowledgedIndices={detail.requirements_acknowledged ?? []}
-          />
-        )}
-
-        {showIssues && (
-          <IssuesBlock blockers={gate.blockers} warnings={gate.warnings} />
-        )}
-
-        <div className="overflow-hidden rounded-md border border-border">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="sticky top-0 bg-muted text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="w-16 px-3 py-1.5">Pos</th>
-                  <th className="min-w-56 px-3 py-1.5">Artikel</th>
-                  <th className="px-3 py-1.5 text-right">Menge</th>
-                  <th className="px-3 py-1.5 text-right">Stückpreis</th>
-                  <th className="px-3 py-1.5 text-right">Gesamt</th>
-                  <th className="px-3 py-1.5">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border bg-surface">
-                {items.length > 0 ? (
-                  items.map((item) => (
-                    <SummaryRow
-                      key={`${item.pos_nr}-${item.artikel_nr}`}
-                      item={item}
-                      matchStatus={matchesByPos.get(item.pos_nr)?.status ?? "no_match"}
-                      hasOverride={hasManualOverride(item, overrides)}
-                    />
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={6} className="px-3 py-4 text-sm text-muted-foreground">
-                      Keine Preispositionen vorhanden.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              <tfoot className="bg-muted/35">
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="border-t border-border px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                  >
-                    Summe
-                  </td>
-                  <td className="border-t border-border px-3 py-2.5 text-right font-display text-lg font-bold tabular-nums text-foreground">
-                    {formatEur(quotation?.gesamtsumme)}
-                  </td>
-                  <td className="border-t border-border px-3 py-2.5" />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-
-        {(priceWarningCount > 0 || gate.stats.unmatched > 0) && (
-          <div className="flex flex-wrap gap-2 text-xs">
-            {priceWarningCount > 0 && (
-              <SummaryPill tone="warning">{priceWarningCount} Preiswarnung(en)</SummaryPill>
+        <div
+          className={cn(
+            "grid gap-4",
+            showSidePanel && "xl:grid-cols-[minmax(0,1fr)_24rem] xl:items-start",
+          )}
+        >
+          <div className="order-2 min-w-0 space-y-3 xl:order-1">
+            {!isApproved && (
+              <RequirementsChecklist
+                anforderungen={detail.anfrage.anforderungen ?? []}
+                acknowledgedIndices={detail.requirements_acknowledged ?? []}
+              />
             )}
-            {gate.stats.unmatched > 0 && (
-              <SummaryPill tone="danger">
-                {gate.stats.unmatched} Position(en) ohne Treffer
-              </SummaryPill>
-            )}
-          </div>
-        )}
 
-        {approvalControls && (
-          isApproved ? (
-            approvalControls
-          ) : (
-            <div className="overflow-hidden rounded-md border border-border bg-surface">
-              <div className="bg-muted px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                Freigabe
+            <div className="overflow-hidden rounded-md border border-border">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="sticky top-0 bg-muted text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="w-16 px-3 py-1.5">Pos</th>
+                      <th className="min-w-56 px-3 py-1.5">Artikel</th>
+                      <th className="px-3 py-1.5 text-right">Menge</th>
+                      <th className="px-3 py-1.5 text-right">Stückpreis</th>
+                      <th className="px-3 py-1.5 text-right">Gesamt</th>
+                      <th className="px-3 py-1.5">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border bg-surface">
+                    {items.length > 0 ? (
+                      items.map((item) => (
+                        <SummaryRow
+                          key={`${item.pos_nr}-${item.artikel_nr}`}
+                          item={item}
+                          matchStatus={matchesByPos.get(item.pos_nr)?.status ?? "no_match"}
+                          hasOverride={hasManualOverride(item, overrides)}
+                        />
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-4 text-sm text-muted-foreground">
+                          Keine Preispositionen vorhanden.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                  <tfoot className="bg-muted/35">
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="border-t border-border px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                      >
+                        Summe
+                      </td>
+                      <td className="border-t border-border px-3 py-2.5 text-right font-display text-lg font-bold tabular-nums text-foreground">
+                        {formatEur(quotation?.gesamtsumme)}
+                      </td>
+                      <td className="border-t border-border px-3 py-2.5" />
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
-              <div className="p-3">{approvalControls}</div>
             </div>
-          )
-        )}
+
+            {(priceWarningCount > 0 || gate.stats.unmatched > 0) && (
+              <div className="flex flex-wrap gap-2 text-xs">
+                {priceWarningCount > 0 && (
+                  <SummaryPill tone="warning">{priceWarningCount} Preiswarnung(en)</SummaryPill>
+                )}
+                {gate.stats.unmatched > 0 && (
+                  <SummaryPill tone="danger">
+                    {gate.stats.unmatched} Position(en) ohne Treffer
+                  </SummaryPill>
+                )}
+              </div>
+            )}
+          </div>
+
+          {showSidePanel && (
+            <aside className="order-1 space-y-3 xl:order-2 xl:sticky xl:top-4">
+              {showIssues && (
+                <IssuesBlock blockers={gate.blockers} warnings={gate.warnings} />
+              )}
+
+              {showApprovalControls && approvalControls && (
+                isApproved ? (
+                  approvalControls
+                ) : (
+                  <div
+                    id="approval-controls"
+                    className="scroll-mt-24 overflow-hidden rounded-md border border-border bg-surface"
+                  >
+                    <div className="bg-muted px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                      Freigabe
+                    </div>
+                    <div className="p-3">{approvalControls}</div>
+                  </div>
+                )
+              )}
+            </aside>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -309,10 +328,7 @@ function IssueGroup({
 
 function IssueItem({ issue }: { issue: Issue }) {
   const { reviewId } = useParams<{ reviewId: string }>();
-  const issueTarget = ISSUE_TARGETS[issue.step];
-  const target = reviewId
-    ? `/reviews/${encodeURIComponent(reviewId)}/${issueTarget.slug}#${issueTarget.hash}`
-    : null;
+  const target = resolveActionTarget(reviewId, issue.step);
   return (
     <li className="flex items-start gap-3 rounded-sm bg-surface/60 px-2 py-1 text-sm">
       <div className="flex-1 text-foreground">
@@ -332,6 +348,18 @@ function IssueItem({ issue }: { issue: Issue }) {
       )}
     </li>
   );
+}
+
+function resolveActionTarget(
+  reviewId: string | undefined,
+  targetStep: Issue["step"] | "approval-controls" | undefined,
+) {
+  if (!reviewId || !targetStep) return null;
+  if (targetStep === "approval-controls") {
+    return `/reviews/${encodeURIComponent(reviewId)}/approval#approval-controls`;
+  }
+  const issueTarget = ISSUE_TARGETS[targetStep];
+  return `/reviews/${encodeURIComponent(reviewId)}/${issueTarget.slug}#${issueTarget.hash}`;
 }
 
 function SummaryRow({

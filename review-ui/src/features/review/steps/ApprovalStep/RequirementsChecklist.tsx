@@ -131,7 +131,10 @@ export function RequirementsChecklist({
   };
 
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-surface">
+    <div
+      id="requirements-checklist"
+      className="scroll-mt-24 overflow-hidden rounded-md border border-border bg-surface"
+    >
       <div className="flex items-center justify-between gap-2 bg-muted px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
         <span>Zu berücksichtigen im Angebot</span>
         <span className="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal text-muted-foreground">

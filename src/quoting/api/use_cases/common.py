@@ -29,10 +29,7 @@ ReviewDataLoader = Callable[
     tuple[Anfrage, list[MatchResult], list[dict]],
 ]
 QuotationBuilder = Callable[[Anfrage, list, list, Path, str], Quotation]
-QualityGateEvaluator = Callable[
-    [Anfrage, list[MatchResult], Quotation | None, list[dict] | None],
-    "QualityGateResult",
-]
+QualityGateEvaluator = Callable[..., "QualityGateResult"]
 PdfBuilder = Callable[..., None]
 SettingsLoader = Callable[[], AppSettings]
 ApprovalTransition = Callable[..., ApprovalRecord]

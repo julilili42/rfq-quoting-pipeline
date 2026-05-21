@@ -20,37 +20,6 @@ test("opens a review from the dashboard and shows extracted position data", asyn
   await expect(page.getByText(/exakt/i).first()).toBeVisible();
 });
 
-test("scrolls the active review step into focus by default", async ({ page }) => {
-  await page.goto(`/reviews/${ids.review}/positions`);
-
-  const main = page.locator("main");
-  await expect
-    .poll(() => main.evaluate((el) => Math.round(el.scrollTop)))
-    .toBeGreaterThan(80);
-
-  const stepTitle = await page.getByText("Anfrage vorbereiten", { exact: true }).first().boundingBox();
-  expect(stepTitle).not.toBeNull();
-  expect(stepTitle!.y).toBeLessThan(90);
-});
-
-test("can disable automatic review step scrolling in settings", async ({ page }) => {
-  await page.goto("/settings");
-
-  const toggle = page.getByRole("switch", { name: "Review-Schritte automatisch fokussieren" });
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
-  await toggle.click();
-  await page.getByRole("button", { name: "Speichern" }).click();
-  await expect(page.getByText("Gespeichert", { exact: true })).toBeVisible();
-
-  await page.goto(`/reviews/${ids.review}/approval`);
-  await page.waitForTimeout(500);
-
-  const main = page.locator("main");
-  await expect
-    .poll(() => main.evaluate((el) => Math.round(el.scrollTop)))
-    .toBeLessThan(20);
-});
-
 test("keeps the dashboard table width stable when selecting reviews", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Preisanfrage 2026-50422")).toBeVisible();

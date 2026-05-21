@@ -58,7 +58,6 @@ class MatchingPreferences:
 class WorkflowPreferences:
     auto_refresh_pdf: bool = True
     confirm_before_reset: bool = True
-    auto_scroll_review_steps: bool = True
     final_pdf_filename_template: str = "Angebot_[Kunde].pdf"
     email_subject_template: str = "Angebot zu Ihrer Anfrage: [Betreff]"
     email_body_template: str = (

@@ -20,7 +20,7 @@ import type { ReviewDetail } from "@/shared/api/reviews";
  * user straight to the right section in the combined request-data step.
  */
 
-export type IssueStep = "positions" | "customer";
+export type IssueStep = "positions" | "customer" | "approval";
 export type IssueSeverity = "blocker" | "warning";
 
 export interface Issue {
@@ -64,6 +64,7 @@ function evaluate(detail: ReviewDetail | undefined): QualityGateResult {
   const totalPositions = detail?.anfrage.positionen.length ?? 0;
   const matches = detail?.matches ?? [];
   const overrides = detail?.manual_overrides ?? [];
+  const acknowledgedRequirements = new Set(detail?.requirements_acknowledged ?? []);
 
   const overriddenPosNrs = new Set<number>(
     overrides
@@ -144,6 +145,41 @@ function evaluate(detail: ReviewDetail | undefined): QualityGateResult {
     }
   }
 
+  const hasUnacknowledgedRequirements = (detail?.anfrage.anforderungen ?? []).some(
+    (_requirement, idx) => !acknowledgedRequirements.has(idx),
+  );
+  if (hasUnacknowledgedRequirements) {
+    blockers.push({
+      id: "requirements:unacknowledged",
+      severity: "blocker",
+      step: "approval",
+      title: "Angebotsanforderungen nicht vollständig bestätigt",
+      description: "Bitte die Checkliste „Zu berücksichtigen im Angebot“ vollständig bestätigen.",
+    });
+  }
+
+  const today = startOfToday();
+  const pastDeliveries: Array<{ posNr: number; raw: string; parsed: Date }> = [];
+  for (const pos of detail?.anfrage.positionen ?? []) {
+    const deliveryDate = parseDateLike(pos.lieferzeit ?? "");
+    if (deliveryDate && deliveryDate.getTime() < today.getTime()) {
+      pastDeliveries.push({
+        posNr: pos.pos_nr,
+        raw: pos.lieferzeit ?? "",
+        parsed: deliveryDate,
+      });
+    }
+  }
+  if (pastDeliveries.length > 0) {
+    blockers.push({
+      id: "delivery:past",
+      severity: "blocker",
+      step: "positions",
+      title: deliveryTitle(pastDeliveries),
+      description: `${deliverySummary(pastDeliveries)} Bitte Lieferzeiten aktualisieren oder entfernen.`,
+    });
+  }
+
   // ---------- Warnings ----------
 
   if (detail) {
@@ -166,7 +202,7 @@ function evaluate(detail: ReviewDetail | undefined): QualityGateResult {
         description: "",
       });
     }
-if (!(a.datum ?? "").trim()) {
+    if (!(a.datum ?? "").trim()) {
       warnings.push({
         id: "datum-missing",
         severity: "warning",
@@ -186,6 +222,8 @@ if (!(a.datum ?? "").trim()) {
         description: `"${email}" sieht nicht wie eine gültige Adresse aus.`,
       });
     }
+
+    warnings.push(...commercialWarnings(a.incoterms, a.zahlungsbedingungen));
   }
 
   const priceWarningCount = detail?.quotation?.warnungen.length ?? 0;
@@ -220,4 +258,196 @@ if (!(a.datum ?? "").trim()) {
       matchRate,
     },
   };
+}
+
+const INCOTERMS_2020 = new Set([
+  "EXW",
+  "FCA",
+  "CPT",
+  "CIP",
+  "DAP",
+  "DPU",
+  "DDP",
+  "FAS",
+  "FOB",
+  "CFR",
+  "CIF",
+]);
+
+function shorten(value: string, limit = 120): string {
+  const text = value.replace(/\s+/g, " ").trim();
+  return text.length <= limit ? text : `${text.slice(0, limit - 1).trimEnd()}…`;
+}
+
+function deliveryTitle(deliveries: Array<{ posNr: number }>): string {
+  if (deliveries.length === 1) {
+    return `Pos ${deliveries[0].posNr}: Liefertermin liegt in der Vergangenheit`;
+  }
+  return `${deliveries.length} Positionen mit vergangenem Liefertermin`;
+}
+
+function deliverySummary(
+  deliveries: Array<{ posNr: number; raw: string; parsed: Date }>,
+): string {
+  return shorten(
+    `${deliveries
+      .map((delivery) => `Pos ${delivery.posNr}: ${delivery.raw || formatIsoDate(delivery.parsed)}`)
+      .join(", ")}.`,
+  );
+}
+
+function startOfToday(): Date {
+  const value = new Date();
+  value.setHours(0, 0, 0, 0);
+  return value;
+}
+
+function formatIsoDate(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateLike(value: string): Date | null {
+  const text = value.trim();
+  if (!text) return null;
+
+  const iso = /\b(\d{4})-(\d{1,2})-(\d{1,2})\b/.exec(text);
+  if (iso) return safeDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+
+  const dotted = /\b(\d{1,2})\.(\d{1,2})\.(\d{2,4})\b/.exec(text);
+  if (dotted) {
+    return safeDate(
+      normaliseYear(Number(dotted[3])),
+      Number(dotted[2]),
+      Number(dotted[1]),
+    );
+  }
+
+  const slashed = /\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/.exec(text);
+  if (slashed) {
+    return safeDate(
+      normaliseYear(Number(slashed[3])),
+      Number(slashed[2]),
+      Number(slashed[1]),
+    );
+  }
+
+  return null;
+}
+
+function normaliseYear(value: number): number {
+  return value < 100 ? 2000 + value : value;
+}
+
+function safeDate(year: number, month: number, day: number): Date | null {
+  const value = new Date(year, month - 1, day);
+  if (
+    value.getFullYear() !== year ||
+    value.getMonth() !== month - 1 ||
+    value.getDate() !== day
+  ) {
+    return null;
+  }
+  value.setHours(0, 0, 0, 0);
+  return value;
+}
+
+function commercialWarnings(
+  incoterms: string | null | undefined,
+  paymentTerms: string | null | undefined,
+): Issue[] {
+  const warnings: Issue[] = [];
+  const incotermsText = (incoterms ?? "").trim();
+  const paymentText = (paymentTerms ?? "").trim();
+
+  if (!incotermsText) {
+    warnings.push({
+      id: "incoterms-missing",
+      severity: "warning",
+      step: "customer",
+      title: "Lieferbedingung / Incoterms fehlen",
+      description: "Bitte vor Freigabe kaufmännisch ergänzen.",
+    });
+  } else {
+    const code = extractIncotermCode(incotermsText);
+    if (!code) {
+      warnings.push({
+        id: "incoterms-unknown",
+        severity: "warning",
+        step: "customer",
+        title: "Lieferbedingung wirkt nicht wie ein Incoterm",
+        description: `"${incotermsText}" konnte keinem Incoterms-2020-Code zugeordnet werden.`,
+      });
+    } else if (code === "DDP") {
+      warnings.push({
+        id: "incoterms-ddp",
+        severity: "warning",
+        step: "customer",
+        title: "DDP erhöht Liefer- und Kostenpflichten",
+        description: "Bitte bewusst prüfen, ob Zölle, Steuern und Lieferkosten kalkuliert sind.",
+      });
+    }
+  }
+
+  if (!paymentText) {
+    warnings.push({
+      id: "payment-terms-missing",
+      severity: "warning",
+      step: "customer",
+      title: "Zahlungsbedingung fehlt",
+      description: "Bitte vor Freigabe kaufmännisch ergänzen.",
+    });
+  } else {
+    const maxDays = maxPaymentDays(paymentText);
+    if (maxDays !== null && maxDays > 60) {
+      warnings.push({
+        id: "payment-long-term",
+        severity: "warning",
+        step: "customer",
+        title: `Ungewöhnlich lange Zahlungsfrist (${maxDays} Tage)`,
+        description: "Bitte Marge, Liquidität und Kundenkondition bewusst prüfen.",
+      });
+    }
+
+    const discountPct = maxCashDiscountPct(paymentText);
+    if (discountPct !== null && discountPct > 3) {
+      warnings.push({
+        id: "payment-high-discount",
+        severity: "warning",
+        step: "customer",
+        title: `Ungewöhnlich hoher Skonto (${formatPercent(discountPct)} %)`,
+        description: "Bitte prüfen, ob der Skonto in der Kalkulation berücksichtigt ist.",
+      });
+    }
+  }
+
+  return warnings;
+}
+
+function extractIncotermCode(value: string): string | null {
+  for (const match of value.toUpperCase().matchAll(/\b[A-Z]{3}\b/g)) {
+    const code = match[0];
+    if (INCOTERMS_2020.has(code)) return code;
+  }
+  return null;
+}
+
+function maxPaymentDays(value: string): number | null {
+  const matches = Array.from(value.matchAll(/\b(\d{1,3})\s*(?:tage|tag|days|day|d)\b/gi));
+  if (matches.length === 0) return null;
+  return Math.max(...matches.map((match) => Number(match[1])));
+}
+
+function maxCashDiscountPct(value: string): number | null {
+  const lower = value.toLocaleLowerCase("de-DE");
+  if (!lower.includes("skonto") && !lower.includes("discount")) return null;
+  const matches = Array.from(value.matchAll(/(\d{1,2}(?:[,.]\d+)?)\s*%/g));
+  if (matches.length === 0) return null;
+  return Math.max(...matches.map((match) => Number(match[1].replace(",", "."))));
+}
+
+function formatPercent(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toLocaleString("de-DE");
 }

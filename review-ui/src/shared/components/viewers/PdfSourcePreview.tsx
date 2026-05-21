@@ -121,10 +121,15 @@ export function PdfSourcePreview({
 
     const targetPage = Math.max(0, Math.min(numPages - 1, initialPage));
     const pageElement = pageRefs.current[targetPage];
-    if (!pageElement) return;
+    const viewport = viewportRef.current;
+    if (!pageElement || !viewport) return;
 
     const timeout = window.setTimeout(() => {
-      pageElement.scrollIntoView({ block: "start", behavior: "smooth" });
+      const top =
+        pageElement.getBoundingClientRect().top -
+        viewport.getBoundingClientRect().top +
+        viewport.scrollTop;
+      viewport.scrollTo({ top, behavior: "smooth" });
     }, 180);
 
     return () => window.clearTimeout(timeout);

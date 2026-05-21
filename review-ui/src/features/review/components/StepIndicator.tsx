@@ -8,14 +8,11 @@ const STEPS = [
     num: 1,
     slug: "positions",
     title: "Anfrage vorbereiten",
-    description:
-      "Kunde, Konditionen, Positionen und Stammdaten-Treffer gegen den Originaleingang prüfen.",
   },
   {
     num: 2,
     slug: "approval",
     title: "Vergleichen & freigeben",
-    description: "Angebotsentwurf mit dem Originaleingang vergleichen und freigeben.",
   },
 ] as const;
 
@@ -72,14 +69,11 @@ export function StepIndicator() {
             <div className="font-display text-base font-bold tracking-tight">
               {step.title}
             </div>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              {step.description}
-            </p>
           </>
         );
 
         const baseCls = cn(
-          "relative block overflow-hidden rounded-lg border border-border bg-surface px-5 pt-5 pb-4 shadow-card transition-all",
+          "relative block overflow-hidden rounded-lg border border-border bg-surface px-5 pt-4 pb-4 shadow-card transition-all",
           isClickable && "cursor-pointer hover:border-foreground/30 hover:shadow-card-hover",
         );
 

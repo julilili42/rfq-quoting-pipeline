@@ -2,13 +2,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { CalendarDays } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { useHotkeys } from "react-hotkeys-hook";
 
 import { FormField } from "@/shared/components/ui/FormField";
 import { Input } from "@/shared/components/ui/input";
-import { ShortcutHint } from "@/shared/components/ui/ShortcutHint";
+import { DatePopover } from "@/shared/components/ui/DatePopover";
 import { useReviewUiStore } from "@/features/review/stores/reviewUiStore";
 import { useDelayedVisible } from "@/shared/hooks/useDelayedVisible";
+import { cn } from "@/shared/lib/cn";
 import type { Anfrage, Evidence } from "@/shared/schemas/anfrage";
 import { Button } from "@/shared/components/ui/button";
 import type { SourceNavigationTarget } from "@/shared/types/sourceNavigation";
@@ -74,31 +74,23 @@ export function CustomerForm({
     saveAndRegenerate.mutate({ anfrage: next });
   };
 
-  const fillToday = () => {
-    const today = new Intl.DateTimeFormat("de-DE", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }).format(new Date());
-
+  const handleCalendarPick = (german: string) => {
+    if (!german) return;
     recordUndoSnapshot();
-    form.setValue("datum", today, { shouldDirty: true });
+    form.setValue("datum", german, { shouldDirty: true });
     trackChange("datum");
 
     const next: Anfrage = {
       ...anfrage,
       ...form.getValues(),
-      datum: today,
+      datum: german,
     };
 
     saveAndRegenerate.mutate({ anfrage: next });
     refreshChangedFields(next);
   };
 
-  useHotkeys("alt+h", fillToday, {
-    enabled: !saveAndRegenerate.isPending,
-    preventDefault: true,
-  });
+  const watchedDatum = form.watch("datum") ?? "";
 
   return (
     <section
@@ -197,22 +189,27 @@ export function CustomerForm({
                   placeholder="z. B. 15.03.2024"
                   className="min-w-0 flex-1"
                 />
-                <div className="group relative shrink-0">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={fillToday}
-                    disabled={saveAndRegenerate.isPending}
-                    aria-label="Datum auf heute setzen"
-                    title="Heute"
-                    className="h-10 w-10 text-muted-foreground hover:bg-brand-soft hover:text-brand"
-                  >
-                    <CalendarDays className="h-4 w-4" aria-hidden="true" />
-                    <span className="sr-only">Heute</span>
-                  </Button>
-                  <ShortcutHint keys={["Alt", "H"]} />
-                </div>
+                <DatePopover value={watchedDatum} onChange={handleCalendarPick}>
+                  {({ toggle, isOpen }) => (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={toggle}
+                      disabled={saveAndRegenerate.isPending}
+                      aria-label="Datum aus Kalender wählen"
+                      aria-expanded={isOpen}
+                      title="Kalender öffnen"
+                      className={cn(
+                        "h-10 w-10 shrink-0 text-muted-foreground hover:bg-brand-soft hover:text-brand",
+                        isOpen && "bg-brand-soft text-brand",
+                      )}
+                    >
+                      <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                      <span className="sr-only">Kalender</span>
+                    </Button>
+                  )}
+                </DatePopover>
               </div>
             </FormField>
           </div>

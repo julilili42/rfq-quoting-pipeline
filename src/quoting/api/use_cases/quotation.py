@@ -124,7 +124,13 @@ class FinalizeQuotationUseCase:
             self.pipeline.settings.preise_path,
             review_id,
         )
-        quality_gate = self.quality_gate_evaluator(anfrage, matches, quotation, overrides)
+        quality_gate = self.quality_gate_evaluator(
+            anfrage,
+            matches,
+            quotation,
+            overrides,
+            self.repo.load_requirements_acknowledged(review_id),
+        )
         if quality_gate.blockers:
             raise UseCaseConflict(
                 {

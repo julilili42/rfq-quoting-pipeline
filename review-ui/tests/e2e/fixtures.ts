@@ -154,7 +154,6 @@ const baseSettings = {
   workflow: {
     auto_refresh_pdf: true,
     confirm_before_reset: true,
-    auto_scroll_review_steps: true,
     final_pdf_filename_template: "Angebot_[Kunde].pdf",
     email_subject_template: "Angebot zu Ihrer Anfrage: [Betreff]",
     email_body_template: "Sehr geehrte Damen und Herren,\n\nanbei erhalten Sie unser Angebot.",
