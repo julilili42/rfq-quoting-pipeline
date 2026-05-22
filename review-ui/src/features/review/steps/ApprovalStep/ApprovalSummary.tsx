@@ -330,12 +330,9 @@ function IssueItem({ issue }: { issue: Issue }) {
   const { reviewId } = useParams<{ reviewId: string }>();
   const target = resolveActionTarget(reviewId, issue.step);
   return (
-    <li className="flex items-start gap-3 rounded-sm bg-surface/60 px-2 py-1 text-sm">
-      <div className="flex-1 text-foreground">
-        <div className="font-semibold">{issue.title}</div>
-        {issue.description && (
-          <p className="mt-0.5 text-xs text-muted-foreground">{issue.description}</p>
-        )}
+    <li className="flex items-center gap-3 rounded-sm bg-surface/60 px-2 py-1.5 text-sm">
+      <div className="min-w-0 flex-1 font-semibold leading-snug text-foreground">
+        {issue.title}
       </div>
       {target && (
         <Link

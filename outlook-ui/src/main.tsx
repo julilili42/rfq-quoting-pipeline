@@ -235,121 +235,151 @@ function App() {
     );
   }
 
+  async function runBatchItem(
+    item: SelectedMailSummary,
+  ): Promise<"completed" | "failed"> {
+    patchBatchItem(item.itemId, {
+      status: "loading",
+      detail: "Mail wird geladen…",
+      error: undefined,
+    });
+
+    let mail: MailSnapshot;
+    let itemMailId: string;
+    try {
+      mail = await readSelectedMailSnapshot(item.itemId);
+      itemMailId = deriveMailId({ itemId: item.itemId }, mail);
+    } catch (error) {
+      patchBatchItem(item.itemId, {
+        status: "failed",
+        error: String(error),
+      });
+      return "failed";
+    }
+
+    patchBatchItem(item.itemId, {
+      status: "running",
+      detail: "Startet…",
+    });
+
+    try {
+      const started = await startReview(mail, itemMailId);
+      patchBatchItem(item.itemId, {
+        status: "running",
+        reviewId: started.review_id,
+        detail: "Läuft…",
+      });
+
+      const completed = await pollReviewUntilComplete(started, (progress) => {
+        patchBatchItem(item.itemId, {
+          status: "running",
+          detail: formatProgressStatus(progress),
+        });
+      });
+
+      patchBatchItem(item.itemId, {
+        status: "completed",
+        reviewId: completed.review_id,
+        detail: undefined,
+      });
+      return "completed";
+    } catch (error) {
+      patchBatchItem(item.itemId, {
+        status: "failed",
+        error: String(error),
+      });
+      return "failed";
+    }
+  }
+
   async function handleCreateBatchReviews() {
     if (selectedItems.length === 0) return;
 
+    const isRetry =
+      batchItems.length > 0 && batchItems.some((i) => i.status === "failed");
+
+    const itemsToProcess: SelectedMailSummary[] = isRetry
+      ? batchItems.filter((i) => i.status === "failed")
+      : selectedItems;
+
+    if (itemsToProcess.length === 0) return;
+
     setLoading(true);
     setPipelineProgress(null);
-    setBatchItems(
-      selectedItems.map((item) => ({ ...item, status: "pending" })),
-    );
-    setStatus("Reviews werden vorbereitet.");
 
-    let completedCount = 0;
+    if (isRetry) {
+      setBatchItems((items) =>
+        items.map((i) =>
+          i.status === "failed"
+            ? { ...i, status: "pending", error: undefined, detail: undefined }
+            : i,
+        ),
+      );
+      setStatus(
+        itemsToProcess.length === 1
+          ? "1 Mail wird wiederholt…"
+          : `${itemsToProcess.length} Mails werden wiederholt…`,
+      );
+    } else {
+      setBatchItems(
+        selectedItems.map((item) => ({ ...item, status: "pending" })),
+      );
+      setStatus("Reviews werden vorbereitet.");
+    }
+
+    let completedCount = isRetry
+      ? batchItems.filter((i) => i.status === "completed").length
+      : 0;
     let failedCount = 0;
-
-    const jobs: Array<{
-      selected: SelectedMailSummary;
-      mail: MailSnapshot;
-      itemMailId: string;
-    }> = [];
-
-    for (const selected of selectedItems) {
-      patchBatchItem(selected.itemId, {
-        status: "loading",
-        detail: "Mail wird geladen…",
-      });
-
-      try {
-        const mail = await readSelectedMailSnapshot(selected.itemId);
-        const itemMailId = deriveMailId({ itemId: selected.itemId }, mail);
-        jobs.push({ selected, mail, itemMailId });
-        patchBatchItem(selected.itemId, {
-          status: "pending",
-          detail: "Bereit",
-        });
-      } catch (error) {
-        failedCount += 1;
-        patchBatchItem(selected.itemId, {
-          status: "failed",
-          error: String(error),
-        });
-      }
-    }
-
-    if (jobs.length === 0) {
-      setStatus(`${failedCount} Mails konnten nicht geladen werden.`);
-      setLoading(false);
-      return;
-    }
-
-    setStatus("Reviews laufen…");
-
-    async function processOne({
-      selected,
-      mail,
-      itemMailId,
-    }: {
-      selected: SelectedMailSummary;
-      mail: MailSnapshot;
-      itemMailId: string;
-    }) {
-      patchBatchItem(selected.itemId, {
-        status: "running",
-        detail: "Startet…",
-      });
-
-      try {
-        const started = await startReview(mail, itemMailId);
-        patchBatchItem(selected.itemId, {
-          status: "running",
-          reviewId: started.review_id,
-          detail: "Läuft…",
-        });
-
-        const completed = await pollReviewUntilComplete(
-          started,
-          (progress) => {
-            patchBatchItem(selected.itemId, {
-              status: "running",
-              detail: formatProgressStatus(progress),
-            });
-          },
-        );
-
-        completedCount += 1;
-        patchBatchItem(selected.itemId, {
-          status: "completed",
-          reviewId: completed.review_id,
-          detail: undefined,
-        });
-      } catch (error) {
-        failedCount += 1;
-        patchBatchItem(selected.itemId, {
-          status: "failed",
-          error: String(error),
-        });
-      }
-    }
 
     const CONCURRENCY = 3;
     let cursor = 0;
-    const workerCount = Math.min(CONCURRENCY, jobs.length);
+    const workerCount = Math.min(CONCURRENCY, itemsToProcess.length);
     const workers = Array.from({ length: workerCount }, async () => {
       while (true) {
         const index = cursor++;
-        if (index >= jobs.length) return;
-        await processOne(jobs[index]);
+        if (index >= itemsToProcess.length) return;
+        const outcome = await runBatchItem(itemsToProcess[index]);
+        if (outcome === "completed") completedCount += 1;
+        else failedCount += 1;
       }
     });
     await Promise.all(workers);
 
+    const total = selectedItems.length;
     setStatus(
       failedCount > 0
-        ? `${completedCount} erstellt, ${failedCount} fehlgeschlagen.`
+        ? `${completedCount} von ${total} erstellt, ${failedCount} fehlgeschlagen.`
         : `${completedCount} Reviews bereit.`,
     );
     setLoading(false);
+  }
+
+  async function handleRetryBatchItem(itemId: string) {
+    const target = batchItems.find((i) => i.itemId === itemId);
+    if (!target || target.status !== "failed") return;
+
+    setLoading(true);
+    setStatus("Mail wird wiederholt…");
+    try {
+      const outcome = await runBatchItem(target);
+      const total = selectedItems.length;
+      const completedNow =
+        batchItems.filter(
+          (i) => i.itemId !== itemId && i.status === "completed",
+        ).length + (outcome === "completed" ? 1 : 0);
+      const failedNow =
+        batchItems.filter(
+          (i) => i.itemId !== itemId && i.status === "failed",
+        ).length + (outcome === "failed" ? 1 : 0);
+      setStatus(
+        failedNow > 0
+          ? `${completedNow} von ${total} erstellt, ${failedNow} fehlgeschlagen.`
+          : `${completedNow} Reviews bereit.`,
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function awaitReviewCompletion(
@@ -689,6 +719,7 @@ function App() {
           onCreateBatch={handleCreateBatchReviews}
           onReloadSelection={loadMail}
           onOpenOverview={() => openUrl(REVIEW_OVERVIEW_URL)}
+          onRetryItem={handleRetryBatchItem}
         />
         {shouldShowStatusCard(status, false, false, false) && (
           <StatusCard status={status} loading={loading} />

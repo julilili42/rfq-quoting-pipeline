@@ -555,6 +555,36 @@ html, body {
     background: rgba(255, 255, 255, 0.74);
     box-shadow: 0 1px 1px rgba(15, 23, 42, 0.02);
 }
+.batch-row-has-action {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+}
+.batch-row-retry {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid var(--ek-danger-border);
+    background: var(--ek-surface);
+    color: var(--ek-danger);
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+}
+.batch-row-retry:hover:not(:disabled) {
+    background: var(--ek-danger);
+    color: white;
+    transform: translateY(-1px);
+}
+.batch-row-retry:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.batch-row-retry-icon {
+    width: 13px;
+    height: 13px;
+}
 .batch-row-loading,
 .batch-row-running {
     border-color: var(--ek-info-border);

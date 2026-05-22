@@ -30,6 +30,7 @@ type BatchWorkflowCardProps = {
   onCreateBatch: () => void;
   onReloadSelection: () => void;
   onOpenOverview: () => void;
+  onRetryItem?: (itemId: string) => void;
 };
 
 function iconFor(status: BatchDraftStatus) {
@@ -88,6 +89,7 @@ export function BatchWorkflowCard({
   onCreateBatch,
   onReloadSelection,
   onOpenOverview,
+  onRetryItem,
 }: BatchWorkflowCardProps) {
   const items: BatchDraftItem[] = batchItems.length > 0
     ? batchItems
@@ -153,10 +155,12 @@ export function BatchWorkflowCard({
           {items.map((item) => {
             const Icon = iconFor(item.status);
             const detail = itemDetail(item);
+            const canRetry =
+              item.status === "failed" && !loading && Boolean(onRetryItem);
             return (
               <div
                 key={item.itemId}
-                className={`batch-row batch-row-${item.status}`}
+                className={`batch-row batch-row-${item.status}${canRetry ? " batch-row-has-action" : ""}`}
               >
                 <span className="batch-row-icon-wrap">
                   <Icon className="batch-row-icon" />
@@ -167,6 +171,17 @@ export function BatchWorkflowCard({
                     <div className="batch-row-detail">{detail}</div>
                   )}
                 </div>
+                {canRetry && (
+                  <button
+                    type="button"
+                    className="batch-row-retry"
+                    onClick={() => onRetryItem?.(item.itemId)}
+                    aria-label={`"${item.subject}" wiederholen`}
+                    title="Wiederholen"
+                  >
+                    <RefreshIcon className="batch-row-retry-icon" />
+                  </button>
+                )}
               </div>
             );
           })}
@@ -193,7 +208,9 @@ export function BatchWorkflowCard({
                 {hasStarted
                   ? loading
                     ? "Reviews laufen"
-                    : "Erneut versuchen"
+                    : completed > 0
+                      ? "Fehlgeschlagene wiederholen"
+                      : "Erneut versuchen"
                   : `${total} Reviews erstellen`}
               </button>
               <PrivacyInlineHelp />
