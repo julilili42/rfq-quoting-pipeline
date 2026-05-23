@@ -1,6 +1,0 @@
-{
-  "description": "Deterministic smoke test that exercises the entire pipeline without calling the LLM. The fast-path picks up the explicit article number + quantity in the mail body, matching is exact, pricing runs against data/preise.csv, and a PDF is rendered.",
-  "tags": ["smoke", "fast-path", "no-llm"],
-  "min_extraction_f1": 1.0,
-  "min_match_accuracy": 1.0
-}
