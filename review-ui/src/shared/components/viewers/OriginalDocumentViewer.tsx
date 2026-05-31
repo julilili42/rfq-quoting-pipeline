@@ -24,6 +24,8 @@ interface OriginalDocumentViewerProps {
   activeSource?: SourceNavigationTarget | null;
   className?: string;
   previewClassName?: string;
+  /** Fill the parent's height (fullscreen compare) instead of natural height. */
+  fill?: boolean;
 }
 
 const INLINE_RENDERABLE = new Set(["png", "jpg", "jpeg"]);
@@ -36,6 +38,7 @@ export function OriginalDocumentViewer({
   activeSource,
   className,
   previewClassName,
+  fill = false,
 }: OriginalDocumentViewerProps) {
   const defaultTab = attachmentNames.length > 0 ? attachmentNames[0] : "mail";
   const [activeTab, setActiveTab] = useState(defaultTab);
@@ -52,9 +55,13 @@ export function OriginalDocumentViewer({
   }, [activeSource, activeSourceFile]);
 
   return (
-    <div className={cn("flex flex-col", className)}>
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+    <div className={cn("flex flex-col", fill && "h-full min-h-0", className)}>
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className={cn(fill && "flex min-h-0 flex-1 flex-col")}
+      >
+        <TabsList className={cn(fill && "shrink-0")}>
           {attachmentNames.map((name) => (
             <TabsTrigger key={name} value={name}>
               <span className="max-w-[160px] truncate">{name}</span>
@@ -85,8 +92,20 @@ export function OriginalDocumentViewer({
           const iframeKey = `${name}-p${sourcePage ?? 0}`;
 
           return (
-            <TabsContent key={name} value={name}>
-              <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-card">
+            <TabsContent
+              key={name}
+              value={name}
+              className={cn(
+                fill &&
+                  "min-h-0 flex-1 data-[state=active]:flex data-[state=active]:flex-col",
+              )}
+            >
+              <div
+                className={cn(
+                  "flex flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-card",
+                  fill && "h-full min-h-0",
+                )}
+              >
                 <header className="flex items-center justify-between gap-2 border-b border-border bg-muted px-4 py-2">
                   <span className="truncate text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Original · {name}
@@ -140,9 +159,16 @@ export function OriginalDocumentViewer({
           );
         })}
 
-        <TabsContent value="mail">
+        <TabsContent
+          value="mail"
+          className={cn(
+            fill &&
+              "min-h-0 flex-1 data-[state=active]:flex data-[state=active]:flex-col",
+          )}
+        >
           <MailBodyViewer
             mail={mail}
+            className={cn(fill && "h-full min-h-0")}
             sourceTarget={activeSourceFile ? null : activeSource}
             highlightQuote={
               !activeSourceFile &&

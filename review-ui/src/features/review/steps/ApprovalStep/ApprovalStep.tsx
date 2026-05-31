@@ -83,15 +83,17 @@ export function ApprovalStep() {
 
   if (focusMode) {
     return (
-      <div className="mx-auto max-w-screen-2xl space-y-6 px-6 py-4">
+      <div className="flex h-full flex-col px-4 py-3">
         <FocusToolbar reviewId={reviewId} fileName={firstAttachment} />
-        <ComparePanes
-          reviewId={reviewId}
-          detail={detail}
-          isApproved={approved}
-          draftPdfVersion={draftPdfVersion}
-          focusMode
-        />
+        <div className="min-h-0 flex-1">
+          <ComparePanes
+            reviewId={reviewId}
+            detail={detail}
+            isApproved={approved}
+            draftPdfVersion={draftPdfVersion}
+            focusMode
+          />
+        </div>
       </div>
     );
   }

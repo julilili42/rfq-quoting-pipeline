@@ -36,7 +36,7 @@ export function MailBodyViewer({
         )}
       </header>
 
-      <pre className="whitespace-pre-wrap break-words p-5 font-sans text-sm leading-relaxed text-foreground/90">
+      <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-5 font-sans text-sm leading-relaxed text-foreground/90">
         {highlightQuery ? renderWithHighlight(body, highlightQuery) : body}
       </pre>
     </div>
