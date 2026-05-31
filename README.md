@@ -9,6 +9,16 @@ ingestion → extraction → matching → pricing → output
 
 Only the extraction step uses an LLM. Matching and pricing are deterministic and auditable.
 
+## Screenshots
+
+**Review UI – quotation review:** inspect the extracted request next to the original document, edit the customer header and positions, then approve.
+
+![Review UI – quotation review](docs/screenshots/review-ui.png)
+
+**Outlook add-in – Quotation Assistant:** start the review straight from the incoming RFQ mail and open it for approval, without leaving Outlook.
+
+![Outlook add-in – Quotation Assistant](docs/screenshots/outlook-add-in.png)
+
 ## Prerequisites
 
 - Python 3.10+
@@ -23,7 +33,7 @@ git clone https://github.com/julilili42/Business-and-AI
 cd Business-and-AI
 ```
 
-### Recommended for the existing root startup command
+### Install the backend
 
 The root command `npm run dev` starts the API with `uv run python run_review_api.py`. For that, `uv` must be installed.
 
@@ -42,20 +52,6 @@ GOOGLE_API_KEY=...
 # or
 LLM_PROVIDER=azure
 NEXUS_API_KEY=...
-```
-
-### Alternative without `uv`
-
-If you do not want to use `uv`, start the backend and frontends separately.
-
-```bash
-python -m venv .venv
-source .venv/bin/activate   # macOS/Linux
-# .venv\Scripts\activate    # Windows
-
-pip install -e ".[dev]"
-cp env.example .env
-python run_review_api.py
 ```
 
 ### Install the frontends
@@ -107,9 +103,9 @@ https://learn.microsoft.com/en-us/office/dev/add-ins/outlook/sideload-outlook-ad
 
 4. Upload `outlook-ui/manifest.xml` as a custom add-in.
 
-6. Open an email with an RFQ attachment and run the add-in button.
+5. Open an email with an RFQ attachment and run the add-in button.
 
-7. Workflow:
+6. Workflow:
 
 ```text
 Open email → Create draft → Open Review UI → review/approve → create quotation email
@@ -148,7 +144,3 @@ Binary artifacts such as attachments and generated PDFs are stored under:
 ```text
 data/artifacts/reviews/{review_id}/
 ```
-
-The old `data/reviews/{review_id}` JSON sidecar layout is no longer used.
-Runtime state now lives in SQLite; files under `data/artifacts/reviews` are
-binary artifacts referenced by the database.
