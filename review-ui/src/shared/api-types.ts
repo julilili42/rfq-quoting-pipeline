@@ -1329,6 +1329,11 @@ export interface components {
             subject: string;
             /** Sender */
             sender: string;
+            /**
+             * Customer
+             * @default
+             */
+            customer: string;
             /** Positions */
             positions: number;
             /** Confidence High */

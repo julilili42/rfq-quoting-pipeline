@@ -140,6 +140,10 @@ function App() {
   const [loading, setLoading] = useState(false);
 
   const pollingReviewIdRef = useRef<string | null>(null);
+  // The user's "open the review once it's ready" intent. Kept on a ref (not a
+  // poll argument) so whichever poller wins the create-vs-resume race honors
+  // it — see awaitReviewCompletion.
+  const openWhenReadyRef = useRef(false);
   const statusPollTimerRef = useRef<number | null>(null);
   const batchCancelRequestedRef = useRef(false);
   const batchRunIdRef = useRef(0);
@@ -519,6 +523,11 @@ function App() {
     targetMailId: string,
     openWhenReady: boolean,
   ) {
+    // Record the intent before the early-return: if another poller is already
+    // running for this review, it will pick this up at completion.
+    if (openWhenReady) {
+      openWhenReadyRef.current = true;
+    }
     if (pollingReviewIdRef.current === startedReview.review_id) {
       return;
     }
@@ -535,10 +544,13 @@ function App() {
       const updated = await refreshServerWorkflow(targetMailId);
       setPipelineProgress(completed.progress ?? null);
       if (completed.status === "cancelled" || completed.progress?.status === "cancelled") {
+        openWhenReadyRef.current = false;
         setStatus("Pipeline gestoppt.");
       } else {
         setStatus("Review bereit.");
-        if (openWhenReady && updated) {
+        const shouldOpen = openWhenReadyRef.current;
+        openWhenReadyRef.current = false;
+        if (shouldOpen && updated) {
           handleOpenReview(updated);
         }
       }
@@ -642,6 +654,7 @@ function App() {
 
   async function handleResetWorkflow() {
     if (!mailId) return;
+    openWhenReadyRef.current = false;
     setLoading(true);
     try {
       // Stop an in-flight run first so detaching doesn't leave an orphaned
@@ -662,6 +675,7 @@ function App() {
 
   async function handleStopPipeline() {
     if (!mailId || !workflow?.reviewId) return;
+    openWhenReadyRef.current = false;
     setLoading(true);
     setStatus("Pipeline wird gestoppt…");
     try {

@@ -118,6 +118,7 @@ class ReviewListItem(BaseModel):
     updated_at: str
     subject: str
     sender: str
+    customer: str = ""
     positions: int
     confidence_high: int
     confidence_medium: int

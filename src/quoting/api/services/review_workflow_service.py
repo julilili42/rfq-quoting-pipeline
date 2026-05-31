@@ -273,6 +273,7 @@ class ReviewWorkflowService:
                 "updated_at": s.updated_at.isoformat(),
                 "subject": s.subject,
                 "sender": s.sender,
+                "customer": s.customer,
                 "positions": s.positions,
                 "confidence_high": s.confidence_high,
                 "confidence_medium": s.confidence_medium,

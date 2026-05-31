@@ -24,6 +24,10 @@ class ReviewSummary:
     updated_at: datetime
     subject: str
     sender: str
+    customer: str
+    """Best customer label for the overview. Extracted ``kunde_firma`` (then
+    contact / email), independent of how the review was ingested. Empty when
+    nothing was extracted — the UI falls back to ``sender``."""
 
     positions: int
     confidence_high: int
@@ -80,6 +84,7 @@ def _summarize(
 ) -> ReviewSummary:
     mail = repo.load_mail(review_id) or {}
     extraction = repo.load_anfrage(review_id) or {}
+    reviewed = repo.load_anfrage_reviewed(review_id) or {}
     quotation = repo.load_quotation(review_id) or {}
     approval = repo.load_approval(review_id) or {}
     escalation = repo.load_escalation(review_id)
@@ -118,6 +123,7 @@ def _summarize(
         updated_at=_parse_datetime(row.get("updated_at")),
         subject=str(mail.get("subject") or row.get("subject") or "(ohne Betreff)"),
         sender=str(mail.get("from") or mail.get("sender") or row.get("sender") or ""),
+        customer=_customer_label(reviewed) or _customer_label(extraction),
         positions=len(positions),
         confidence_high=confidence_counts["high"],
         confidence_medium=confidence_counts["medium"],
@@ -134,6 +140,15 @@ def _summarize(
         escalation=escalation if escalation and escalation.get("escalated") else None,
         extracted_articles=extracted_articles,
     )
+
+
+def _customer_label(anfrage: dict) -> str:
+    """First non-empty customer identity from an extracted/reviewed Anfrage."""
+    for key in ("kunde_firma", "kunde_ansprechpartner", "kunde_email"):
+        value = anfrage.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
 
 
 def _count_by_key(items: list, key: str, expected: tuple[str, ...]) -> dict[str, int]:

@@ -28,6 +28,7 @@ export const reviewSummarySchema = z.object({
   updated_at: z.string(),
   subject: z.string(),
   sender: z.string(),
+  customer: z.string().default(""),
   positions: z.number().int(),
   confidence_high: z.number().int(),
   confidence_medium: z.number().int(),

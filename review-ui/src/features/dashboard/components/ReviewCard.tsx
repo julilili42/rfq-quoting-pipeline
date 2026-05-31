@@ -91,7 +91,7 @@ export function ReviewCard({
       {/* Kunde */}
       <td className="w-48 px-4 py-4 align-middle">
         <span className="block max-w-[11rem] truncate text-sm font-semibold text-foreground transition-colors group-hover:text-foreground">
-          {review.sender || "—"}
+          {review.customer || review.sender || "—"}
         </span>
       </td>
 

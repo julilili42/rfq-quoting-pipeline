@@ -71,6 +71,7 @@ export function DashboardPage() {
       return (
         r.subject.toLowerCase().includes(q) ||
         r.sender.toLowerCase().includes(q) ||
+        r.customer.toLowerCase().includes(q) ||
         (r.escalation?.reason ?? "").toLowerCase().includes(q)
       );
     });
