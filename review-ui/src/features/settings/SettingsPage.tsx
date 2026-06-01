@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowUpRight, Building2, Settings2 } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import React, { useEffect, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 
@@ -77,7 +77,8 @@ function SettingsForm({ initial, saving, saveSuccess, saveError, onSave }: Setti
     defaultValues: initial,
   });
 
-  useEffect(() => form.reset(initial), [initial, form]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => form.reset(initial), [initial]);
 
   const isDirty = form.formState.isDirty;
 
@@ -267,6 +268,7 @@ function Field({
   );
 }
 
-function SettingsInput(props: React.ComponentProps<typeof Input>) {
-  return <Input {...props} className={cn("h-9", props.className)} />;
-}
+const SettingsInput = React.forwardRef<HTMLInputElement, React.ComponentProps<typeof Input>>(
+  ({ className, ...props }, ref) => <Input ref={ref} className={cn("h-9", className)} {...props} />,
+);
+SettingsInput.displayName = "SettingsInput";

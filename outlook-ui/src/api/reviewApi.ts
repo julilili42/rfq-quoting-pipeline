@@ -177,6 +177,8 @@ export type MailTemplateSettings = {
   email_subject_template: string;
   email_body_template: string;
   company_name: string;
+  contact_phone: string;
+  contact_email: string;
   body_source: "template" | "llm";
   mail_attachments: Array<{
     name: string;
@@ -231,6 +233,8 @@ export async function getMailSettings(reviewId: string): Promise<{ kundenFirma: 
     email_subject_template: "Angebot zu Ihrer Anfrage: [Betreff]",
     email_body_template: "<p>Sehr geehrte Damen und Herren,</p><p>vielen Dank für Ihre Anfrage. Anbei erhalten Sie unser Angebot.</p><p>Mit freundlichen Grüßen<br/>[Absender]</p>",
     company_name: "",
+    contact_phone: "",
+    contact_email: "",
     body_source: "template",
     mail_attachments: mailAttachments,
   };
@@ -242,6 +246,8 @@ export async function getMailSettings(reviewId: string): Promise<{ kundenFirma: 
       defaults.email_subject_template = s?.workflow?.email_subject_template ?? defaults.email_subject_template;
       defaults.email_body_template = s?.workflow?.email_body_template ?? defaults.email_body_template;
       defaults.company_name = s?.company?.contact_person || s?.company?.company_name || "";
+      defaults.contact_phone = s?.company?.contact_phone || "";
+      defaults.contact_email = s?.company?.contact_email || "";
       useLlmBody = Boolean(s?.workflow?.use_llm_email_body);
     } catch { /* ignore */ }
   }

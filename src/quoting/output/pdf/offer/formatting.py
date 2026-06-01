@@ -44,6 +44,41 @@ def format_eur_de(value: float) -> str:
     return f"{number:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+_UNIT_ABBREV: dict[str, str] = {
+    "stück": "Stk.",
+    "stücke": "Stk.",
+    "stk": "Stk.",
+    "stk.": "Stk.",
+    "meter": "m",
+    "kilogramm": "kg",
+    "gramm": "g",
+    "liter": "l",
+    "millimeter": "mm",
+    "zentimeter": "cm",
+}
+
+
+def format_menge_me(menge: float, einheit: str) -> str:
+    """Format quantity and unit as a single string, e.g. '100 Stk.'."""
+    qty = format_qty(menge)
+    unit = (einheit or "").strip()
+    unit = _UNIT_ABBREV.get(unit.lower(), unit)
+    return f"{qty} {unit}" if unit else qty
+
+
+def format_rabatt(rabatt_prozent: float) -> str:
+    """Format a discount percentage, e.g. '10 %' or '—' for zero."""
+    try:
+        value = float(rabatt_prozent)
+    except (TypeError, ValueError):
+        return "—"
+    if not value:
+        return "—"
+    if value == int(value):
+        return f"{int(value)} %"
+    return f"{value:.1f} %".replace(".", ",")
+
+
 def find_logo_path(config: OfferPdfConfig) -> Path | None:
     """Return logo path if available."""
     quoting_root = Path(__file__).resolve().parents[3]

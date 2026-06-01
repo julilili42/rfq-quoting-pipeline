@@ -7,7 +7,7 @@ from typing import Any
 from ....core import Anfrage
 from ....pricing import Quotation
 from .config import OfferPdfConfig
-from .formatting import format_eur_de, format_qty, html_escape
+from .formatting import format_eur_de, format_menge_me, format_qty, format_rabatt, html_escape
 from .styles import build_styles
 
 
@@ -162,114 +162,128 @@ def items_table(
     width: float,
     config: OfferPdfConfig,
     styles: dict[str, Any],
-):
+) -> Any:
     """Position list with clear unit price + line total.
 
-    Column layout:
+    Column layout (7 columns):
 
-        Pos · Artikelnr. · Bezeichnung · Menge · ME · Stückpreis · Gesamtpreis
+        Pos · Artikelnr. · Bezeichnung · Menge · Rabatt · Stückpreis · Gesamtpreis
 
-    The previous version showed ``einzelpreis * 100`` with a separate
-    ``PE=100`` cell, which was misleading: the displayed "Preis" could
-    be larger than the line total. Now both prices are unambiguous —
-    the *Stückpreis* is the per-piece price actually used for the
-    calculation, and *Gesamtpreis* is the matching line total.
+    Menge shows quantity and unit together ("100 Stk").
+    Rabatt shows the discount percentage ("10 %") or "—" when zero.
+    Detail sub-rows (Lieferzeit, Lieferwerk, …) are rendered as separate
+    compact rows with reduced padding directly below each main pricing row.
 
-    Certificate positions are displayed like regular line items; their
-    pricing rule is handled upstream by the quotation engine.
+    ``repeatRows=1`` causes ReportLab to re-emit the header automatically
+    whenever the table breaks across a page.
     """
     from reportlab.lib import colors
     from reportlab.lib.units import cm
     from reportlab.platypus import Paragraph, Table, TableStyle
 
     col_widths = [
-        0.8 * cm,    # Pos
-        3.10 * cm,   # Artikelnr.
-        4.50 * cm,   # Bezeichnung
-        1.95 * cm,   # Menge
-        1.20 * cm,   # ME
-        2.55 * cm,   # Stückpreis EUR
-        2.55 * cm,   # Gesamtpreis EUR
+        0.8 * cm,    # Pos (0)
+        3.10 * cm,   # Artikelnr. (1)
+        4.50 * cm,   # Bezeichnung (2)
+        2.10 * cm,   # Menge incl. ME (3)
+        1.05 * cm,   # Rabatt (4)
+        2.55 * cm,   # Stückpreis EUR (5)
+        2.55 * cm,   # Gesamtpreis EUR (6)
     ]
     delta = width - sum(col_widths)
     if delta > 0:
         col_widths[2] += delta
 
     data: list[list[Any]] = [[
-        "Pos",
-        "Artikelnr.",
-        "Bezeichnung",
-        "Menge",
-        "ME",
-        "Stückpreis EUR",
-        "Gesamtpreis EUR",
+        "Pos", "Artikelnr.", "Bezeichnung", "Menge", "Rabatt", "Stückpreis EUR", "Gesamtpreis EUR",
     ]]
+
+    # Track which rows need compact padding (detail sub-rows and spacers).
+    first_detail_indices: list[int] = []   # first detail row per position (small top gap)
+    other_detail_indices: list[int] = []   # remaining detail rows (no top gap)
+    spacer_indices: list[int] = []
 
     positions_by_nr = {pos.pos_nr: pos for pos in anfrage.positionen}
 
     for item in quotation.items:
         source_pos = positions_by_nr.get(item.pos_nr)
 
-        # Both prices come straight from the quotation engine. No
-        # multiplication, no PE confusion: Stückpreis is per piece,
-        # Gesamtpreis is the line total.
-        unit_price = item.einzelpreis
-        line_total = item.gesamtpreis
-
+        # Main pricing row.
         data.append([
             str(item.pos_nr),
             html_escape(item.artikel_nr),
             Paragraph(html_escape(item.bezeichnung), styles["table"]),
-            format_qty(item.menge),
-            html_escape(item.einheit),
-            format_eur_de(unit_price),
-            format_eur_de(line_total),
+            format_menge_me(item.menge, item.einheit),
+            format_rabatt(item.rabatt_prozent),
+            format_eur_de(item.einzelpreis),
+            format_eur_de(item.gesamtpreis),
         ])
 
+        # Detail sub-rows: each field on its own line, compact padding.
+        detail_fields: list[tuple[str, str]] = []
         if item.bemerkung and not config.is_final:
-            data.append([
-                "",
-                Paragraph("Hinweis:", styles["table_small"]),
-                Paragraph(html_escape(item.bemerkung), styles["table_small"]),
-                "", "", "", "",
-            ])
-
-        data.append([
-            "",
-            Paragraph("Lieferzeit:", styles["table_small"]),
-            Paragraph(
-                html_escape(_position_text(source_pos, "lieferzeit", config.delivery_time)),
-                styles["table_small"],
-            ),
-            "", "", "", "",
-        ])
-        data.append([
-            "",
-            Paragraph("Lieferwerk:", styles["table_small"]),
-            Paragraph(
-                html_escape(_position_text(source_pos, "lieferwerk", config.delivery_plant)),
-                styles["table_small"],
-            ),
-            "", "", "", "",
-        ])
+            detail_fields.append(("Hinweis:", item.bemerkung))
+        detail_fields.append(
+            ("Lieferzeit:", _position_text(source_pos, "lieferzeit", config.delivery_time))
+        )
+        detail_fields.append(
+            ("Lieferwerk:", _position_text(source_pos, "lieferwerk", config.delivery_plant))
+        )
         packaging = _position_optional_text(source_pos, "verpackungsart")
         if packaging:
-            data.append([
-                "",
-                Paragraph("Verpackung:", styles["table_small"]),
-                Paragraph(html_escape(packaging), styles["table_small"]),
-                "", "", "", "",
-            ])
+            detail_fields.append(("Verpackung:", packaging))
         weight_text = _position_weight_text(source_pos)
         if weight_text:
+            detail_fields.append(("Gewicht:", weight_text))
+
+        for i, (label, value) in enumerate(detail_fields):
+            idx = len(data)
+            (first_detail_indices if i == 0 else other_detail_indices).append(idx)
             data.append([
                 "",
-                Paragraph("Gewicht:", styles["table_small"]),
-                Paragraph(html_escape(weight_text), styles["table_small"]),
+                Paragraph(html_escape(label), styles["table_small"]),
+                Paragraph(html_escape(value), styles["table_small"]),
                 "", "", "", "",
             ])
 
+        spacer_indices.append(len(data))
         data.append(["", "", "", "", "", "", ""])
+
+    style_cmds: list[Any] = [
+        ("LINEABOVE", (0, 0), (-1, 0), 1.1, colors.black),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.9, colors.black),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 8.2),
+        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 1), (-1, -1), 8.0),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (3, 1), (3, -1), "LEFT"),    # Menge
+        ("ALIGN", (4, 1), (4, -1), "RIGHT"),   # Rabatt
+        ("ALIGN", (5, 1), (5, -1), "RIGHT"),   # Stückpreis
+        ("ALIGN", (6, 1), (6, -1), "RIGHT"),   # Gesamtpreis
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING",   (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
+    ]
+    # First detail row per position: small top gap to separate from main row.
+    for idx in first_detail_indices:
+        style_cmds.extend([
+            ("TOPPADDING",    (0, idx), (-1, idx), 3),
+            ("BOTTOMPADDING", (0, idx), (-1, idx), 1),
+        ])
+    # Subsequent detail rows: flush together.
+    for idx in other_detail_indices:
+        style_cmds.extend([
+            ("TOPPADDING",    (0, idx), (-1, idx), 0),
+            ("BOTTOMPADDING", (0, idx), (-1, idx), 1),
+        ])
+    # Spacer rows: tiny gap before next position.
+    for idx in spacer_indices:
+        style_cmds.extend([
+            ("TOPPADDING",    (0, idx), (-1, idx), 0),
+            ("BOTTOMPADDING", (0, idx), (-1, idx), 4),
+        ])
 
     table = Table(
         data,
@@ -278,22 +292,7 @@ def items_table(
         hAlign="LEFT",
         splitByRow=1,
     )
-    table.setStyle(TableStyle([
-        ("LINEABOVE", (0, 0), (-1, 0), 1.1, colors.black),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.9, colors.black),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 8.2),
-        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-        ("FONTSIZE", (0, 1), (-1, -1), 8.0),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (3, 1), (3, -1), "RIGHT"),  # Menge
-        ("ALIGN", (5, 1), (5, -1), "RIGHT"),  # Stückpreis
-        ("ALIGN", (6, 1), (6, -1), "RIGHT"),  # Gesamtpreis
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
+    table.setStyle(TableStyle(style_cmds))
     return table
 
 
@@ -441,13 +440,13 @@ def closing_flowables(
     styles: dict[str, Any],
 ) -> list[Any]:
     from reportlab.lib.units import cm
-    from reportlab.platypus import Paragraph, Spacer
+    from reportlab.platypus import KeepTogether, Paragraph, Spacer
 
-    flowables: list[Any] = []
+    inner: list[Any] = []
     for line in config.effective_closing():
-        flowables.append(Paragraph(html_escape(line), styles["body"]))
-        flowables.append(Spacer(1, 0.1 * cm))
-    return flowables
+        inner.append(Paragraph(html_escape(line), styles["body"]))
+        inner.append(Spacer(1, 0.1 * cm))
+    return [KeepTogether(inner)] if inner else []
 
 
 def greeting(quotation: Quotation) -> str:

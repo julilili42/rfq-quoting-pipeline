@@ -50,6 +50,8 @@ export async function createDraftMail(
     Betreff: mail.subject,
     Firma: mail.kundenFirma ?? "",
     Absender: templates?.company_name ?? "",
+    Telefon: templates?.contact_phone ?? "",
+    Email: templates?.contact_email ?? "",
     Datum: today,
   };
 

@@ -156,12 +156,12 @@ export function RequirementsChecklist({
   return (
     <div
       id="requirements-checklist"
-      className="scroll-mt-24 overflow-hidden rounded-md border border-border bg-surface"
+      className="scroll-mt-24 overflow-hidden rounded-md border border-border bg-surface xl:flex xl:h-full xl:flex-col"
     >
       <div className="flex items-center bg-muted px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
         <span>Angebotsanforderungen</span>
       </div>
-      <ul className="divide-y divide-border bg-surface">
+      <ul className="divide-y divide-border bg-surface xl:flex xl:flex-1 xl:flex-col">
         {groups.map((group) => {
           const checked = group.indices.every((idx) => ackSet.has(idx));
           const indeterminate =
@@ -231,7 +231,7 @@ function RequirementRow({
   };
 
   return (
-    <li className="flex items-start gap-2 px-3 py-1.5">
+    <li className="flex items-start gap-2 px-3 py-1.5 xl:flex-1">
       <Checkbox
         checked={checked}
         indeterminate={indeterminate}
@@ -246,52 +246,25 @@ function RequirementRow({
         )}
         aria-hidden="true"
       />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-            <span
-              className={cn(
-                "text-sm font-semibold leading-tight",
-                checked ? "text-muted-foreground" : "text-foreground",
-              )}
-            >
-              {group.title}
-            </span>
-            <span className="rounded-full bg-muted/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {meta.label}
-            </span>
-            {group.posNrs.map((posNr) => (
-              <PositionLink key={posNr} posNr={posNr} />
-            ))}
-          </div>
-          {uploadable && (
-            <>
-              <label
-                htmlFor={disabled ? undefined : inputId}
-                aria-disabled={disabled}
-                title={attachmentButtonLabel(group.category)}
-                className={cn(
-                  buttonVariants({ variant: "secondary", size: "sm" }),
-                  "h-7 shrink-0 cursor-pointer px-2 text-[11px]",
-                  disabled && "pointer-events-none opacity-50",
-                )}
-              >
-                <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
-                {uploadPending ? "Upload..." : "Anhängen"}
-              </label>
-              <input
-                id={inputId}
-                type="file"
-                multiple
-                className="sr-only"
-                onChange={onFileChange}
-                disabled={disabled}
-              />
-            </>
-          )}
+      <div className="min-w-0 flex-1 xl:flex xl:flex-col xl:self-stretch">
+        <div className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          <span
+            className={cn(
+              "text-sm font-semibold leading-tight",
+              checked ? "text-muted-foreground" : "text-foreground",
+            )}
+          >
+            {group.title}
+          </span>
+          <span className="rounded-full bg-muted/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {meta.label}
+          </span>
+          {group.posNrs.map((posNr) => (
+            <PositionLink key={posNr} posNr={posNr} />
+          ))}
         </div>
         {group.sourceQuotes.length > 0 && (
-          <details className="group mt-0.5">
+          <details className="group mt-0.5 xl:mt-auto xl:pt-1">
             <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
               <ChevronRight
                 className="h-3 w-3 transition-transform group-open:rotate-90"
@@ -341,6 +314,31 @@ function RequirementRow({
           </p>
         )}
       </div>
+      {uploadable && (
+        <>
+          <label
+            htmlFor={disabled ? undefined : inputId}
+            aria-disabled={disabled}
+            title={attachmentButtonLabel(group.category)}
+            className={cn(
+              buttonVariants({ variant: "secondary", size: "sm" }),
+              "h-7 shrink-0 cursor-pointer px-2 text-[11px]",
+              disabled && "pointer-events-none opacity-50",
+            )}
+          >
+            <Paperclip className="h-3.5 w-3.5" aria-hidden="true" />
+            {uploadPending ? "Upload..." : "Anhängen"}
+          </label>
+          <input
+            id={inputId}
+            type="file"
+            multiple
+            className="sr-only"
+            onChange={onFileChange}
+            disabled={disabled}
+          />
+        </>
+      )}
     </li>
   );
 }

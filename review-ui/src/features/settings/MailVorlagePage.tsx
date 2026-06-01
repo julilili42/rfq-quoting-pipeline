@@ -32,7 +32,7 @@ import {
   resolvePlaceholders,
 } from "./utils/resolvePlaceholders";
 
-const EMAIL_PLACEHOLDERS = ["Betreff", "Firma", "Absender", "Datum"];
+const EMAIL_PLACEHOLDERS = ["Betreff", "Firma", "Absender", "Telefon", "Email", "Datum"];
 const FILENAME_PLACEHOLDERS = [
   "Kunde",
   "Datum",
@@ -97,7 +97,8 @@ function MailVorlageForm({ initial, saving, saveSuccess, saveError, onSave }: Fo
     defaultValues: initial,
   });
 
-  useEffect(() => form.reset(initial), [initial, form]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => form.reset(initial), [initial]);
 
   const isDirty = form.formState.isDirty;
 
@@ -145,6 +146,8 @@ function MailVorlageForm({ initial, saving, saveSuccess, saveError, onSave }: Fo
         Betreff: "Anfrage Hydraulikpumpe XL-200",
         Firma: "Musterfirma GmbH",
         Absender: initial?.company?.contact_person ?? "Max Mustermann",
+        Telefon: initial?.company?.contact_phone ?? "+49 30 123456",
+        Email: initial?.company?.contact_email ?? "angebot@beispiel.de",
         Datum: new Date().toLocaleDateString("de-DE"),
       } as Record<string, string>,
       filename: {
@@ -158,7 +161,7 @@ function MailVorlageForm({ initial, saving, saveSuccess, saveError, onSave }: Fo
         })(),
       } as Record<string, string>,
     }),
-    [initial?.company?.contact_person],
+    [initial?.company?.contact_person, initial?.company?.contact_phone, initial?.company?.contact_email],
   );
 
   const previewSubject = resolvePlaceholders(subject ?? "", sampleData.email);

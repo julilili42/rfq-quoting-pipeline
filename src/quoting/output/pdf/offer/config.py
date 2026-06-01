@@ -45,8 +45,7 @@ class OfferPdfConfig:
 
     # Prototype texts
     ai_notice: str = (
-        "AI GENERATED DRAFT: Dieser Angebotsentwurf wurde automatisch erstellt "
-        "und muss vor Versand fachlich und kaufmännisch geprüft werden."
+        "Entwurf – Automatisch erstellt. Bitte vor Versand fachlich und kaufmännisch prüfen."
     )
     intro_lines: tuple[str, ...] = (
         "Vielen Dank für Ihre Anfrage. Wir bieten Ihnen nachfolgend unverbindlich an:",

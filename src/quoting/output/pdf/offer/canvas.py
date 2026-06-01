@@ -86,7 +86,7 @@ def _draw_logo(c, logo_path: Path | None, width: float, height: float) -> None:
             c.drawImage(
                 img,
                 (width - target_w) / 2,
-                height - 1.85 * cm,
+                height - 2.3 * cm,
                 width=target_w,
                 height=target_h,
                 preserveAspectRatio=True,

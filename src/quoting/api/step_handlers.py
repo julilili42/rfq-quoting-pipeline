@@ -204,7 +204,8 @@ class StepHandlers:
 
         folder = self.repo.artifact_dir(review_id)
         pdf_path = folder / draft_pdf_filename(review_id)
-        self.pipeline.render(anfrage, quotation, pdf_path, self._ctx(review_id))
+        company_profile = self.settings_loader().company
+        self.pipeline.render(anfrage, quotation, pdf_path, self._ctx(review_id), company_profile=company_profile)
 
         self.repo.register_document(
             review_id,

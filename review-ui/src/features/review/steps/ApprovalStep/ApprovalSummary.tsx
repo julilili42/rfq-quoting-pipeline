@@ -5,6 +5,7 @@ import {
   ChevronDown,
   MessageSquarePlus,
   ShieldAlert,
+  X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -139,8 +140,8 @@ export function ApprovalSummary({
             <ManualClarificationHeaderAction
               active={manualClarificationActive}
               open={clarificationOpen}
-              pending={escalation.isPending}
               reason={detail.escalation?.reason}
+              clearing={escalation.isPending}
               onOpenChange={setClarificationOpen}
               onClear={() => escalation.mutate(null)}
             />
@@ -202,7 +203,7 @@ export function ApprovalSummary({
         >
           <div className="order-2 min-w-0 space-y-3 xl:contents">
             {!isApproved && (
-              <div className="xl:col-start-1 xl:row-start-1">
+              <div className={cn("xl:col-start-1 xl:row-start-1", !showIssues && "xl:self-stretch xl:flex xl:flex-col")}>
                 <RequirementsChecklist
                   anforderungen={detail.anfrage.anforderungen ?? []}
                   acknowledgedIndices={detail.requirements_acknowledged ?? []}
@@ -286,7 +287,14 @@ export function ApprovalSummary({
           </div>
 
           {showSidePanel && (
-            <aside className="order-1 space-y-3 xl:col-start-2 xl:row-start-1 xl:self-stretch xl:sticky xl:top-4">
+            <aside
+              className={cn(
+                "order-1 space-y-3",
+                isApproved
+                  ? "xl:col-span-2 xl:col-start-1 xl:row-start-1"
+                  : "xl:col-start-2 xl:row-start-1 xl:self-stretch xl:sticky xl:top-4",
+              )}
+            >
               {showIssues && (
                 <IssuesBlock blockers={gate.blockers} warnings={gate.warnings} />
               )}
@@ -297,7 +305,10 @@ export function ApprovalSummary({
                 ) : (
                   <div
                     id="approval-controls"
-                    className="scroll-mt-24 overflow-hidden rounded-md border border-border bg-surface xl:h-full"
+                    className={cn(
+                      "scroll-mt-24 overflow-hidden rounded-md border border-border bg-surface",
+                      !showIssues && "xl:h-full",
+                    )}
                   >
                     <div className="bg-muted px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
                       Freigabe
@@ -324,35 +335,36 @@ export function ApprovalSummary({
 function ManualClarificationHeaderAction({
   active,
   open,
-  pending,
   reason,
+  clearing,
   onOpenChange,
   onClear,
 }: {
   active: boolean;
   open: boolean;
-  pending: boolean;
   reason?: string;
+  clearing?: boolean;
   onOpenChange: (open: boolean) => void;
   onClear: () => void;
 }) {
   if (active) {
     return (
-      <div className="flex items-center gap-2">
+      <div className="hidden items-center gap-1 sm:flex">
         <span
-          className="hidden max-w-[16rem] truncate rounded-full border border-warning/30 bg-warning-soft px-2.5 py-1 text-xs font-semibold text-warning sm:inline-flex"
+          className="max-w-[16rem] truncate rounded-full border border-warning/30 bg-warning-soft px-2.5 py-1 text-xs font-semibold text-warning"
           title={reason}
         >
           Klärung aktiv
         </span>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={pending}
+        <button
+          type="button"
+          disabled={clearing}
           onClick={onClear}
+          title="Klärung entfernen"
+          className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground transition-colors hover:border-danger/40 hover:bg-danger-soft hover:text-danger disabled:opacity-50"
         >
-          Zurücknehmen
-        </Button>
+          <X className="h-3 w-3" aria-hidden="true" />
+        </button>
       </div>
     );
   }
@@ -577,9 +589,6 @@ function IssueGroup({
       <div className="mb-1.5 flex items-center gap-2 px-0.5">
         <Icon className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
         <div className="text-[11px] font-bold uppercase tracking-wide">{title}</div>
-        <span className="ml-auto rounded-full bg-surface/80 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-current">
-          {issues.length}
-        </span>
       </div>
       <ul className="space-y-1">
         {issues.map((issue) => (

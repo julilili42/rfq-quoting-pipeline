@@ -35,11 +35,6 @@ export function PdfViewer({
 }: PdfViewerProps) {
   const src = pdfUrl(reviewId, kind, cacheBuster);
 
-  const titles: Record<PdfKind, string> = {
-    draft: "Angebotsentwurf",
-    final: "Finales Angebot",
-    current: "Angebot",
-  };
   const downloadNames: Record<PdfKind, string> = {
     draft: `Angebotsentwurf_${reviewId}.pdf`,
     final: `Finales_Angebot_${reviewId}.pdf`,
@@ -53,10 +48,7 @@ export function PdfViewer({
         className,
       )}
     >
-      <header className="flex items-center justify-between gap-2 border-b border-border bg-muted px-4 py-2">
-        <span className="truncate text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          {titles[kind]}
-        </span>
+      <header className="flex items-center justify-end gap-2 border-b border-border bg-muted px-4 py-2">
         <a
           href={src}
           target="_blank"

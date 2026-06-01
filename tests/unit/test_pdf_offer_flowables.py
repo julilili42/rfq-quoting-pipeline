@@ -68,5 +68,7 @@ def test_position_weight_renders_as_pdf_position_detail_field() -> None:
         styles=build_styles(),
     )
 
+    # items_table returns a single Table; skip the header row (index 0).
+    # Detail fields are on separate rows: label in col 1, value in col 2.
     rows = [[_plain(cell) for cell in row] for row in table._cellvalues]
     assert ["", "Gewicht:", "Netto 12,5 kg / Brutto 14 kg", "", "", "", ""] in rows
