@@ -40,6 +40,19 @@ class StepContext:
         save_json(data, path)
         return path
 
-    def report(self, step_name: str, status: StepStatus, detail: str = "") -> None:
+    def report(
+        self,
+        step_name: str,
+        status: StepStatus,
+        detail: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         """Emit a progress event."""
-        self.progress(StepProgress(step_name=step_name, status=status, detail=detail))
+        self.progress(
+            StepProgress(
+                step_name=step_name,
+                status=status,
+                detail=detail,
+                metadata=metadata,
+            ),
+        )

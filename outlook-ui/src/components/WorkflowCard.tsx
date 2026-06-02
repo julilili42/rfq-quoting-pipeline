@@ -27,7 +27,6 @@ import type {
 import {
   AlertIcon,
   CheckIcon,
-  ChevronDown,
   ClockIcon,
   ExternalIcon,
   RefreshIcon,
@@ -35,7 +34,7 @@ import {
   StopIcon,
   TrashIcon,
 } from "./Icons";
-import { PrivacyInlineHelp, SecondaryActions } from "./ActionHelpers";
+import { SecondaryActions } from "./ActionHelpers";
 
 type WorkflowCardProps = {
   workflow: MailWorkflow | null;
@@ -60,6 +59,21 @@ function formatDate(iso?: string): string {
     dateStyle: "short",
     timeStyle: "short",
   });
+}
+
+function formatRetryDelay(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "sofort";
+  if (seconds < 10) return `${seconds.toFixed(1).replace(".0", "")}s`;
+  return `${Math.round(seconds)}s`;
+}
+
+function parseSender(sender: string): { name: string; email?: string } {
+  const match = sender.match(/^\s*(.*?)\s*<([^<>]+)>\s*$/);
+  if (!match) return { name: sender };
+  return {
+    name: match[1].trim() || match[2].trim(),
+    email: match[2].trim(),
+  };
 }
 
 function deriveState(workflow: MailWorkflow | null): MailWorkflowState {
@@ -127,6 +141,7 @@ export function WorkflowCard({
   const subject =
     workflow?.subject || snapshot?.subject || "Keine Mail geladen";
   const sender = workflow?.sender || snapshot?.from || "";
+  const parsedSender = sender ? parseSender(sender) : null;
 
   if (!isOutlook && !snapshot) {
     return (
@@ -164,24 +179,40 @@ export function WorkflowCard({
     <section className={`${cardCls} ${failed ? "card-error" : ""}`}>
       <div className="card-stack">
         <div className="row-between">
-          {stopped ? (
-            <span className="pill pill-warning">
-              <span className="pill-dot" />
-              Gestoppt
-            </span>
-          ) : (
-            <StatusPill state={state} />
-          )}
-          {workflow?.reviewId && (
-            <code className="review-id" title="Review-ID">
-              {workflow.reviewId}
-            </code>
+          <div className="row-inline">
+            {stopped ? (
+              <span className="pill pill-warning">
+                <span className="pill-dot" />
+                Gestoppt
+              </span>
+            ) : (
+              <StatusPill state={state} />
+            )}
+          </div>
+          {state === "new" && (
+            <button
+              type="button"
+              className="icon-button"
+              disabled={loading}
+              onClick={onReloadMail}
+              aria-label="Mail neu laden"
+              title="Mail neu laden"
+            >
+              <RefreshIcon className="icon-button-icon" />
+            </button>
           )}
         </div>
 
         <div>
           <div className="mail-subject">{subject}</div>
-          {sender && <div className="mail-sender">{sender}</div>}
+          {parsedSender && (
+            <div className="mail-sender">
+              <span className="mail-sender-name">{parsedSender.name}</span>
+              {parsedSender.email && (
+                <span className="mail-sender-email">{parsedSender.email}</span>
+              )}
+            </div>
+          )}
         </div>
 
         {showProgress && pipelineProgress && (
@@ -226,26 +257,14 @@ export function WorkflowCard({
         <div className="actions">
           {state === "new" && (
             <>
-              <div className="primary-action-row">
-                <button
-                  className="btn btn-primary"
-                  disabled={!isOutlook || loading || !snapshot}
-                  onClick={() => onCreateReview(true)}
-                >
-                  <ExternalIcon className="btn-icon" />
-                  Review erstellen &amp; öffnen
-                </button>
-                <PrivacyInlineHelp />
-              </div>
+              <button
+                className="btn btn-primary"
+                disabled={!isOutlook || loading || !snapshot}
+                onClick={() => onCreateReview(true)}
+              >
+                Review starten
+              </button>
               <SecondaryActions>
-                <button
-                  className="btn btn-ghost"
-                  disabled={!isOutlook || loading}
-                  onClick={onReloadMail}
-                >
-                  <RefreshIcon className="btn-icon" />
-                  Mail neu laden
-                </button>
                 <OverviewAction
                   disabled={loading}
                   onOpenOverview={onOpenOverview}
@@ -314,8 +333,7 @@ export function WorkflowCard({
                 disabled={loading}
                 onClick={onOpenReview}
               >
-                <ExternalIcon className="btn-icon" />
-                Review zur Freigabe öffnen
+                Review öffnen
               </button>
               <SecondaryActions>
                 <OverviewAction
@@ -402,7 +420,7 @@ function PipelineInline({ progress }: { progress: PipelineProgress }) {
   const failed = progress.status === "failed";
   const cancelled = progress.status === "cancelled";
   const terminal = failed || cancelled;
-  const steps = Array.isArray(progress.steps) ? progress.steps : [];
+  const retry = progress.llm_retry;
   const percent =
     typeof progress.progress_percent === "number"
       ? Math.max(0, Math.min(100, progress.progress_percent))
@@ -425,8 +443,13 @@ function PipelineInline({ progress }: { progress: PipelineProgress }) {
           )}
         </span>
         <span className="pipeline-inline-text">
-          {progress.current_step || "Pipeline"}
-          {progress.current_detail ? ` — ${progress.current_detail}` : ""}
+          {retry
+            ? `Retry ${retry.next_attempt}/${retry.max_attempts} in ${formatRetryDelay(
+                retry.delay_s,
+              )}`
+            : `${progress.current_step || "Pipeline"}${
+                progress.current_detail ? ` — ${progress.current_detail}` : ""
+              }`}
         </span>
       </div>
 
@@ -440,39 +463,6 @@ function PipelineInline({ progress }: { progress: PipelineProgress }) {
         />
       </div>
 
-      {steps.length > 0 && (
-        <details className="pipeline-inline-details">
-          <summary>
-            <ChevronDown size={12} />
-            <span>Schritte anzeigen</span>
-            <span className="advanced-meta">
-              {steps.filter((s) => s.status === "completed").length}/
-              {steps.length}
-            </span>
-          </summary>
-          <div className="pipeline-steps">
-            {steps.map((step, index) => (
-              <div
-                key={`${step.name}-${index}`}
-                className={`pipeline-step pipeline-step-${step.status}`}
-              >
-                <div className="pipeline-step-body">
-                  <div className="pipeline-step-name">
-                    {step.name || "Schritt"}
-                  </div>
-                  {step.detail && (
-                    <div className="pipeline-step-detail">{step.detail}</div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </details>
-      )}
-
-      {progress.error && (
-        <div className="pipeline-error">{progress.error}</div>
-      )}
     </div>
   );
 }

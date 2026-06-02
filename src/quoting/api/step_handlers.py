@@ -105,6 +105,7 @@ class StepHandlers:
                 step_name=progress.step_name,
                 status=progress.status,
                 detail=progress.detail,
+                metadata=progress.metadata,
             )
 
         return StepContext(

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 StepStatus = Literal["started", "completed", "failed", "skipped"]
 
@@ -25,6 +25,7 @@ class StepProgress:
     step_name: str
     status: StepStatus
     detail: str = ""
+    metadata: dict[str, Any] | None = None
 
 
 ProgressCallback = Callable[[StepProgress], None]

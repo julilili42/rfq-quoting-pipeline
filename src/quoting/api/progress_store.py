@@ -78,6 +78,7 @@ class ProgressStore:
         step_name: str,
         status: str,
         detail: str = "",
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         data = self.read(review_id)
         if data is None:
@@ -95,6 +96,8 @@ class ProgressStore:
             step["status"] = mapped_status
             step["detail"] = detail
             step["updated_at"] = now
+            if metadata:
+                step.update(metadata)
             if mapped_status == "running" and not step.get("started_at"):
                 step["started_at"] = now
             if mapped_status in {"completed", "skipped"}:
@@ -116,8 +119,12 @@ class ProgressStore:
             data["current_step"] = step_name
             data["current_detail"] = detail
             data["error"] = None
+            if metadata:
+                data.update(metadata)
 
         elif mapped_status == "completed":
+            if metadata:
+                data.update(metadata)
             running_steps = [
                 step for step in steps if step.get("status") == "running"
             ]
@@ -141,6 +148,8 @@ class ProgressStore:
             data["current_step"] = step_name
             data["current_detail"] = detail
             data["error"] = detail or f"Step failed: {step_name}"
+            if metadata:
+                data.update(metadata)
 
         self.write(review_id, data)
         self.bus.publish(review_id, {"event": "progress", "data": data})

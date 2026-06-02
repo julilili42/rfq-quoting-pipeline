@@ -5,6 +5,7 @@ declare const Office: any;
 export type SelectedMailSummary = {
   itemId: string;
   subject: string;
+  sender?: string;
   conversationId?: string;
   internetMessageId?: string;
   hasAttachment: boolean;
@@ -120,6 +121,7 @@ export function collapseSelectedItems(items: any[]): SelectedMailSummary[] {
     const summary: SelectedMailSummary = {
       itemId: String(item.itemId),
       subject: item.subject || "(no subject)",
+      sender: item.from ? formatFrom(item) : undefined,
       conversationId: item.conversationId
         ? String(item.conversationId)
         : undefined,
@@ -177,5 +179,42 @@ export async function readSelectedMailSnapshot(
       }
       loadedItem.unloadAsync(() => resolve());
     });
+  }
+}
+
+export async function readSelectedMailSummaryHeader(
+  item: SelectedMailSummary,
+): Promise<SelectedMailSummary> {
+  if (item.sender) return item;
+
+  const mailbox = Office.context?.mailbox;
+  if (!mailbox?.loadItemByIdAsync) return item;
+
+  let loadedItem: any | null = null;
+  try {
+    loadedItem = await new Promise<any>((resolve, reject) => {
+      mailbox.loadItemByIdAsync(item.itemId, (result: any) => {
+        if (result.status === Office.AsyncResultStatus.Succeeded) {
+          resolve(result.value);
+        } else {
+          reject(result.error?.message || "selected mail load failed");
+        }
+      });
+    });
+
+    return {
+      ...item,
+      subject: item.subject,
+      sender: formatFrom(loadedItem),
+      hasAttachment: Boolean(loadedItem.attachments?.length) || item.hasAttachment,
+    };
+  } catch {
+    return item;
+  } finally {
+    if (loadedItem?.unloadAsync) {
+      await new Promise<void>((resolve) => {
+        loadedItem.unloadAsync(() => resolve());
+      });
+    }
   }
 }

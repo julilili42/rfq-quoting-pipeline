@@ -35,12 +35,14 @@ import {
   BatchWorkflowCard,
   type BatchDraftItem,
 } from "./components/BatchWorkflowCard";
+import { AlertIcon } from "./components/Icons";
 import { StatusCard } from "./components/StatusCard";
 import { Steps } from "./components/Steps";
 import { WorkflowCard } from "./components/WorkflowCard";
 import { createDraftMail, openUrl } from "./outlook/draftMail";
 import {
   getSelectedMailItems,
+  readSelectedMailSummaryHeader,
   readMailSnapshot,
   readSelectedMailSnapshot,
   type SelectedMailSummary,
@@ -80,6 +82,16 @@ function reviewUiUrl(reviewId: string): string {
 }
 
 function formatProgressStatus(progress: PipelineProgress): string {
+  if (progress.llm_retry) {
+    const delay = progress.llm_retry.delay_s;
+    const delayText =
+      Number.isFinite(delay) && delay > 0
+        ? delay < 10
+          ? `${delay.toFixed(1).replace(".0", "")}s`
+          : `${Math.round(delay)}s`
+        : "sofort";
+    return `Retry ${progress.llm_retry.next_attempt}/${progress.llm_retry.max_attempts} in ${delayText}`;
+  }
   if (progress.status === "failed") {
     return progress.error
       ? `Fehler: ${progress.error}`
@@ -127,6 +139,28 @@ function isCompletedBatch(items: BatchDraftItem[]): boolean {
   );
 }
 
+function summarizePipelineError(raw: string): string {
+  const s = raw.toLowerCase();
+  if (s.includes("429") || s.includes("resource_exhausted") || s.includes("quota")) {
+    if (s.includes("gemini")) return "Gemini: Tageskontingent erschöpft";
+    if (s.includes("azure") || s.includes("openai")) return "Azure OpenAI: Kontingent erschöpft";
+    return "LLM-Kontingent erschöpft";
+  }
+  if (s.includes("timeout")) return "Timeout – Pipeline zu langsam";
+  if (s.includes("econnrefused") || s.includes("connection refused")) return "API nicht erreichbar";
+  if (s.includes("pdf")) return "PDF konnte nicht erstellt werden";
+  return raw.replace(/^(Error: ?|Pipeline failed: ?|Fehler: ?)/i, "").slice(0, 90);
+}
+
+function ErrorFooter({ error }: { error: string }) {
+  return (
+    <div className="error-footer" role="alert" title={error}>
+      <AlertIcon size={12} className="error-footer-icon" />
+      <span className="error-footer-text">{summarizePipelineError(error)}</span>
+    </div>
+  );
+}
+
 function App() {
   const [isOutlook, setIsOutlook] = useState(false);
   const [mailId, setMailId] = useState<string | null>(null);
@@ -147,6 +181,9 @@ function App() {
   const statusPollTimerRef = useRef<number | null>(null);
   const batchCancelRequestedRef = useRef(false);
   const batchRunIdRef = useRef(0);
+  // True while a batch run is actively executing. Guards focus-event handlers
+  // from resetting batch state or triggering loadMail mid-run.
+  const batchActiveRef = useRef(false);
 
   /**
    * Fetch the bound review's status from the server and build a
@@ -201,16 +238,22 @@ function App() {
       }
 
       const selected = await getSelectedMailItems();
-      setSelectedItems(selected);
 
       if (selected.length > 1) {
+        const enriched: SelectedMailSummary[] = [];
+        for (const item of selected) {
+          enriched.push(await readSelectedMailSummaryHeader(item));
+        }
+        setSelectedItems(enriched);
         setMailId(null);
         setSnapshot(null);
         setWorkflow(null);
         setPipelineProgress(null);
-        setStatus(formatSelectionStatus(selected));
+        setStatus(formatSelectionStatus(enriched));
         return;
       }
+
+      setSelectedItems(selected);
 
       if (selected.length === 0) {
         setMailId(null);
@@ -273,6 +316,7 @@ function App() {
   async function runBatchItem(
     item: SelectedMailSummary,
     runId: number,
+    preloaded?: { mail: MailSnapshot; mailId: string },
   ): Promise<BatchRunOutcome> {
     if (batchCancelRequestedRef.current || batchRunIdRef.current !== runId) {
       patchBatchItemForRun(runId, item.itemId, {
@@ -283,23 +327,30 @@ function App() {
       return "cancelled";
     }
 
-    patchBatchItemForRun(runId, item.itemId, {
-      status: "loading",
-      detail: "Mail wird geladen…",
-      error: undefined,
-    });
-
     let mail: MailSnapshot;
     let itemMailId: string;
-    try {
-      mail = await readSelectedMailSnapshot(item.itemId);
-      itemMailId = deriveMailId({ itemId: item.itemId }, mail);
-    } catch (error) {
+
+    if (preloaded) {
+      // Snapshot was pre-loaded sequentially before the concurrent workers started.
+      mail = preloaded.mail;
+      itemMailId = preloaded.mailId;
+    } else {
+      // Single-item retry path — no concurrency risk.
       patchBatchItemForRun(runId, item.itemId, {
-        status: "failed",
-        error: String(error),
+        status: "loading",
+        detail: "Mail wird geladen…",
+        error: undefined,
       });
-      return "failed";
+      try {
+        mail = await readSelectedMailSnapshot(item.itemId);
+        itemMailId = deriveMailId({ itemId: item.itemId }, mail);
+      } catch (error) {
+        patchBatchItemForRun(runId, item.itemId, {
+          status: "failed",
+          error: String(error),
+        });
+        return "failed";
+      }
     }
 
     if (batchCancelRequestedRef.current || batchRunIdRef.current !== runId) {
@@ -398,6 +449,7 @@ function App() {
     const runId = batchRunIdRef.current + 1;
     batchRunIdRef.current = runId;
     batchCancelRequestedRef.current = false;
+    batchActiveRef.current = true;
     setLoading(true);
     setPipelineProgress(null);
 
@@ -421,39 +473,52 @@ function App() {
       setStatus(mode === "restart" ? "Batch wird neu gestartet…" : "Reviews werden vorbereitet.");
     }
 
-    let completedCount = isRetry
-      ? batchItems.filter((i) => i.status === "completed").length
-      : 0;
-    let failedCount = 0;
-    let cancelledCount = 0;
+    // Office.js loadItemByIdAsync is not safe to call concurrently — parallel
+    // calls all return the same loaded item, producing identical reviews for every
+    // selected mail. Pre-load all snapshots sequentially before starting workers.
+    const preloaded = new Map<string, { mail: MailSnapshot; mailId: string }>();
+    for (const item of itemsToProcess) {
+      if (batchCancelRequestedRef.current || batchRunIdRef.current !== runId) break;
+      patchBatchItemForRun(runId, item.itemId, {
+        status: "loading",
+        detail: "Mail wird geladen…",
+        error: undefined,
+      });
+      try {
+        const mail = await readSelectedMailSnapshot(item.itemId);
+        preloaded.set(item.itemId, {
+          mail,
+          mailId: deriveMailId({ itemId: item.itemId }, mail),
+        });
+      } catch (error) {
+        if (batchRunIdRef.current !== runId) break;
+        patchBatchItemForRun(runId, item.itemId, { status: "failed", error: String(error) });
+      }
+    }
 
     const CONCURRENCY = 3;
+    const readyItems = itemsToProcess.filter((i) => preloaded.has(i.itemId));
     let cursor = 0;
-    const workerCount = Math.min(CONCURRENCY, itemsToProcess.length);
+    const workerCount = Math.min(CONCURRENCY, readyItems.length);
     const workers = Array.from({ length: workerCount }, async () => {
       while (true) {
         if (batchCancelRequestedRef.current || batchRunIdRef.current !== runId) return;
         const index = cursor++;
-        if (index >= itemsToProcess.length) return;
-        const outcome = await runBatchItem(itemsToProcess[index], runId);
+        if (index >= readyItems.length) return;
+        const item = readyItems[index];
+        await runBatchItem(item, runId, preloaded.get(item.itemId));
         if (batchRunIdRef.current !== runId) return;
-        if (outcome === "completed") completedCount += 1;
-        else if (outcome === "cancelled") cancelledCount += 1;
-        else failedCount += 1;
       }
     });
     await Promise.all(workers);
 
-    if (batchRunIdRef.current !== runId) return;
+    if (batchRunIdRef.current !== runId) {
+      // A newer run has taken over; it's responsible for clearing batchActiveRef.
+      return;
+    }
 
-    const total = selectedItems.length;
-    setStatus(
-      cancelledCount > 0
-        ? `${completedCount} von ${total} erstellt, ${cancelledCount} gestoppt.`
-        : failedCount > 0
-        ? `${completedCount} von ${total} erstellt, ${failedCount} fehlgeschlagen.`
-        : `${completedCount} Reviews bereit.`,
-    );
+    batchActiveRef.current = false;
+    setStatus("Bereit.");
     setLoading(false);
   }
 
@@ -461,35 +526,18 @@ function App() {
     const target = batchItems.find((i) => i.itemId === itemId);
     if (!target || (target.status !== "failed" && target.status !== "cancelled")) return;
 
+    batchActiveRef.current = true;
     setLoading(true);
     setStatus("Mail wird wiederholt…");
     const runId = batchRunIdRef.current + 1;
     batchRunIdRef.current = runId;
     batchCancelRequestedRef.current = false;
     try {
-      const outcome = await runBatchItem(target, runId);
+      await runBatchItem(target, runId);
       if (batchRunIdRef.current !== runId) return;
-      const total = selectedItems.length;
-      const completedNow =
-        batchItems.filter(
-          (i) => i.itemId !== itemId && i.status === "completed",
-        ).length + (outcome === "completed" ? 1 : 0);
-      const failedNow =
-        batchItems.filter(
-          (i) => i.itemId !== itemId && i.status === "failed",
-        ).length + (outcome === "failed" ? 1 : 0);
-      const cancelledNow =
-        batchItems.filter(
-          (i) => i.itemId !== itemId && i.status === "cancelled",
-        ).length + (outcome === "cancelled" ? 1 : 0);
-      setStatus(
-        cancelledNow > 0
-          ? `${completedNow} von ${total} erstellt, ${cancelledNow} gestoppt.`
-          : failedNow > 0
-          ? `${completedNow} von ${total} erstellt, ${failedNow} fehlgeschlagen.`
-          : `${completedNow} Reviews bereit.`,
-      );
+      setStatus("Bereit.");
     } finally {
+      batchActiveRef.current = false;
       setLoading(false);
     }
   }
@@ -514,6 +562,7 @@ function App() {
       ),
     );
     await cancelBatchReviewIds(batchItems);
+    batchActiveRef.current = false;
     setLoading(false);
     setStatus("Batch-Pipeline gestoppt.");
   }
@@ -736,17 +785,21 @@ function App() {
       if (now - lastRefreshAt < 500) return;
       lastRefreshAt = now;
 
-      // A pipeline poll is already keeping this review fresh (and also drives
-      // the progress bar). A second setWorkflow from a focus event would only
-      // race it — the same class of bug the openWhenReadyRef fix addressed.
-      // Let the active poller own the state; it updates within its interval.
+      // Pipeline poll owns its own refresh cadence — don't race it.
       if (pollingReviewIdRef.current) return;
 
+      // Never interrupt an active batch: loadMail resets batchItems and the
+      // selection state, which would appear to cancel the in-flight run.
+      if (batchActiveRef.current) return;
+
+      // For bound reviews: do a lightweight server-state refresh so the card
+      // reflects approval/sent status changes made in the Review-UI.
+      // For unbound state ("new"): skip — SelectedItemsChanged already handles
+      // any selection changes, and calling loadMail here sets loading=true which
+      // disables buttons and forces a double-click after switching windows.
       if (mailId && workflow?.reviewId) {
         void refreshServerWorkflow(mailId);
-        return;
       }
-      void loadMail();
     }
 
     function handleVisibilityChange() {
@@ -890,50 +943,67 @@ function App() {
       ? "review_running"
       : "new";
 
+  // Compute the error to surface in the sticky footer (single mail or batch).
+  const errorToShow: string | null = (() => {
+    if (selectedItems.length > 1) {
+      const firstFailed = batchItems.find((i) => i.status === "failed" && i.error);
+      return firstFailed?.error ?? null;
+    }
+    return pipelineProgress?.status === "failed"
+      ? (pipelineProgress.error ?? "Pipeline fehlgeschlagen")
+      : null;
+  })();
+
   if (selectedItems.length > 1) {
     return (
-      <div className="panel">
-        <Steps workflowState={batchWorkflowState} />
+      <>
+        <div className="panel">
+          <Steps workflowState={batchWorkflowState} />
 
-        <BatchWorkflowCard
-          selectedItems={selectedItems}
-          batchItems={batchItems}
-          loading={loading}
-          onCreateBatch={handleCreateBatchReviews}
+          <BatchWorkflowCard
+            selectedItems={selectedItems}
+            batchItems={batchItems}
+            loading={loading}
+            onCreateBatch={handleCreateBatchReviews}
           onReloadSelection={loadMail}
           onOpenOverview={() => openUrl(REVIEW_OVERVIEW_URL)}
           onRetryItem={handleRetryBatchItem}
-          onRestartBatch={() => void handleCreateBatchReviews("restart")}
-          onStopBatch={handleStopBatchPipelines}
-        />
-        {shouldShowStatusCard(status, false, false, false) && (
-          <StatusCard status={status} loading={loading} />
-        )}
-      </div>
+            onRestartBatch={() => void handleCreateBatchReviews("restart")}
+            onStopBatch={handleStopBatchPipelines}
+          />
+          {shouldShowStatusCard(status, false, false, false) && (
+            <StatusCard status={status} loading={loading} />
+          )}
+        </div>
+        {errorToShow && <ErrorFooter key={errorToShow.slice(0, 40)} error={errorToShow} />}
+      </>
     );
   }
 
   return (
-    <div className="panel">
-      <Steps workflowState={workflowState} />
+    <>
+      <div className="panel">
+        <Steps workflowState={workflowState} />
 
-      <WorkflowCard
-        workflow={workflow}
-        snapshot={snapshot}
-        isOutlook={isOutlook}
-        loading={loading}
-        pipelineProgress={pipelineProgress}
-        onCreateReview={handleCreateReview}
-        onOpenReview={() => handleOpenReview()}
-        onCreateDraftMail={handleCreateDraftMail}
-        onResetWorkflow={handleResetWorkflow}
-        onStopPipeline={handleStopPipeline}
-        onReloadMail={loadMail}
-        onOpenOverview={() => openUrl(REVIEW_OVERVIEW_URL)}
-      />
+        <WorkflowCard
+          workflow={workflow}
+          snapshot={snapshot}
+          isOutlook={isOutlook}
+          loading={loading}
+          pipelineProgress={pipelineProgress}
+          onCreateReview={handleCreateReview}
+          onOpenReview={() => handleOpenReview()}
+          onCreateDraftMail={handleCreateDraftMail}
+          onResetWorkflow={handleResetWorkflow}
+          onStopPipeline={handleStopPipeline}
+          onReloadMail={loadMail}
+          onOpenOverview={() => openUrl(REVIEW_OVERVIEW_URL)}
+        />
 
-      {showStatusCard && <StatusCard status={status} loading={loading} />}
-    </div>
+        {showStatusCard && <StatusCard status={status} loading={loading} />}
+      </div>
+      {errorToShow && <ErrorFooter key={errorToShow.slice(0, 40)} error={errorToShow} />}
+    </>
   );
 }
 

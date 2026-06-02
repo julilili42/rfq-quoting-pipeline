@@ -1,4 +1,6 @@
-import { CalendarDays, Search, SlidersHorizontal } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+
+import { CalendarDays, Check, ChevronDown, Search, SlidersHorizontal } from "lucide-react";
 
 import { Input } from "@/shared/components/ui/input";
 import { cn } from "@/shared/lib/cn";
@@ -49,6 +51,86 @@ const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
   { value: "amount_desc", label: "Höchster Betrag" },
   { value: "amount_asc", label: "Niedrigster Betrag" },
 ];
+
+function SortMenu({
+  value,
+  onChange,
+}: {
+  value: SortOption;
+  onChange: (value: SortOption) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const active = SORT_OPTIONS.find((option) => option.value === value) ?? SORT_OPTIONS[0];
+
+  useEffect(() => {
+    if (!open) return;
+
+    function onPointerDown(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        className="inline-flex h-9 min-w-44 items-center justify-between gap-3 rounded-md border border-border bg-surface px-3 text-sm font-medium text-foreground shadow-sm transition-all hover:border-foreground/20 hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-ring"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label="Sortierung"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="truncate">{active.label}</span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180",
+          )}
+          aria-hidden="true"
+        />
+      </button>
+
+      {open && (
+        <div
+          className="absolute right-0 z-30 mt-1 w-56 overflow-hidden rounded-md border border-border bg-surface p-1 shadow-lg"
+          role="listbox"
+          aria-label="Sortierung"
+        >
+          {SORT_OPTIONS.map((option) => {
+            const selected = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                className={cn(
+                  "flex w-full items-center justify-between gap-3 rounded px-2.5 py-2 text-left text-sm transition-colors",
+                  selected
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                )}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                <span>{option.label}</span>
+                {selected && <Check className="h-4 w-4 text-brand" aria-hidden="true" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function FilterPills<T extends string>({
   options,
@@ -116,18 +198,7 @@ export function ReviewFilters({
 
         <div className="flex items-center gap-2">
           <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <select
-            value={sortBy}
-            onChange={(e) => onSortByChange(e.target.value as SortOption)}
-            className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            aria-label="Sortierung"
-          >
-            {SORT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+          <SortMenu value={sortBy} onChange={onSortByChange} />
         </div>
       </div>
 

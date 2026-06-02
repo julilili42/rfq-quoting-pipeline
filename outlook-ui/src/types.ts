@@ -25,6 +25,16 @@ export type PipelineStepProgress = {
   status: PipelineStepStatus;
   detail: string;
   updated_at: string | null;
+  llm_retry?: LlmRetryProgress;
+};
+
+export type LlmRetryProgress = {
+  provider: string;
+  attempt: number;
+  max_attempts: number;
+  next_attempt: number;
+  delay_s: number;
+  error: string;
 };
 
 export type PipelineProgressStatus =
@@ -41,6 +51,7 @@ export type PipelineProgress = {
   progress_percent: number;
   updated_at: string;
   steps: PipelineStepProgress[];
+  llm_retry?: LlmRetryProgress;
   result: CreateReviewResponse | null;
   error: string | null;
 };

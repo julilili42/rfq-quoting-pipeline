@@ -1,9 +1,9 @@
 /* =====================================================================
  * ElringKlinger Quoting · Outlook taskpane
  *
- * Design language follows the Outlook taskpane: Fluent-blue workflow accents,
- * Inter Tight for headings, Inter for body. Layout is a single vertical
- * column ~380px wide, optimised for the narrow Outlook side panel.
+ * Design language follows the Outlook taskpane: Segoe UI typography,
+ * Fluent neutral surfaces, Outlook-blue command accents and compact
+ * one-column spacing for the narrow side panel.
  * Everything fits in one card per active state — no nested sections,
  * no separate progress card.
  *
@@ -11,43 +11,39 @@
  * 4-column "Versendet" stage has been retired — sending happens
  * implicitly when the user hands the draft mail off to Outlook.
  * ===================================================================== */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700;800&display=swap");
-
 :root {
-    --ek-bg:            #f8f9fb;
+    --ek-bg:            #ffffff;
     --ek-surface:       #ffffff;
-    --ek-surface-2:     #f5f5f4;
-    --ek-border:        #e5e7eb;
-    --ek-border-strong: #d1d5db;
-    --ek-divider:       #f1f5f9;
-    --ek-text:          #0f172a;
-    --ek-text-2:        #334155;
-    --ek-muted:         #64748b;
-    --ek-faint:         #94a3b8;
-    --ek-brand:         #e30613;
-    --ek-brand-dark:    #b8000b;
-    --ek-brand-soft:    #fef2f2;
-    --ek-brand-border:  #fecaca;
+    --ek-surface-2:     #f3f2f1;
+    --ek-border:        #edebe9;
+    --ek-border-strong: #c8c6c4;
+    --ek-divider:       #edebe9;
+    --ek-text:          #201f1e;
+    --ek-text-2:        #323130;
+    --ek-muted:         #605e5c;
+    --ek-faint:         #8a8886;
+    --ek-brand:         #0078d4;
+    --ek-brand-dark:    #106ebe;
+    --ek-brand-soft:    #eff6fc;
+    --ek-brand-border:  #c7e0f4;
     --outlook-accent:       #0078d4;
     --outlook-accent-dark:  #106ebe;
     --outlook-accent-soft:  #eff6fc;
     --outlook-accent-border:#c7e0f4;
-    --ek-success:       #047857;
-    --ek-success-soft:  #ecfdf5;
-    --ek-success-border:#a7f3d0;
-    --ek-info:          #1d4ed8;
-    --ek-info-soft:     #eff6ff;
-    --ek-info-border:   #bfdbfe;
-    --ek-warning:       #b45309;
-    --ek-warning-soft:  #fff7ed;
-    --ek-warning-border:#fde68a;
-    --ek-danger:        #b91c1c;
-    --ek-danger-soft:   #fef2f2;
-    --ek-danger-border: #fecaca;
-    --ek-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04),
-                   0 1px 1px rgba(15, 23, 42, 0.02);
-    --ek-shadow-2: 0 6px 20px rgba(15, 23, 42, 0.06),
-                   0 1px 2px rgba(15, 23, 42, 0.04);
+    --ek-success:       #107c10;
+    --ek-success-soft:  #f1faf1;
+    --ek-success-border:#a7d8a8;
+    --ek-info:          #0078d4;
+    --ek-info-soft:     #eff6fc;
+    --ek-info-border:   #c7e0f4;
+    --ek-warning:       #8a5a00;
+    --ek-warning-soft:  #fff8e1;
+    --ek-warning-border:#fce100;
+    --ek-danger:        #a4262c;
+    --ek-danger-soft:   #fde7e9;
+    --ek-danger-border: #f3b4b8;
+    --ek-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.08);
+    --ek-shadow-2: 0 4px 14px rgba(0, 0, 0, 0.14);
 }
 
 * { box-sizing: border-box; }
@@ -57,8 +53,8 @@ html, body {
     padding: 0;
     background: var(--ek-bg);
     color: var(--ek-text);
-    font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-    font-size: 13.5px;
+    font-family: "Segoe UI", "Segoe UI Web", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+    font-size: 14px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -72,9 +68,9 @@ html, body {
 .panel {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 14px;
-    max-width: 460px;
+    gap: 10px;
+    padding: 12px;
+    max-width: 480px;
     margin: 0 auto;
 }
 
@@ -82,7 +78,7 @@ html, body {
 .steps {
     display: flex;
     align-items: flex-start;
-    padding: 4px 0;
+    padding: 0 10px 2px;
 }
 
 .step {
@@ -96,11 +92,11 @@ html, body {
 /* Connecting line between steps */
 .step-connector {
     position: absolute;
-    top: 12px;
+    top: 6px;
     right: 50%;
     left: -50%;
     height: 1px;
-    background: var(--ek-border);
+    background: var(--ek-border-strong);
     transition: background 0.2s ease;
 }
 .step.done  .step-connector,
@@ -108,22 +104,27 @@ html, body {
 
 /* Circle badge */
 .step-circle {
-    width: 24px;
-    height: 24px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
-    border: 1.5px solid var(--ek-border);
+    border: 1px solid var(--ek-border-strong);
     background: var(--ek-surface);
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
     z-index: 1;
-    transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+    transition:
+        border-color 0.2s ease,
+        background 0.2s ease,
+        color 0.2s ease,
+        transform 0.2s ease;
 }
 .step.active .step-circle {
     border-color: var(--outlook-accent);
     background: var(--outlook-accent-soft);
     color: var(--outlook-accent);
+    transform: scale(1.12);
 }
 .step.done .step-circle {
     border-color: var(--outlook-accent);
@@ -132,20 +133,19 @@ html, body {
 }
 
 .step-index {
-    font-family: "Inter Tight", sans-serif;
-    font-size: 10px;
-    font-weight: 700;
+    font-size: 0;
+    font-weight: 600;
     color: var(--ek-faint);
     line-height: 1;
 }
 .step.active .step-index { color: var(--outlook-accent); }
 
 .step-title {
-    font-size: 10.5px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--ek-faint);
     margin-top: 5px;
-    letter-spacing: 0.01em;
+    letter-spacing: 0;
     line-height: 1.2;
 }
 .step.active .step-title {
@@ -156,30 +156,35 @@ html, body {
     color: var(--outlook-accent-dark);
 }
 
+.step.done .step-circle svg {
+    display: none;
+}
+
 /* ---------------- Card (the workhorse element) ------------------------- */
 .card {
     background: var(--ek-surface);
     border: 1px solid var(--ek-border);
-    border-radius: 14px;
-    padding: 16px;
+    border-radius: 4px;
+    padding: 14px;
     box-shadow: var(--ek-shadow-1);
+    animation: ek-panel-in 180ms ease-out both;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .card-info {
     border-color: var(--ek-info-border);
-    background: linear-gradient(180deg, var(--ek-info-soft) 0%, white 35%);
+    background: var(--ek-surface);
 }
 .card-success {
     border-color: var(--ek-success-border);
-    background: linear-gradient(180deg, var(--ek-success-soft) 0%, white 35%);
+    background: var(--ek-surface);
 }
 .card-warning {
     border-color: var(--ek-warning-border);
-    background: linear-gradient(180deg, var(--ek-warning-soft) 0%, white 35%);
+    background: var(--ek-surface);
 }
 .card-error {
     border-color: var(--ek-danger-border);
-    background: linear-gradient(180deg, var(--ek-danger-soft) 0%, white 35%);
+    background: var(--ek-surface);
 }
 .card-stack {
     display: flex;
@@ -193,40 +198,38 @@ html, body {
     justify-content: space-between;
     gap: 8px;
 }
+.row-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
 
 /* ---------------- Pills ------------------------------------------------ */
 .pill {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 3px 9px 3px 7px;
-    border-radius: 999px;
-    font-size: 11.5px;
+    padding: 0;
+    border-radius: 0;
+    font-size: 12px;
     font-weight: 600;
     line-height: 1.4;
-    border: 1px solid var(--ek-border);
-    background: var(--ek-surface);
+    border: 0;
+    background: transparent;
     color: var(--ek-text-2);
 }
 .pill-neutral {
-    background: var(--ek-surface-2);
     color: var(--ek-text-2);
-    border-color: var(--ek-border);
 }
 .pill-info {
-    background: var(--ek-info-soft);
     color: var(--ek-info);
-    border-color: var(--ek-info-border);
 }
 .pill-success {
-    background: var(--ek-success-soft);
     color: var(--ek-success);
-    border-color: var(--ek-success-border);
 }
 .pill-warning {
-    background: var(--ek-warning-soft);
     color: var(--ek-warning);
-    border-color: var(--ek-warning-border);
 }
 .pill-dot {
     width: 6px;
@@ -237,70 +240,67 @@ html, body {
 }
 
 /* ---------------- Mail header info ------------------------------------ */
-.review-id {
-    font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
-    font-size: 10.5px;
-    font-weight: 600;
-    color: var(--ek-muted);
-    background: var(--ek-surface-2);
-    border: 1px solid var(--ek-border);
-    padding: 2px 8px;
-    border-radius: 999px;
-    white-space: nowrap;
-    max-width: 50%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 .mail-subject {
-    font-family: "Inter Tight", sans-serif;
     font-size: 16px;
-    font-weight: 700;
+    font-weight: 600;
     color: var(--ek-text);
-    letter-spacing: -0.015em;
+    letter-spacing: 0;
     line-height: 1.3;
     word-break: break-word;
 }
 .mail-sender {
-    font-size: 12px;
-    color: var(--ek-muted);
-    margin-top: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: 5px;
     word-break: break-word;
+}
+.mail-sender-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ek-text-2);
+    line-height: 1.25;
+}
+.mail-sender-email {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--ek-muted);
+    line-height: 1.25;
 }
 
 /* ---------------- Meta strip ------------------------------------------ */
 .meta-strip {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 2px;
 }
 .meta-chip {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
     min-width: 0;
     max-width: 100%;
-    padding: 4px 7px;
-    background: var(--ek-surface-2);
-    border: 1px solid var(--ek-border);
-    border-radius: 999px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
     color: var(--ek-muted);
 }
 .meta-chip > svg {
     flex-shrink: 0;
 }
 .meta-chip-label {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0;
     color: var(--ek-muted);
 }
 .meta-value {
     min-width: 0;
-    font-size: 11.5px;
-    font-weight: 600;
-    color: var(--ek-text);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ek-text-2);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -313,34 +313,36 @@ html, body {
     gap: 8px;
 }
 
-.primary-action-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 34px;
-    align-items: stretch;
-    gap: 8px;
-}
-
 .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 10px 14px;
-    border-radius: 10px;
+    gap: 7px;
+    padding: 8px 12px;
+    border-radius: 2px;
     border: 1px solid var(--ek-border-strong);
     background: var(--ek-surface);
     color: var(--ek-text);
-    font-family: "Inter", sans-serif;
+    font-family: inherit;
     font-weight: 600;
     font-size: 13px;
-    letter-spacing: -0.005em;
+    letter-spacing: 0;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition:
+        background 0.14s ease,
+        border-color 0.14s ease,
+        color 0.14s ease,
+        box-shadow 0.14s ease,
+        transform 0.14s ease;
     width: 100%;
 }
 .btn:hover:not(:disabled) {
-    background: var(--ek-surface-2);
-    border-color: var(--ek-text-2);
+    background: #f3f2f1;
+    border-color: var(--ek-border-strong);
+}
+.btn:focus-visible {
+    outline: 2px solid var(--outlook-accent);
+    outline-offset: 1px;
 }
 .btn:disabled {
     opacity: 0.5;
@@ -354,16 +356,19 @@ html, body {
 }
 
 .btn-primary {
-    background: var(--ek-text);
+    background: var(--outlook-accent);
     color: white;
-    border-color: var(--ek-text);
+    border-color: var(--outlook-accent);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .btn-primary:hover:not(:disabled) {
-    background: #000;
-    border-color: #000;
+    background: var(--outlook-accent-dark);
+    border-color: var(--outlook-accent-dark);
+    box-shadow: var(--ek-shadow-1);
     transform: translateY(-1px);
-    box-shadow: var(--ek-shadow-2);
+}
+.btn:active:not(:disabled) {
+    transform: translateY(0);
 }
 .btn-secondary {
     background: var(--ek-surface);
@@ -390,182 +395,162 @@ html, body {
     border-color: var(--ek-danger-border);
 }
 
-.action-help {
-    position: relative;
-    display: inline-flex;
-}
-
-.action-help-button {
+.icon-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 100%;
-    min-height: 38px;
-    border: 1px solid var(--ek-border-strong);
-    border-radius: 10px;
-    background: var(--ek-surface);
-    color: var(--ek-muted);
-    font-family: "Inter Tight", sans-serif;
-    font-size: 15px;
-    font-weight: 800;
-    line-height: 1;
-    cursor: help;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    background: transparent;
+    color: #8a8886;
+    cursor: pointer;
     transition:
-        background 0.15s ease,
-        border-color 0.15s ease,
-        color 0.15s ease;
+        background 0.14s ease,
+        color 0.14s ease,
+        transform 0.14s ease;
 }
-
-.action-help-button:hover,
-.action-help-button:focus-visible {
-    background: var(--ek-brand-soft);
-    border-color: var(--ek-brand-border);
-    color: var(--ek-brand);
-    outline: none;
+.icon-button:hover:not(:disabled) {
+    background: #f3f2f1;
+    color: var(--outlook-accent-dark);
 }
-
-.action-help-tooltip {
-    position: absolute;
-    right: 0;
-    bottom: calc(100% + 8px);
-    width: min(280px, calc(100vw - 28px));
-    padding: 9px 10px;
-    border: 1px solid var(--ek-border-strong);
-    border-radius: 8px;
-    background: var(--ek-text);
-    color: white;
-    font-size: 11.5px;
-    font-weight: 500;
-    line-height: 1.45;
-    box-shadow: var(--ek-shadow-2);
-    opacity: 0;
-    visibility: hidden;
-    transform: translateY(4px);
-    pointer-events: none;
-    transition:
-        opacity 0.12s ease,
-        transform 0.12s ease,
-        visibility 0.12s ease;
+.icon-button:active:not(:disabled) {
+    transform: scale(0.96);
 }
-
-.action-help-tooltip::after {
-    content: "";
-    position: absolute;
-    right: 12px;
-    bottom: -5px;
-    width: 10px;
-    height: 10px;
-    background: var(--ek-text);
-    transform: rotate(45deg);
+.icon-button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
-
-.action-help:hover .action-help-tooltip,
-.action-help:focus-within .action-help-tooltip {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0);
+.icon-button:focus-visible {
+    outline: 2px solid var(--outlook-accent);
+    outline-offset: 1px;
+}
+.icon-button-icon {
+    width: 14px;
+    height: 14px;
 }
 
 .secondary-actions {
-    border-top: 1px solid var(--ek-divider);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
     padding-top: 2px;
 }
 
-.secondary-actions > summary {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 5px 8px;
-    color: var(--ek-muted);
-    cursor: pointer;
-    font-size: 11.5px;
-    font-weight: 650;
-    list-style: none;
-    user-select: none;
-}
-
-.secondary-actions > summary::-webkit-details-marker {
-    display: none;
-}
-
-.secondary-actions > summary > svg {
-    transition: transform 0.15s ease;
-}
-
-.secondary-actions[open] > summary > svg {
-    transform: rotate(180deg);
-}
-
-.secondary-actions-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding-top: 4px;
-}
-
-.secondary-actions-list .btn {
-    padding: 8px 12px;
+.secondary-actions .btn {
+    width: auto;
+    min-height: 28px;
+    padding: 4px 7px;
+    border-color: transparent;
+    background: transparent;
     font-size: 12.5px;
+    font-weight: 500;
+    color: var(--outlook-accent);
+}
+
+.secondary-actions .btn:hover:not(:disabled) {
+    background: var(--outlook-accent-soft);
+    border-color: transparent;
+    color: var(--outlook-accent-dark);
+}
+
+.secondary-actions .btn-danger-ghost {
+    color: var(--ek-danger);
+}
+
+.secondary-actions .btn-danger-ghost:hover:not(:disabled) {
+    background: var(--ek-danger-soft);
+    color: var(--ek-danger);
 }
 
 /* ---------------- Batch review creation ------------------------------- */
+.batch-card-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+}
+
 .batch-progress {
     display: flex;
     flex-direction: column;
-    gap: 7px;
-    padding: 10px 12px;
-    background: var(--ek-surface-2);
-    border: 1px solid var(--ek-border);
-    border-radius: 10px;
+    gap: 6px;
 }
 .batch-progress-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--ek-muted);
+}
+.batch-progress-head > strong {
     font-size: 12px;
     font-weight: 650;
     color: var(--ek-text-2);
-}
-.batch-progress-head > strong {
-    color: var(--ek-text);
     font-variant-numeric: tabular-nums;
 }
-.batch-list-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: -4px;
-    color: var(--ek-muted);
-    font-size: 10.5px;
-    font-weight: 750;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+.batch-selection {
+    overflow: hidden;
+    border: 1px solid #e1dfdd;
+    border-radius: 4px;
+    background: var(--ek-surface);
+    animation: ek-panel-in 200ms ease-out both;
 }
 .batch-list {
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 0;
     max-height: 280px;
     overflow-y: auto;
-    padding-right: 2px;
+    padding: 0;
 }
 .batch-row {
     display: grid;
-    grid-template-columns: 24px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
-    gap: 9px;
-    padding: 9px 10px;
-    border: 1px solid var(--ek-border);
-    border-radius: 9px;
-    background: rgba(255, 255, 255, 0.74);
-    box-shadow: 0 1px 1px rgba(15, 23, 42, 0.02);
+    gap: 10px;
+    min-height: 52px;
+    padding: 9px 12px 9px 10px;
+    border: 0;
+    border-left: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    animation: ek-row-in 180ms ease-out both;
+    transition:
+        background 140ms ease,
+        border-color 140ms ease,
+        box-shadow 140ms ease;
+}
+.batch-row + .batch-row {
+    border-top: 1px solid var(--ek-border);
+}
+.batch-row:hover {
+    background: var(--ek-surface);
+    box-shadow: inset 2px 0 0 var(--outlook-accent);
 }
 .batch-row-has-action {
-    grid-template-columns: 24px minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+.batch-row-loading,
+.batch-row-running,
+.batch-row-completed,
+.batch-row-failed,
+.batch-row-cancelled {
+    grid-template-columns: 28px minmax(0, 1fr);
+}
+.batch-row-loading.batch-row-has-action,
+.batch-row-running.batch-row-has-action,
+.batch-row-completed.batch-row-has-action,
+.batch-row-failed.batch-row-has-action,
+.batch-row-cancelled.batch-row-has-action {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
 }
 .batch-row-retry {
     display: inline-flex;
@@ -574,7 +559,7 @@ html, body {
     width: 26px;
     height: 26px;
     padding: 0;
-    border-radius: 999px;
+    border-radius: 2px;
     border: 1px solid var(--ek-danger-border);
     background: var(--ek-surface);
     color: var(--ek-danger);
@@ -596,30 +581,39 @@ html, body {
 }
 .batch-row-loading,
 .batch-row-running {
-    border-color: var(--ek-info-border);
+    border-left-color: var(--ek-info);
     background: var(--ek-info-soft);
+    background-image: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.72),
+        transparent
+    );
+    background-size: 180% 100%;
+    animation: ek-row-in 180ms ease-out both, ek-soft-sweep 1.8s ease-in-out infinite;
 }
 .batch-row-completed {
-    border-color: var(--ek-success-border);
+    border-left-color: var(--ek-success);
     background: var(--ek-success-soft);
 }
 .batch-row-failed {
-    border-color: var(--ek-danger-border);
+    border-left-color: var(--ek-danger);
     background: var(--ek-danger-soft);
 }
 .batch-row-cancelled {
-    border-color: var(--ek-warning-border);
+    border-left-color: var(--ek-warning);
     background: var(--ek-warning-soft);
 }
 .batch-row-icon-wrap {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 999px;
-    background: var(--ek-surface-2);
-    color: var(--ek-muted);
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #eff6fc;
+    border: 1px solid #c7e0f4;
+    color: var(--outlook-accent);
 }
 .batch-row-icon {
     width: 13px;
@@ -653,21 +647,44 @@ html, body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12.5px;
-    font-weight: 700;
+    font-size: 13px;
+    font-weight: 600;
     color: var(--ek-text);
+    line-height: 1.25;
 }
-.batch-row-detail {
+.batch-row-sender {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--ek-muted);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.35;
+    margin-top: 2px;
+}
+.batch-row-detail {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    overflow: hidden;
     font-size: 11px;
+    color: var(--ek-muted);
+    line-height: 1.3;
+    white-space: nowrap;
+}
+.batch-row-attachment {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
     color: var(--ek-muted);
 }
 /* ---------------- Notice banners ------------------------------------- */
 .notice-banner {
     padding: 10px 12px;
-    border-radius: 10px;
+    border-radius: 4px;
     font-size: 12.5px;
     line-height: 1.5;
 }
@@ -700,7 +717,8 @@ html, body {
     padding: 10px 12px;
     background: var(--ek-surface-2);
     border: 1px solid var(--ek-border);
-    border-radius: 10px;
+    border-radius: 4px;
+    animation: ek-panel-in 180ms ease-out both;
 }
 .pipeline-inline-current {
     display: flex;
@@ -731,6 +749,33 @@ html, body {
     to { transform: rotate(360deg); }
 }
 
+@keyframes ek-panel-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes ek-row-in {
+    from {
+        opacity: 0;
+        transform: translateY(3px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes ek-soft-sweep {
+    0% { background-position: 180% 0; }
+    100% { background-position: -180% 0; }
+}
+
 .pipeline-progress-bar {
     width: 100%;
     height: 5px;
@@ -740,95 +785,42 @@ html, body {
 }
 .pipeline-progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--ek-brand) 0%, var(--ek-brand-dark) 100%);
+    background: var(--outlook-accent);
     transition: width 0.4s ease;
     border-radius: 999px;
+    position: relative;
+    overflow: hidden;
+}
+.pipeline-progress-fill::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.5),
+        transparent
+    );
+    transform: translateX(-100%);
+    animation: ek-progress-shine 1.8s ease-in-out infinite;
 }
 
-.pipeline-inline-details {
-    border-top: 1px dashed var(--ek-border);
-    padding-top: 8px;
-}
-.pipeline-inline-details > summary {
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    list-style: none;
-    font-size: 11.5px;
-    font-weight: 600;
-    color: var(--ek-muted);
-    user-select: none;
-}
-.pipeline-inline-details > summary::-webkit-details-marker { display: none; }
-.pipeline-inline-details[open] > summary > svg {
-    transform: rotate(180deg);
-    transition: transform 0.2s ease;
-}
-.pipeline-inline-details > summary > svg {
-    transition: transform 0.2s ease;
+@keyframes ek-progress-shine {
+    0% { transform: translateX(-100%); }
+    55%, 100% { transform: translateX(100%); }
 }
 
-.advanced-meta {
-    margin-left: auto;
-    font-size: 10.5px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--ek-faint);
-    background: var(--ek-surface);
-    border: 1px solid var(--ek-border);
-    padding: 1px 7px;
-    border-radius: 999px;
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.001ms !important;
+    }
 }
 
-.pipeline-steps {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 8px;
-}
-.pipeline-step {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 6px 8px;
-    border-radius: 8px;
-    background: var(--ek-surface);
-    border: 1px solid var(--ek-border);
-    font-size: 12px;
-}
-.pipeline-step-completed {
-    border-color: var(--ek-success-border);
-    background: var(--ek-success-soft);
-}
-.pipeline-step-running {
-    border-color: var(--ek-info-border);
-    background: var(--ek-info-soft);
-}
-.pipeline-step-failed {
-    border-color: var(--ek-danger-border);
-    background: var(--ek-danger-soft);
-}
-.pipeline-step-pending {
-    background: var(--ek-surface);
-    color: var(--ek-muted);
-}
-.pipeline-step-body {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-.pipeline-step-name {
-    font-weight: 600;
-    color: var(--ek-text);
-    font-size: 12px;
-}
-.pipeline-step-detail {
-    color: var(--ek-muted);
-    font-size: 11px;
-    line-height: 1.4;
-    word-break: break-word;
-}
 .pipeline-error {
     font-size: 12px;
     color: var(--ek-danger);
@@ -836,7 +828,7 @@ html, body {
     padding: 6px 10px;
     background: var(--ek-danger-soft);
     border: 1px solid var(--ek-danger-border);
-    border-radius: 8px;
+    border-radius: 4px;
     word-break: break-word;
 }
 
@@ -848,7 +840,7 @@ html, body {
     padding: 10px 12px;
     background: var(--ek-surface);
     border: 1px solid var(--ek-border);
-    border-radius: 10px;
+    border-radius: 4px;
     font-size: 12px;
     color: var(--ek-text-2);
     min-height: 38px;
@@ -866,6 +858,39 @@ html, body {
     border-radius: 50%;
     animation: ek-spin 0.8s linear infinite;
     flex-shrink: 0;
+}
+
+/* ---------------- Error footer (sticky bottom strip) ------------------- */
+/* Shown when the pipeline fails. Sits at the viewport bottom so it never
+ * breaks the card layout; full error is accessible via the title tooltip.  */
+.error-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 14px;
+    background: var(--ek-surface);
+    border-top: 1px solid var(--ek-danger-border);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--ek-danger);
+    z-index: 200;
+    animation: ek-panel-in 180ms ease-out both;
+}
+.error-footer-icon {
+    flex-shrink: 0;
+    opacity: 0.75;
+}
+.error-footer-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* The top-level stepper uses Outlook/Fluent blue so it blends into the

@@ -44,6 +44,7 @@ def with_retry(
     *args,
     max_retries: int = 3,
     base_delay: float = 1.5,
+    on_retry=None,
     **kwargs,
 ):
     """Exponential backoff for transient LLM failures."""
@@ -60,5 +61,13 @@ def with_retry(
             delay = base_delay * (2 ** (attempt - 1))
             log.warning("LLM call failed (attempt %d/%d): %s. Retrying in %.1fs",
                         attempt, max_retries, exc, delay)
+            if on_retry is not None:
+                on_retry(
+                    attempt=attempt,
+                    max_attempts=max_retries,
+                    next_attempt=attempt + 1,
+                    delay_s=delay,
+                    error=str(exc),
+                )
             time.sleep(delay)
     raise last_exc  # type: ignore[misc]  # guaranteed non-None: loop ran >= 1 time

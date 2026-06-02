@@ -1,10 +1,10 @@
 import type { SelectedMailSummary } from "../outlook/mailbox";
-import { PrivacyInlineHelp, SecondaryActions } from "./ActionHelpers";
+import { SecondaryActions } from "./ActionHelpers";
 import {
   AlertIcon,
   CheckIcon,
-  ClockIcon,
   ExternalIcon,
+  PaperclipIcon,
   RefreshIcon,
   SparkIcon,
   StopIcon,
@@ -41,7 +41,6 @@ function iconFor(status: BatchDraftStatus) {
   if (status === "completed") return CheckIcon;
   if (status === "failed") return AlertIcon;
   if (status === "cancelled") return StopIcon;
-  if (status === "pending") return ClockIcon;
   return SparkIcon;
 }
 
@@ -62,7 +61,7 @@ function batchTitle({
   if (cancelled > 0) return "Batch gestoppt";
   if (allCompleted) return "Reviews bereit";
   if (loading || hasStarted) return "Reviews laufen";
-  return "Batch vorbereiten";
+  return "Mehrere Mails ausgewählt";
 }
 
 function itemDetail(item: BatchDraftItem): string {
@@ -74,24 +73,29 @@ function itemDetail(item: BatchDraftItem): string {
   return "";
 }
 
+function formatSender(sender?: string): string {
+  if (!sender) return "";
+  const match = sender.match(/^\s*(.*?)\s*<([^<>]+)>\s*$/);
+  if (!match) return sender;
+  return match[1].trim() || match[2].trim();
+}
+
 function batchSubtitle({
   hasStarted,
   allCompleted,
   failed,
   cancelled,
-  selectionLabel,
 }: {
   hasStarted: boolean;
   allCompleted: boolean;
   failed: number;
   cancelled: number;
-  selectionLabel: string;
 }): string | null {
   if (failed > 0) return `${failed} fehlgeschlagen`;
   if (cancelled > 0) return `${cancelled} gestoppt`;
   if (allCompleted) return null;
   if (hasStarted) return "Reviews laufen";
-  return selectionLabel;
+  return null;
 }
 
 export function BatchWorkflowCard({
@@ -118,22 +122,14 @@ export function BatchWorkflowCard({
   const total = selectedItems.length;
   const allCompleted =
     hasStarted && completed === total && failed === 0 && cancelled === 0;
-  const hasCollapsedConversations = selectedItems.some(
-    (item) => item.collapsedCount > 1,
-  );
   const canCreate = total > 0 && !loading;
   const progress =
     total > 0 ? Math.round(((completed + failed + cancelled) / total) * 100) : 0;
-  const listLabel = hasCollapsedConversations ? "Unterhaltungen" : "Mails";
-  const selectionLabel = hasCollapsedConversations
-    ? `${total} Unterhaltungen ausgewählt`
-    : `${total} Mails ausgewählt`;
   const subtitle = batchSubtitle({
     hasStarted,
     allCompleted,
     failed,
     cancelled,
-    selectionLabel,
   });
   const cardClass = failed
     ? "card card-error"
@@ -147,8 +143,20 @@ export function BatchWorkflowCard({
     <section className={cardClass}>
       <div className="card-stack">
         <div>
-          <div className="mail-subject">
-            {batchTitle({ hasStarted, allCompleted, failed, cancelled, loading })}
+          <div className="batch-card-head">
+            <div className="mail-subject">
+              {batchTitle({ hasStarted, allCompleted, failed, cancelled, loading })}
+            </div>
+            <button
+              type="button"
+              className="icon-button"
+              disabled={loading}
+              onClick={onReloadSelection}
+              aria-label="Auswahl aktualisieren"
+              title="Auswahl aktualisieren"
+            >
+              <RefreshIcon className="icon-button-icon" />
+            </button>
           </div>
           {subtitle && <div className="mail-sender">{subtitle}</div>}
         </div>
@@ -168,45 +176,59 @@ export function BatchWorkflowCard({
           </div>
         )}
 
-        <div className="batch-list-head">
-          <span>{listLabel}</span>
-        </div>
-        <div className="batch-list" aria-label="Ausgewählte Mails">
-          {items.map((item) => {
-            const Icon = iconFor(item.status);
-            const detail = itemDetail(item);
-            const canRetry =
-              (item.status === "failed" || item.status === "cancelled") &&
-              !loading &&
-              Boolean(onRetryItem);
-            return (
-              <div
-                key={item.itemId}
-                className={`batch-row batch-row-${item.status}${canRetry ? " batch-row-has-action" : ""}`}
-              >
-                <span className="batch-row-icon-wrap">
-                  <Icon className="batch-row-icon" />
-                </span>
-                <div className="batch-row-main">
-                  <div className="batch-row-title">{item.subject}</div>
-                  {detail && (
-                    <div className="batch-row-detail">{detail}</div>
+        <div className="batch-selection">
+          <div className="batch-list" aria-label="Ausgewählte Mails">
+            {items.map((item) => {
+              const Icon = iconFor(item.status);
+              const detail = itemDetail(item);
+              const sender = formatSender(item.sender);
+              const canRetry =
+                (item.status === "failed" || item.status === "cancelled") &&
+                !loading &&
+                Boolean(onRetryItem);
+              return (
+                <div
+                  key={item.itemId}
+                  className={`batch-row batch-row-${item.status}${canRetry ? " batch-row-has-action" : ""}`}
+                >
+                  {hasStarted && (
+                    <span className="batch-row-icon-wrap">
+                      <Icon className="batch-row-icon" />
+                    </span>
+                  )}
+                  <div className="batch-row-main">
+                    <div className="batch-row-title">{item.subject}</div>
+                    {sender && (
+                      <div className="batch-row-sender" title={item.sender}>
+                        {sender}
+                      </div>
+                    )}
+                    {(detail || item.hasAttachment) && (
+                      <div className="batch-row-detail">
+                        {detail || (
+                          <span className="batch-row-attachment">
+                            <PaperclipIcon size={12} />
+                            Anhang
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {canRetry && (
+                    <button
+                      type="button"
+                      className="batch-row-retry"
+                      onClick={() => onRetryItem?.(item.itemId)}
+                      aria-label={`"${item.subject}" wiederholen`}
+                      title="Wiederholen"
+                    >
+                      <RefreshIcon className="batch-row-retry-icon" />
+                    </button>
                   )}
                 </div>
-                {canRetry && (
-                  <button
-                    type="button"
-                    className="batch-row-retry"
-                    onClick={() => onRetryItem?.(item.itemId)}
-                    aria-label={`"${item.subject}" wiederholen`}
-                    title="Wiederholen"
-                  >
-                    <RefreshIcon className="batch-row-retry-icon" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
 
         <div className="actions">
@@ -220,25 +242,21 @@ export function BatchWorkflowCard({
               Übersicht öffnen
             </button>
           ) : (
-            <div className="primary-action-row">
-              <button
-                className="btn btn-primary"
-                disabled={!canCreate}
-                onClick={onCreateBatch}
-              >
-                <SparkIcon className="btn-icon" />
-                {hasStarted
-                  ? loading
-                    ? "Reviews laufen"
-                    : failed > 0 || cancelled > 0
-                      ? "Offene wiederholen"
-                      : completed > 0
-                        ? "Fehlgeschlagene wiederholen"
+            <button
+              className="btn btn-primary"
+              disabled={!canCreate}
+              onClick={onCreateBatch}
+            >
+              {hasStarted
+                ? loading
+                  ? "Reviews laufen"
+                  : failed > 0 || cancelled > 0
+                    ? "Offene wiederholen"
+                    : completed > 0
+                      ? "Fehlgeschlagene wiederholen"
                       : "Erneut versuchen"
-                  : `${total} Reviews erstellen`}
-              </button>
-              <PrivacyInlineHelp />
-            </div>
+                : `${total} Reviews starten`}
+            </button>
           )}
           <SecondaryActions>
             {hasStarted && active > 0 && onStopBatch && (
@@ -269,14 +287,6 @@ export function BatchWorkflowCard({
                 Quoting-Übersicht öffnen
               </button>
             )}
-            <button
-              className="btn btn-ghost"
-              disabled={loading}
-              onClick={onReloadSelection}
-            >
-              <RefreshIcon className="btn-icon" />
-              Auswahl aktualisieren
-            </button>
           </SecondaryActions>
         </div>
       </div>

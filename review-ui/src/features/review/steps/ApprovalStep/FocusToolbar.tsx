@@ -34,9 +34,6 @@ export function FocusToolbar({ reviewId, fileName }: FocusToolbarProps) {
   return (
     <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-2 shadow-card">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="font-display text-sm font-bold tracking-tight">
-          Vollbild
-        </span>
         <Pill tone="neutral">
           <code className="font-mono text-[10.5px]">{reviewId}</code>
         </Pill>

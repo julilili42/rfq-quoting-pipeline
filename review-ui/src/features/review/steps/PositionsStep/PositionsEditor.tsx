@@ -211,7 +211,7 @@ export function PositionsEditor({
       gewicht_brutto_kg: null,
       verpackungsart: null,
       ist_zertifikat: false,
-      confidence: "low",
+      confidence: "high",
       source_quote: "",
     };
 
@@ -249,7 +249,7 @@ export function PositionsEditor({
       aria-labelledby="positions-heading"
       className="scroll-mt-6 space-y-4"
     >
-      <header className="flex flex-wrap items-center justify-between gap-3">
+      <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 id="positions-heading" className="section-label mb-2">
             Positionen

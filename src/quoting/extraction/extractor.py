@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -33,6 +34,7 @@ def extract_anfrage(
     mail_body: str = "",
     settings: Settings | None = None,
     own_party_context: OwnPartyContext | None = None,
+    on_llm_retry: Callable[[dict], None] | None = None,
 ) -> tuple[Anfrage, TokenUsage | None]:
     """Run LLM extraction and return a validated Anfrage plus token usage."""
     settings = settings or load_settings()
@@ -59,6 +61,16 @@ def extract_anfrage(
             prompt=prompt,
             images=images,
             max_retries=settings.llm_max_retries,
+            on_retry=(
+                lambda **event: on_llm_retry(
+                    {
+                        "provider": settings.llm_provider,
+                        **event,
+                    },
+                )
+            )
+            if on_llm_retry is not None
+            else None,
         )
     except Exception as exc:
         raise ExtractionError(f"LLM call failed: {exc}") from exc

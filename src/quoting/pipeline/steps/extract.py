@@ -39,6 +39,15 @@ class ExtractionStep:
                 attachments=mail.attachments,
                 mail_body=mail.body,
                 settings=self.settings,
+                on_llm_retry=lambda event: ctx.report(
+                    self.name,
+                    "started",
+                    (
+                        f"{event['provider']}: Versuch "
+                        f"{event['next_attempt']}/{event['max_attempts']}"
+                    ),
+                    metadata={"llm_retry": event},
+                ),
             )
             if token_usage is not None:
                 ctx.extra["token_usage"] = token_usage

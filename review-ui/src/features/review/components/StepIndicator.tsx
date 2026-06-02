@@ -7,7 +7,7 @@ const STEPS = [
   {
     num: 1,
     slug: "positions",
-    title: "Anfrage vorbereiten",
+    title: "Anfrage prüfen",
   },
   {
     num: 2,

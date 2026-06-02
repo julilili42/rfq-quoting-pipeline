@@ -32,6 +32,33 @@ def test_retry_succeeds_after_failures():
     assert len(calls) == 3
 
 
+def test_retry_reports_retry_attempts():
+    calls = []
+    events = []
+
+    def fn():
+        calls.append(1)
+        if len(calls) == 1:
+            raise ValueError("transient")
+        return "done"
+
+    def on_retry(**event):
+        events.append(event)
+
+    result = with_retry(fn, max_retries=3, base_delay=0, on_retry=on_retry)
+
+    assert result == "done"
+    assert events == [
+        {
+            "attempt": 1,
+            "max_attempts": 3,
+            "next_attempt": 2,
+            "delay_s": 0,
+            "error": "transient",
+        },
+    ]
+
+
 def test_retry_raises_after_max_retries():
     def fn():
         raise RuntimeError("always fails")

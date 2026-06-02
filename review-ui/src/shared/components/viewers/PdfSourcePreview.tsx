@@ -9,6 +9,7 @@ import {
   type ErrorInfo,
   type ReactNode,
 } from "react";
+import { RotateCcw } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 
 import { reviewsApi, type PdfHighlightArea } from "@/shared/api/reviews";
@@ -78,6 +79,7 @@ export function PdfSourcePreview({
   const [pageWidth, setPageWidth] = useState(760);
   const [numPages, setNumPages] = useState(0);
   const [renderTick, setRenderTick] = useState(0);
+  const [zoom, setZoom] = useState(1.0);
 
   const targetKey = useMemo(
     () => (sourceTarget ? JSON.stringify(sourceTarget) : "none"),
@@ -123,6 +125,20 @@ export function PdfSourcePreview({
     const observer = new ResizeObserver(measure);
     observer.observe(viewport);
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      setZoom((prev) => Math.min(3.0, Math.max(0.25, prev * (1 - e.deltaY * 0.001))));
+    };
+
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
   }, []);
 
   useEffect(() => {
@@ -209,44 +225,63 @@ export function PdfSourcePreview({
         </p>
       )}
 
-      <div
-        ref={viewportRef}
-        className="scrollbar-none min-h-0 flex-1 overflow-auto bg-muted/40 px-4 py-4"
-      >
-        <PdfRenderBoundary key={fileUrl}>
-          <Document
-            file={fileUrl}
-            loading={<LoadingState label="PDF wird geladen…" />}
-            error={
-              <ErrorState
-                title="PDF konnte nicht geladen werden"
-                error="Die Datei ist nicht verfügbar oder kann vom Browser nicht gelesen werden."
-                className="m-3"
-              />
-            }
-            onLoadSuccess={({ numPages: nextNumPages }) => {
-              renderedPagesRef.current = new Set();
-              setNumPages(nextNumPages);
-              pageRefs.current = Array(nextNumPages).fill(null);
-            }}
-            onLoadError={(error) => {
-              console.error("[PdfSourcePreview] PDF load failed", error);
-            }}
-          >
-            {Array.from({ length: numPages }, (_, index) => (
-              <PdfPage
-                key={`${fileUrl}-${index}`}
-                refCallback={(element) => {
-                  pageRefs.current[index] = element;
+      <div className="flex min-h-0 flex-1 flex-col">
+        {zoom !== 1.0 && (
+          <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border bg-muted px-3 py-1 text-xs text-muted-foreground">
+            <span className="tabular-nums">{Math.round(zoom * 100)}%</span>
+            <button
+              type="button"
+              onClick={() => setZoom(1.0)}
+              title="Zoom zurücksetzen"
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-border hover:text-foreground"
+            >
+              <RotateCcw className="h-3 w-3" />
+              Zurücksetzen
+            </button>
+          </div>
+        )}
+        <div
+          ref={viewportRef}
+          className="scrollbar-none min-h-0 flex-1 overflow-auto bg-muted/40 px-4 py-4"
+        >
+          {/* CSS zoom scales visually without changing the canvas width → no re-render */}
+          <div style={{ zoom }}>
+            <PdfRenderBoundary key={fileUrl}>
+              <Document
+                file={fileUrl}
+                loading={<LoadingState label="PDF wird geladen…" />}
+                error={
+                  <ErrorState
+                    title="PDF konnte nicht geladen werden"
+                    error="Die Datei ist nicht verfügbar oder kann vom Browser nicht gelesen werden."
+                    className="m-3"
+                  />
+                }
+                onLoadSuccess={({ numPages: nextNumPages }) => {
+                  renderedPagesRef.current = new Set();
+                  setNumPages(nextNumPages);
+                  pageRefs.current = Array(nextNumPages).fill(null);
                 }}
-                pageNumber={index + 1}
-                width={pageWidth}
-                highlights={highlightAreas.filter((area) => area.pageIndex === index)}
-                onRenderSuccess={() => markPageRendered(index)}
-              />
-            ))}
-          </Document>
-        </PdfRenderBoundary>
+                onLoadError={(error) => {
+                  console.error("[PdfSourcePreview] PDF load failed", error);
+                }}
+              >
+                {Array.from({ length: numPages }, (_, index) => (
+                  <PdfPage
+                    key={`${fileUrl}-${index}`}
+                    refCallback={(element) => {
+                      pageRefs.current[index] = element;
+                    }}
+                    pageNumber={index + 1}
+                    width={pageWidth}
+                    highlights={highlightAreas.filter((area) => area.pageIndex === index)}
+                    onRenderSuccess={() => markPageRendered(index)}
+                  />
+                ))}
+              </Document>
+            </PdfRenderBoundary>
+          </div>
+        </div>
       </div>
     </div>
   );
